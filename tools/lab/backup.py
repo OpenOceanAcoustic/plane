@@ -12,6 +12,7 @@ from pathlib import Path
 import shutil
 import subprocess
 import uuid
+from setup import read_env
 
 ROOT = Path(__file__).resolve().parents[2]
 COMPOSE = [
@@ -63,9 +64,9 @@ def backup(directory, key_directory):
         ).stdout.split()
     )
     paused = [service for service in (*WRITERS, "plane-minio") if service in running]
-    if paused:
-        run(COMPOSE + ["stop", *paused])
     try:
+        if paused:
+            run(COMPOSE + ["stop", *paused])
         with (directory / "database.dump").open("wb") as output:
             run(
                 COMPOSE
@@ -189,7 +190,16 @@ def restore_verify(directory, key_path):
         )
     )
     compose_path.chmod(0o600)
-    restore = ["docker", "compose", "-f", str(compose_path)]
+    restore = ["docker", "compose", "-p", project, "-f", str(compose_path)]
+    docker_env = directory / "restore.docker.env"
+    # Compose removes quotes; docker run --env-file does not.
+    docker_env.write_text(
+        "".join(
+            f"{name}={value}\n"
+            for name, value in read_env(directory / "api.env").items()
+        )
+    )
+    docker_env.chmod(0o600)
     try:
         run(restore + ["up", "-d", "--wait", "database"])
         with (directory / "database.dump").open("rb") as input_file:
@@ -270,7 +280,7 @@ def restore_verify(directory, key_path):
                 "--network",
                 project + "_default",
                 "--env-file",
-                str(directory / "api.env"),
+                str(docker_env),
                 "-e",
                 f"DATABASE_URL=postgresql://restore:{password}@database:5432/restore",
                 "-e",
@@ -287,7 +297,10 @@ def restore_verify(directory, key_path):
         )
         print("隔离恢复验证通过：数据库、附件归档、加密凭据；未覆盖运行中的数据。")
     finally:
-        run(restore + ["down", "-v"])
+        try:
+            run(restore + ["down", "-v"])
+        finally:
+            docker_env.unlink(missing_ok=True)
         # Attachments volume is created by docker run rather than compose up.
         subprocess.run(
             ["docker", "volume", "rm", f"{project}_attachments"],

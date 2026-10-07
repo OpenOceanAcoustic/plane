@@ -65,10 +65,10 @@ def reviewer_allowed(user, bounty, independent=False):
 
 def locked_bounty(bounty_id):
     preliminary = Bounty.objects.get(id=bounty_id)
-    # All budget-changing operations lock stage before bounty, in one order.
-    Stage.objects.select_for_update().get(id=preliminary.stage_id)
+    # Native statement triggers take this lock before tuple locks too.
     with connection.cursor() as cursor:
         cursor.execute("SELECT lab_wip_lock(%s)", [preliminary.stage.workspace_id])
+    Stage.objects.select_for_update().get(id=preliminary.stage_id)
     return (
         Bounty.objects.select_for_update(of=("self",))
         .select_related("stage__project", "stage__workspace", "issue")
@@ -94,6 +94,9 @@ def valid_reviewer(user_id, project):
 
 @transaction.atomic
 def publish(user, stage_id, data):
+    preliminary = Stage.objects.get(id=stage_id)
+    with connection.cursor() as cursor:
+        cursor.execute("SELECT lab_wip_lock(%s)", [preliminary.workspace_id])
     stage = Stage.objects.select_for_update(of=("self",)).select_related("project", "workspace").get(id=stage_id)
     require_lead(user, stage.project)
     issue = issue_access(user, stage.workspace, data.get("issue_id"), edit=True)
@@ -222,6 +225,12 @@ def start(user, bounty_id):
         or any(not row.confirmed or not row.user or not row.user.is_active for row in participants)
     ):
         raise ValidationError("开工须批准分工并由所有参与者确认")
+    for allocation in participants:
+        if not WorkspaceMember.objects.filter(
+            workspace=bounty.stage.workspace, member=allocation.user, is_active=True
+        ).exists():
+            raise ValidationError("开工前参与者须仍是工作区成员")
+        issue_access(allocation.user, bounty.stage.workspace, bounty.issue_id, edit=True)
     # DB triggers serialize all native/bulk assignment and state paths too.
     for allocation in participants:
         IssueAssignee.objects.get_or_create(
@@ -307,6 +316,9 @@ def apply_acceptance(acceptance, bounty, user):
         row.closed = target == row.planned
         row.save(update_fields=["closed"])
     result = acceptance.result
+    if result == "reject":
+        Allocation.objects.filter(bounty=bounty, approved=True).update(closed=True)
+        bounty.reserved = total(Ledger.objects.filter(bounty=bounty), "delta")
     bounty.status = (
         "done"
         if result in ("pass", "negative")
@@ -316,12 +328,14 @@ def apply_acceptance(acceptance, bounty, user):
         if result == "rework"
         else "rejected"
     )
-    bounty.save(update_fields=["status"])
+    bounty.save(update_fields=["status", "reserved"])
     if bounty.issue_id:
         flow = ProjectFlow.objects.get(project_id=bounty.stage.project_id)
         bounty.issue.state = (
             flow.done
             if bounty.status == "done"
+            else flow.todo
+            if bounty.status == "rejected"
             else flow.active
             if bounty.status in ("partial", "rework")
             else flow.review
@@ -395,8 +409,8 @@ def review_acceptance(user, bounty_id, acceptance_id, reason):
 def cancel(user, bounty_id, reason):
     bounty = locked_bounty(bounty_id)
     require_lead(user, bounty.stage.project)
-    if bounty.status == "done" or not str(reason).strip():
-        raise ValidationError("已完成任务不可取消；取消须填写原因")
+    if bounty.status in ("done", "cancelled", "rejected") or not str(reason).strip():
+        raise ValidationError("已结案任务不可取消；取消须填写原因")
     bounty.status = "cancelled"
     bounty.reserved = total(Ledger.objects.filter(bounty=bounty), "delta")
     bounty.save(update_fields=["status", "reserved"])
@@ -435,8 +449,11 @@ def reverse(user, ledger_id, data):
         participant_snapshot=entry.participant_snapshot,
         request_key=key,
     )
-    entry.allocation.closed = False
+    entry.allocation.closed = bounty.status in ("rejected", "cancelled")
     entry.allocation.save(update_fields=["closed"])
+    if bounty.status in ("rejected", "cancelled"):
+        bounty.reserved = total(Ledger.objects.filter(bounty=bounty), "delta")
+        bounty.save(update_fields=["reserved"])
     # Corrected completed work returns to independent acceptance, never silently re-awards.
     if bounty.status == "done":
         bounty.status = "review"

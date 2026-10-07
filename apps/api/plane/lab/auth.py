@@ -105,6 +105,7 @@ def issue_invitation(kind, workspace=None, workspace_slug="", role=15, user=None
         if not workspace_slug or Workspace.objects.filter(slug=workspace_slug).exists():
             raise AccessError("工作区名称不可用")
     if kind == "rebind":
+        lock("lab-rebind:" + str(user.id))
         Credential.objects.get_or_create(user=user, defaults={"enabled": False, "encrypted_secret": ""})
         credential = Credential.objects.select_for_update().get(user=user)
         credential.enabled = False
@@ -198,6 +199,8 @@ def confirm_enrollment(data):
         pending = Enrollment.objects.filter(token_hash=digest(str(data.get("token", "")))).first()
         if not pending:
             raise AccessError()
+        if pending.invitation.kind == "rebind":
+            lock("lab-rebind:" + str(pending.invitation.user_id))
         invitation = Invitation.objects.select_for_update().get(id=pending.invitation_id)
         usable(invitation)
         pending = Enrollment.objects.select_for_update().filter(id=pending.id).first()

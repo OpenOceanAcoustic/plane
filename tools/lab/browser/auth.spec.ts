@@ -66,7 +66,7 @@ test("account rate limit displays the backend's remaining wait time", async ({ p
     route.fulfill({
       status: 429,
       headers: { "Retry-After": "481" },
-      json: { error: "请等待 481 秒再登录", retry_after: 481 },
+      json: { error: "请求过于频繁，请稍后重试", retry_after: 481 },
     })
   );
   await page.goto("/");

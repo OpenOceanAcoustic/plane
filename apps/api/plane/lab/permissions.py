@@ -72,4 +72,10 @@ def require_lead(user, project):
 
 
 def can_view_team(user, membership):
-    return membership.role == 20 or Project.objects.filter(workspace=membership.workspace, project_lead=user).exists()
+    current_projects = ProjectMember.objects.filter(
+        workspace=membership.workspace, member=user, is_active=True, role__gte=15
+    ).values("project_id")
+    return (
+        membership.role == 20
+        or Project.objects.filter(workspace=membership.workspace, project_lead=user, id__in=current_projects).exists()
+    )

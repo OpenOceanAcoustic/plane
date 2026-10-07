@@ -76,16 +76,15 @@ test("SSH bootstrap, real TOTP login, original task layouts and personal schedul
   await expect(page.getByLabel("Original project task状态", { exact: true })).toHaveValue("active");
   await page.goto(`/browser-lab/projects/${fixture.project}/issues`);
   await expect(page.getByText("Original project task", { exact: true }).first()).toBeVisible();
-  // Layout buttons are the native Plane selectors; inspect active content after each switch.
-  await page
-    .getByRole("button", { name: /看板|Kanban/i })
-    .first()
-    .click();
+  // Assert the native layout changed, not just shared task text.
+  const kanban = page.getByRole("button", { name: /看板|Kanban/i }).first();
+  await kanban.click();
+  await expect(kanban).toHaveAttribute("aria-pressed", "true");
   await expect(page.getByText("Original project task", { exact: true }).first()).toBeVisible();
-  await page
-    .getByRole("button", { name: /甘特|Gantt/i })
-    .first()
-    .click();
+  const gantt = page.getByRole("button", { name: /甘特|Gantt/i }).first();
+  await gantt.click();
+  await expect(gantt).toHaveAttribute("aria-pressed", "true");
+  await expect(page.locator("#gantt-container")).toBeVisible();
   await expect(page.getByText("Original project task", { exact: true }).first()).toBeVisible();
   await page.goto("/browser-lab/lab/planner");
   await page.getByRole("button", { name: "个人事项", exact: true }).click();

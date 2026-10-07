@@ -4,39 +4,70 @@
 from django.db import migrations
 
 SQL = r"""
+CREATE OR REPLACE FUNCTION lab_work() RETURNS TABLE(workspace uuid, person uuid, task uuid, major boolean) LANGUAGE sql AS $$
+  SELECT i.workspace_id, ia.assignee_id, i.id, COALESCE(b.major, false)
+  FROM issue_assignees ia JOIN issues i ON i.id=ia.issue_id JOIN states s ON s.id=i.state_id
+  LEFT JOIN lab_bounty b ON b.issue_id=i.id
+  LEFT JOIN lab_allocation a ON a.bounty_id=b.id AND a.user_id=ia.assignee_id AND a.approved
+  WHERE EXISTS (SELECT 1 FROM lab_workspacepolicy p WHERE p.workspace_id=i.workspace_id)
+    AND i.deleted_at IS NULL AND ia.deleted_at IS NULL AND i.archived_at IS NULL
+    AND NOT i.is_draft AND s.deleted_at IS NULL AND s."group"='started'
+    AND NOT (COALESCE(a.closed,false) AND b.status IN ('active','review','acceptance_review','partial','rework'))
+  UNION
+  SELECT st.workspace_id, a.user_id, b.issue_id_snapshot, b.major
+  FROM lab_allocation a JOIN lab_bounty b ON b.id=a.bounty_id JOIN lab_stage st ON st.id=b.stage_id
+  WHERE EXISTS (SELECT 1 FROM lab_workspacepolicy p WHERE p.workspace_id=st.workspace_id)
+    AND a.user_id IS NOT NULL AND a.approved AND NOT a.closed
+    AND b.status IN ('active','review','acceptance_review','partial','rework');
+$$;
+
 CREATE OR REPLACE FUNCTION lab_wip_lock(ws uuid) RETURNS void LANGUAGE plpgsql AS $$
+DECLARE baseline jsonb;
 BEGIN
-  IF EXISTS (SELECT 1 FROM lab_workspacepolicy WHERE workspace_id = ws) THEN
-    PERFORM pg_advisory_xact_lock(hashtextextended('lab-wip:' || ws::text, 0));
+  IF EXISTS (SELECT 1 FROM lab_workspacepolicy) THEN
+    -- A statement trigger takes the same lock BEFORE native tuple locks. The
+    -- single lock also gives cross-workspace transfers one consistent order.
+    PERFORM pg_advisory_xact_lock(hashtextextended('lab-wip-transactions', 0));
+    IF COALESCE(current_setting('lab.wip_baseline',true),'')='' THEN
+      SELECT COALESCE(jsonb_object_agg(person_key, tasks),'{}'::jsonb) INTO baseline
+      FROM (
+        SELECT workspace::text || ':' || person::text AS person_key,
+          jsonb_build_object('active',jsonb_agg(DISTINCT task::text),
+            'major',COALESCE(jsonb_agg(DISTINCT task::text) FILTER (WHERE major),'[]'::jsonb)) AS tasks
+        FROM lab_work() GROUP BY workspace,person
+      ) grouped;
+      PERFORM set_config('lab.wip_baseline',baseline::text,true);
+    END IF;
   END IF;
 END $$;
 
+CREATE OR REPLACE FUNCTION lab_wip_prepare() RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN
+  PERFORM lab_wip_lock(NULL);
+  RETURN NULL;
+END $$;
+
 CREATE OR REPLACE FUNCTION lab_wip_validate(ws uuid) RETURNS void LANGUAGE plpgsql AS $$
-DECLARE violation record;
+DECLARE violation record; baseline jsonb;
 BEGIN
   IF NOT EXISTS (SELECT 1 FROM lab_workspacepolicy WHERE workspace_id = ws) THEN RETURN; END IF;
-  WITH work AS (
-    SELECT ia.assignee_id AS person, i.id AS task, COALESCE(b.major, false) AS major
-    FROM issue_assignees ia JOIN issues i ON i.id = ia.issue_id JOIN states s ON s.id = i.state_id
-    LEFT JOIN lab_bounty b ON b.issue_id = i.id
-    LEFT JOIN lab_allocation a ON a.bounty_id = b.id AND a.user_id = ia.assignee_id AND a.approved
-    WHERE i.workspace_id = ws AND i.deleted_at IS NULL AND ia.deleted_at IS NULL
-      AND i.archived_at IS NULL AND NOT i.is_draft AND s.deleted_at IS NULL AND s."group" = 'started'
-      AND NOT COALESCE(a.closed, false)
-    UNION
-    SELECT a.user_id AS person, b.issue_id_snapshot AS task, b.major
-    FROM lab_allocation a JOIN lab_bounty b ON b.id = a.bounty_id JOIN lab_stage st ON st.id = b.stage_id
-    WHERE st.workspace_id = ws AND a.user_id IS NOT NULL AND a.approved AND NOT a.closed
-      AND b.status IN ('active', 'review', 'acceptance_review', 'partial', 'rework', 'rejected')
-  ), counts AS (
-    SELECT person, count(DISTINCT task) AS active, count(DISTINCT task) FILTER (WHERE major) AS major
-    FROM work GROUP BY person
+  baseline:=COALESCE(NULLIF(current_setting('lab.wip_baseline',true),'')::jsonb,'{}'::jsonb);
+  WITH counts AS (
+    SELECT person, count(DISTINCT task) AS active, count(DISTINCT task) FILTER (WHERE major) AS major,
+      jsonb_agg(DISTINCT task::text) AS active_tasks,
+      COALESCE(jsonb_agg(DISTINCT task::text) FILTER (WHERE major),'[]'::jsonb) AS major_tasks
+    FROM lab_work() WHERE workspace=ws GROUP BY person
   ), limits AS (
     SELECT user_id, max(active_limit) AS active, max(major_limit) AS major
     FROM lab_wipexception WHERE workspace_id = ws AND expires_at > statement_timestamp() GROUP BY user_id
   )
   SELECT c.* INTO violation FROM counts c LEFT JOIN limits l ON l.user_id = c.person
-  WHERE c.active > COALESCE(l.active,2) OR c.major > COALESCE(l.major,1) LIMIT 1;
+  -- Expired exceptions allow existing work to finish, but cannot admit new
+  -- tasks while over quota. Comparing identities also rejects replacements.
+  WHERE (c.active > COALESCE(l.active,2) AND NOT c.active_tasks <@
+    COALESCE(baseline->(ws::text || ':' || c.person::text)->'active','[]'::jsonb))
+    OR (c.major > COALESCE(l.major,1) AND NOT c.major_tasks <@
+    COALESCE(baseline->(ws::text || ':' || c.person::text)->'major','[]'::jsonb)) LIMIT 1;
   IF FOUND THEN
     RAISE EXCEPTION 'lab_wip_limit: active <= 2, major <= 1 unless an approved exception exists' USING ERRCODE='23514';
   END IF;
@@ -50,7 +81,7 @@ BEGIN
   IF TG_OP='UPDATE' AND OLD.workspace_id IS DISTINCT FROM NEW.workspace_id THEN PERFORM lab_wip_lock(OLD.workspace_id); END IF;
   IF TG_TABLE_NAME='issues' AND TG_OP='UPDATE' THEN
     SELECT * INTO bounty FROM lab_bounty WHERE issue_id = OLD.id;
-    IF FOUND AND bounty.status NOT IN ('done','cancelled') THEN
+    IF FOUND AND bounty.status NOT IN ('done','cancelled','rejected') THEN
       SELECT "group" INTO desired_group FROM states WHERE id=NEW.state_id;
       IF desired_group IN ('completed','cancelled') OR NEW.parent_id IS NOT NULL THEN
         RAISE EXCEPTION 'lab_bounty_workflow: open team work requires independent acceptance' USING ERRCODE='23514';
@@ -68,9 +99,9 @@ BEGIN
 END $$;
 
 CREATE TRIGGER lab_issue_before BEFORE INSERT OR UPDATE OR DELETE ON issues FOR EACH ROW EXECUTE FUNCTION lab_native_before();
-CREATE TRIGGER lab_issue_after AFTER INSERT OR UPDATE OR DELETE ON issues FOR EACH ROW EXECUTE FUNCTION lab_native_after();
+CREATE CONSTRAINT TRIGGER lab_issue_after AFTER INSERT OR UPDATE OR DELETE ON issues DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION lab_native_after();
 CREATE TRIGGER lab_assignee_before BEFORE INSERT OR UPDATE OR DELETE ON issue_assignees FOR EACH ROW EXECUTE FUNCTION lab_native_before();
-CREATE TRIGGER lab_assignee_after AFTER INSERT OR UPDATE OR DELETE ON issue_assignees FOR EACH ROW EXECUTE FUNCTION lab_native_after();
+CREATE CONSTRAINT TRIGGER lab_assignee_after AFTER INSERT OR UPDATE OR DELETE ON issue_assignees DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION lab_native_after();
 
 CREATE OR REPLACE FUNCTION lab_business_before() RETURNS trigger LANGUAGE plpgsql AS $$
 DECLARE ws uuid;
@@ -93,15 +124,15 @@ BEGIN
 END $$;
 
 CREATE TRIGGER lab_bounty_before BEFORE INSERT OR UPDATE ON lab_bounty FOR EACH ROW EXECUTE FUNCTION lab_business_before();
-CREATE TRIGGER lab_bounty_after AFTER INSERT OR UPDATE ON lab_bounty FOR EACH ROW EXECUTE FUNCTION lab_business_after();
+CREATE CONSTRAINT TRIGGER lab_bounty_after AFTER INSERT OR UPDATE ON lab_bounty DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION lab_business_after();
 CREATE TRIGGER lab_allocation_before BEFORE INSERT OR UPDATE ON lab_allocation FOR EACH ROW EXECUTE FUNCTION lab_business_before();
-CREATE TRIGGER lab_allocation_after AFTER INSERT OR UPDATE ON lab_allocation FOR EACH ROW EXECUTE FUNCTION lab_business_after();
+CREATE CONSTRAINT TRIGGER lab_allocation_after AFTER INSERT OR UPDATE ON lab_allocation DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION lab_business_after();
 
 CREATE OR REPLACE FUNCTION lab_state_before() RETURNS trigger LANGUAGE plpgsql AS $$
 BEGIN
   PERFORM lab_wip_lock(CASE WHEN TG_OP='DELETE' THEN OLD.workspace_id ELSE NEW.workspace_id END);
   IF TG_OP='UPDATE' AND NEW."group" IN ('completed','cancelled') AND OLD."group" IS DISTINCT FROM NEW."group"
-     AND EXISTS (SELECT 1 FROM issues i JOIN lab_bounty b ON b.issue_id=i.id WHERE i.state_id=OLD.id AND b.status NOT IN ('done','cancelled')) THEN
+     AND EXISTS (SELECT 1 FROM issues i JOIN lab_bounty b ON b.issue_id=i.id WHERE i.state_id=OLD.id AND b.status NOT IN ('done','cancelled','rejected')) THEN
     RAISE EXCEPTION 'lab_bounty_workflow: state group cannot bypass acceptance' USING ERRCODE='23514';
   END IF;
   RETURN CASE WHEN TG_OP='DELETE' THEN OLD ELSE NEW END;
@@ -112,7 +143,15 @@ BEGIN
   RETURN NULL;
 END $$;
 CREATE TRIGGER lab_state_before BEFORE UPDATE OR DELETE ON states FOR EACH ROW EXECUTE FUNCTION lab_state_before();
-CREATE TRIGGER lab_state_after AFTER UPDATE OR DELETE ON states FOR EACH ROW EXECUTE FUNCTION lab_state_after();
+CREATE CONSTRAINT TRIGGER lab_state_after AFTER UPDATE OR DELETE ON states DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION lab_state_after();
+
+CREATE TRIGGER lab_issue_prepare BEFORE INSERT OR UPDATE OR DELETE ON issues FOR EACH STATEMENT EXECUTE FUNCTION lab_wip_prepare();
+CREATE TRIGGER lab_assignee_prepare BEFORE INSERT OR UPDATE OR DELETE ON issue_assignees FOR EACH STATEMENT EXECUTE FUNCTION lab_wip_prepare();
+CREATE TRIGGER lab_state_prepare BEFORE INSERT OR UPDATE OR DELETE ON states FOR EACH STATEMENT EXECUTE FUNCTION lab_wip_prepare();
+CREATE TRIGGER lab_bounty_prepare BEFORE INSERT OR UPDATE OR DELETE ON lab_bounty FOR EACH STATEMENT EXECUTE FUNCTION lab_wip_prepare();
+CREATE TRIGGER lab_allocation_prepare BEFORE INSERT OR UPDATE OR DELETE ON lab_allocation FOR EACH STATEMENT EXECUTE FUNCTION lab_wip_prepare();
+CREATE TRIGGER lab_stage_prepare BEFORE INSERT OR UPDATE OR DELETE ON lab_stage FOR EACH STATEMENT EXECUTE FUNCTION lab_wip_prepare();
+CREATE TRIGGER lab_exception_prepare BEFORE INSERT OR UPDATE OR DELETE ON lab_wipexception FOR EACH STATEMENT EXECUTE FUNCTION lab_wip_prepare();
 
 CREATE OR REPLACE FUNCTION lab_ledger_immutable() RETURNS trigger LANGUAGE plpgsql AS $$
 BEGIN
@@ -135,6 +174,13 @@ CREATE TRIGGER lab_stage_frozen BEFORE UPDATE ON lab_stage FOR EACH ROW EXECUTE 
 """
 
 REVERSE = r"""
+DROP TRIGGER IF EXISTS lab_issue_prepare ON issues;
+DROP TRIGGER IF EXISTS lab_assignee_prepare ON issue_assignees;
+DROP TRIGGER IF EXISTS lab_state_prepare ON states;
+DROP TRIGGER IF EXISTS lab_bounty_prepare ON lab_bounty;
+DROP TRIGGER IF EXISTS lab_allocation_prepare ON lab_allocation;
+DROP TRIGGER IF EXISTS lab_stage_prepare ON lab_stage;
+DROP TRIGGER IF EXISTS lab_exception_prepare ON lab_wipexception;
 DROP TRIGGER IF EXISTS lab_stage_frozen ON lab_stage;
 DROP TRIGGER IF EXISTS lab_ledger_immutable ON lab_ledger;
 DROP TRIGGER IF EXISTS lab_state_before ON states;
@@ -148,6 +194,7 @@ DROP TRIGGER IF EXISTS lab_bounty_after ON lab_bounty;
 DROP TRIGGER IF EXISTS lab_allocation_before ON lab_allocation;
 DROP TRIGGER IF EXISTS lab_allocation_after ON lab_allocation;
 DROP FUNCTION IF EXISTS lab_stage_frozen(), lab_ledger_immutable(), lab_state_before(), lab_state_after(), lab_native_before(), lab_native_after(), lab_business_before(), lab_business_after(), lab_wip_validate(uuid), lab_wip_lock(uuid);
+DROP FUNCTION IF EXISTS lab_wip_prepare(), lab_work();
 """
 
 

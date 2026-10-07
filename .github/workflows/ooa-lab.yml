@@ -21,6 +21,7 @@ concurrency:
 
 jobs:
   backend:
+    needs: frontend
     runs-on: ubuntu-latest
     timeout-minutes: 50
     steps:
@@ -56,6 +57,48 @@ jobs:
         run: docker compose -f docker-compose-test.yml -f compose.lab-test.yml run --rm api-tests python manage.py makemigrations --check --dry-run lab
       - name: API lint
         run: docker compose -f docker-compose-test.yml -f compose.lab-test.yml run --rm api-tests ruff check plane/lab plane/tests/contract/api/lab
+      - uses: actions/setup-node@v6
+        if: contains(github.event.head_commit.message, '[full-regression]')
+        with:
+          node-version: 22.22.1
+      - name: Install runtime JavaScript dependencies
+        if: contains(github.event.head_commit.message, '[full-regression]')
+        run: |
+          corepack enable
+          corepack prepare pnpm@11.3.0 --activate
+          pnpm install --frozen-lockfile --network-concurrency 4 --child-concurrency 1
+          pnpm exec playwright install --with-deps chromium
+      - uses: actions/download-artifact@v8
+        if: contains(github.event.head_commit.message, '[full-regression]')
+        with:
+          name: lab-builds
+          path: .
+      - name: Start isolated complete deployment and validate Caddy
+        if: contains(github.event.head_commit.message, '[full-regression]')
+        env:
+          LAB_COMPOSE_PROJECT: ooa-plane-e2e
+        run: |
+          docker run --rm -v "$PWD/tools/lab/Caddyfile:/etc/caddy/Caddyfile:ro" caddy:2.10.2-alpine caddy validate --config /etc/caddy/Caddyfile
+          tools/lab/lab.sh init
+          tools/lab/lab.sh start
+          for attempt in $(seq 1 60); do
+            if curl --fail --silent http://localhost:8080/api/instances/ >/dev/null; then exit 0; fi
+            sleep 2
+          done
+          exit 1
+      - name: Real browser contracts and independent backup recovery
+        if: contains(github.event.head_commit.message, '[full-regression]')
+        env:
+          LAB_E2E_PROJECT: ooa-plane-e2e
+          LAB_COMPOSE_PROJECT: ooa-plane-e2e
+        run: |
+          pnpm exec playwright test --config tools/lab/e2e/playwright.config.ts
+          docker compose -p ooa-plane-e2e -f compose.lab.yml exec -T plane-minio sh -c 'mc alias set lab http://localhost:9000 "$MINIO_ROOT_USER" "$MINIO_ROOT_PASSWORD" >/dev/null && printf lab-backup-contract | mc pipe lab/uploads/browser-contract.txt'
+          python3 tools/lab/backup.py backup "$RUNNER_TEMP/lab-backup" "$RUNNER_TEMP/lab-keys"
+          python3 tools/lab/backup.py restore-verify "$RUNNER_TEMP/lab-backup" "$RUNNER_TEMP/lab-keys/lab-backup.totp.key"
+      - name: Remove only isolated browser deployment
+        if: always() && contains(github.event.head_commit.message, '[full-regression]')
+        run: docker compose -p ooa-plane-e2e -f compose.lab.yml down -v
       - uses: actions/upload-artifact@v7
         if: always()
         with:
@@ -100,3 +143,13 @@ jobs:
         run: |
           pnpm exec playwright install --with-deps chromium
           pnpm exec playwright test --config tools/lab/browser/playwright.config.ts
+      - uses: actions/upload-artifact@v7
+        with:
+          name: lab-builds
+          path: |
+            apps/web/build/client
+            apps/admin/build/client
+            apps/space/build/client
+            apps/live/dist
+            packages/*/dist
+          retention-days: 3

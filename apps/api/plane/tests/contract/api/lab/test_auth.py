@@ -253,3 +253,70 @@ def test_reset_invalidates_sessions_tokens_and_old_authenticator_preserves_user(
         original.save(update_fields=["is_active"])
     with freeze_time("2026-10-08 03:02:00"):
         assert post("sign-in", {"username": "alice", "code": authenticator.now()}).status_code == 401
+
+
+def test_clock_tolerance_expiry_and_replays_across_allowed_steps():
+    with freeze_time("2026-10-08 03:00:00"):
+        enrollment = bootstrap(Client())
+        authenticator = pyotp.parse_uri(enrollment["otpauth"])
+        assert post("confirm", {"token": enrollment["token"], "code": authenticator.now()}).status_code == 201
+    with freeze_time("2026-10-08 03:02:00"):
+        from django.utils import timezone
+
+        now = timezone.now().timestamp()
+        assert post("sign-in", {"username": "alice", "code": authenticator.at(now - 60)}).status_code == 401
+        previous = authenticator.at(now - 30)
+        assert post("sign-in", {"username": "alice", "code": previous}).status_code == 200
+        assert post("sign-in", {"username": "alice", "code": previous}).status_code == 401
+        future = authenticator.at(now + 30)
+        assert post("sign-in", {"username": "alice", "code": future}).status_code == 200
+        assert post("sign-in", {"username": "alice", "code": authenticator.now()}).status_code == 401
+
+
+def test_reset_and_old_rebinding_confirmation_share_lock_order(monkeypatch):
+    from threading import Barrier
+    from plane.db.models import User
+    from plane.lab.auth import issue_invitation
+    from plane.lab.models import Credential, Invitation
+
+    monkeypatch.setattr("plane.lab.auth.revoke_live_sessions", lambda user_id: None)
+    with freeze_time("2026-10-08 03:00:00"):
+        original = bootstrap(Client())
+        assert (
+            post(
+                "confirm", {"token": original["token"], "code": pyotp.parse_uri(original["otpauth"]).now()}
+            ).status_code
+            == 201
+        )
+        user = User.objects.get(username="alice")
+        old_invitation, token = issue_invitation("rebind", user=user)
+        pending = post("enroll", {"token": token}).json()
+        barrier = Barrier(2)
+
+        def reset_again():
+            close_old_connections()
+            try:
+                barrier.wait(timeout=10)
+                return issue_invitation("rebind", user=user)[0].id
+            finally:
+                close_old_connections()
+
+        def complete_old():
+            close_old_connections()
+            try:
+                barrier.wait(timeout=10)
+                return post(
+                    "confirm", {"token": pending["token"], "code": pyotp.parse_uri(pending["otpauth"]).now()}
+                ).status_code
+            finally:
+                close_old_connections()
+
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            resetting = pool.submit(reset_again)
+            completing = pool.submit(complete_old)
+            latest = resetting.result(timeout=20)
+            assert completing.result(timeout=20) in (201, 400)
+        assert not Credential.objects.get(user=user).enabled
+        old_invitation.refresh_from_db()
+        assert old_invitation.consumed_at or old_invitation.revoked_at
+        assert Invitation.objects.get(id=latest).revoked_at is None

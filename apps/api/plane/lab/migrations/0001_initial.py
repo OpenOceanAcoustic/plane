@@ -17,7 +17,7 @@ class Migration(migrations.Migration):
         migrations.CreateModel(
             name="Invitation",
             fields=[
-                ("id", models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)),
+                ("id", models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False, serialize=False)),
                 ("created_at", models.DateTimeField(auto_now_add=True)),
                 ("token_hash", models.CharField(max_length=64, unique=True)),
                 (
@@ -38,7 +38,7 @@ class Migration(migrations.Migration):
         migrations.CreateModel(
             name="Enrollment",
             fields=[
-                ("id", models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)),
+                ("id", models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False, serialize=False)),
                 ("created_at", models.DateTimeField(auto_now_add=True)),
                 ("invitation", models.ForeignKey("lab.invitation", on_delete=models.CASCADE)),
                 ("token_hash", models.CharField(max_length=64, unique=True)),
@@ -52,7 +52,7 @@ class Migration(migrations.Migration):
         migrations.CreateModel(
             name="Credential",
             fields=[
-                ("id", models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)),
+                ("id", models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False, serialize=False)),
                 ("created_at", models.DateTimeField(auto_now_add=True)),
                 ("user", models.OneToOneField(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)),
                 ("encrypted_secret", models.TextField()),
@@ -64,7 +64,7 @@ class Migration(migrations.Migration):
         migrations.CreateModel(
             name="LoginAccount",
             fields=[
-                ("id", models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)),
+                ("id", models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False, serialize=False)),
                 ("created_at", models.DateTimeField(auto_now_add=True)),
                 ("identity_hash", models.CharField(max_length=64, unique=True)),
             ],
@@ -72,7 +72,7 @@ class Migration(migrations.Migration):
         migrations.CreateModel(
             name="LoginAttempt",
             fields=[
-                ("id", models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)),
+                ("id", models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False, serialize=False)),
                 ("created_at", models.DateTimeField(auto_now_add=True)),
                 ("account", models.ForeignKey("lab.loginaccount", on_delete=models.CASCADE)),
                 ("submitted_at", models.DateTimeField(db_index=True)),
@@ -82,7 +82,7 @@ class Migration(migrations.Migration):
         migrations.CreateModel(
             name="Audit",
             fields=[
-                ("id", models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)),
+                ("id", models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False, serialize=False)),
                 ("created_at", models.DateTimeField(auto_now_add=True)),
                 ("actor", models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True)),
                 ("actor_name", models.CharField(max_length=255, blank=True)),
@@ -95,7 +95,7 @@ class Migration(migrations.Migration):
         migrations.CreateModel(
             name="WorkspacePolicy",
             fields=[
-                ("id", models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)),
+                ("id", models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False, serialize=False)),
                 ("created_at", models.DateTimeField(auto_now_add=True)),
                 ("workspace", models.OneToOneField("db.Workspace", on_delete=models.CASCADE)),
             ],
@@ -103,7 +103,7 @@ class Migration(migrations.Migration):
         migrations.CreateModel(
             name="Folder",
             fields=[
-                ("id", models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)),
+                ("id", models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False, serialize=False)),
                 ("created_at", models.DateTimeField(auto_now_add=True)),
                 ("workspace", models.ForeignKey("db.Workspace", on_delete=models.CASCADE)),
                 ("user", models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)),
@@ -115,7 +115,7 @@ class Migration(migrations.Migration):
         migrations.CreateModel(
             name="PersonalItem",
             fields=[
-                ("id", models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)),
+                ("id", models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False, serialize=False)),
                 ("created_at", models.DateTimeField(auto_now_add=True)),
                 ("workspace", models.ForeignKey("db.Workspace", on_delete=models.CASCADE)),
                 ("user", models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)),
@@ -140,7 +140,7 @@ class Migration(migrations.Migration):
         migrations.CreateModel(
             name="TimeBlock",
             fields=[
-                ("id", models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)),
+                ("id", models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False, serialize=False)),
                 ("created_at", models.DateTimeField(auto_now_add=True)),
                 ("item", models.ForeignKey("lab.personalitem", on_delete=models.CASCADE, related_name="blocks")),
                 ("start", models.DateTimeField(db_index=True)),
@@ -157,7 +157,7 @@ class Migration(migrations.Migration):
         migrations.CreateModel(
             name="ProjectFlow",
             fields=[
-                ("id", models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)),
+                ("id", models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False, serialize=False)),
                 ("created_at", models.DateTimeField(auto_now_add=True)),
                 ("project", models.OneToOneField("db.Project", on_delete=models.CASCADE)),
                 ("todo", models.ForeignKey("db.State", on_delete=models.SET_NULL, null=True, related_name="lab_todo")),
@@ -175,7 +175,7 @@ class Migration(migrations.Migration):
         migrations.CreateModel(
             name="Stage",
             fields=[
-                ("id", models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)),
+                ("id", models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False, serialize=False)),
                 ("created_at", models.DateTimeField(auto_now_add=True)),
                 ("workspace", models.ForeignKey("db.Workspace", on_delete=models.SET_NULL, null=True)),
                 ("project", models.ForeignKey("db.Project", on_delete=models.SET_NULL, null=True)),
@@ -195,7 +195,7 @@ class Migration(migrations.Migration):
         migrations.CreateModel(
             name="Bounty",
             fields=[
-                ("id", models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)),
+                ("id", models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False, serialize=False)),
                 ("created_at", models.DateTimeField(auto_now_add=True)),
                 ("stage", models.ForeignKey("lab.stage", on_delete=models.PROTECT, related_name="bounties")),
                 ("issue", models.OneToOneField("db.Issue", on_delete=models.SET_NULL, null=True)),
@@ -245,7 +245,7 @@ class Migration(migrations.Migration):
         migrations.CreateModel(
             name="Allocation",
             fields=[
-                ("id", models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)),
+                ("id", models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False, serialize=False)),
                 ("created_at", models.DateTimeField(auto_now_add=True)),
                 ("bounty", models.ForeignKey("lab.bounty", on_delete=models.PROTECT, related_name="allocations")),
                 ("user", models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True)),
@@ -267,7 +267,7 @@ class Migration(migrations.Migration):
         migrations.CreateModel(
             name="Acceptance",
             fields=[
-                ("id", models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)),
+                ("id", models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False, serialize=False)),
                 ("created_at", models.DateTimeField(auto_now_add=True)),
                 ("bounty", models.ForeignKey("lab.bounty", on_delete=models.PROTECT, related_name="acceptances")),
                 ("reviewer", models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True)),
@@ -291,7 +291,7 @@ class Migration(migrations.Migration):
         migrations.CreateModel(
             name="Ledger",
             fields=[
-                ("id", models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)),
+                ("id", models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False, serialize=False)),
                 ("created_at", models.DateTimeField(auto_now_add=True)),
                 ("bounty", models.ForeignKey("lab.bounty", on_delete=models.PROTECT, related_name="ledger")),
                 ("allocation", models.ForeignKey("lab.allocation", on_delete=models.PROTECT, related_name="ledger")),
@@ -309,7 +309,7 @@ class Migration(migrations.Migration):
         migrations.CreateModel(
             name="WIPException",
             fields=[
-                ("id", models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)),
+                ("id", models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False, serialize=False)),
                 ("created_at", models.DateTimeField(auto_now_add=True)),
                 ("workspace", models.ForeignKey("db.Workspace", on_delete=models.CASCADE)),
                 ("user", models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)),

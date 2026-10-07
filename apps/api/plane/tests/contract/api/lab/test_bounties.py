@@ -262,3 +262,155 @@ def test_stale_or_foreign_action_references_return_controlled_errors(laboratory)
     assert action(lab, lab["lead"], bounty, "approve", {"allocation_id": str(uuid.uuid4())}).status_code == 404
     assert action(lab, lab["lead"], bounty, "approve", {"allocation_id": "invalid"}).status_code == 400
     assert action(lab, lab["member"], bounty, "confirm").status_code == 404
+
+
+def test_one_major_task_per_person_and_revoked_participant_cannot_start(laboratory):
+    from plane.db.models import ProjectMember
+
+    lab = laboratory
+    first, _, _ = prepare(lab, budget="40")
+    assert action(lab, lab["independent"], first, "publication-review", {"reason": "Checked"}).status_code == 200
+    start(lab, first, planned="40")
+    second, _, _ = prepare(lab, budget="40", title="Second major task")
+    assert action(lab, lab["independent"], second, "publication-review", {"reason": "Checked"}).status_code == 200
+    claim = action(lab, lab["member"], second, "claim", {"planned": "40", "deliverable": "Report"})
+    assert claim.status_code == 200
+    assert action(lab, lab["lead"], second, "approve", {"allocation_id": claim.json()["id"]}).status_code == 200
+    assert action(lab, lab["member"], second, "confirm").status_code == 200
+    assert action(lab, lab["lead"], second, "start").status_code == 409
+    assert Issue.objects.filter(state=lab["states"]["active"]).count() == 1
+    ProjectMember.objects.filter(project=lab["project"], member=lab["member"]).update(is_active=False)
+    assert action(lab, lab["lead"], second, "start").status_code == 404
+
+
+def assigned_task(lab, title, state="active", user=None):
+    with transaction.atomic():
+        issue = Issue.objects.create(
+            workspace=lab["workspace"], project=lab["project"], name=title, state=lab["states"][state]
+        )
+        IssueAssignee.objects.create(
+            workspace=lab["workspace"], project=lab["project"], issue=issue, assignee=user or lab["member"]
+        )
+    return issue
+
+
+def test_expired_wip_exception_allows_finishing_and_unrelated_edits_but_no_new_work(laboratory):
+    from datetime import timedelta
+    from django.utils import timezone
+    from plane.lab.models import WIPException, WorkspacePolicy
+
+    lab = laboratory
+    WorkspacePolicy.objects.create(workspace=lab["workspace"])
+    exception = WIPException.objects.create(
+        workspace=lab["workspace"],
+        user=lab["member"],
+        approver=lab["lead"],
+        reason="Approved parallel work",
+        active_limit=4,
+        major_limit=1,
+        expires_at=timezone.now() + timedelta(days=1),
+    )
+    tasks = [assigned_task(lab, f"Approved {index}") for index in range(4)]
+    WIPException.objects.filter(id=exception.id).update(expires_at=timezone.now() - timedelta(seconds=1))
+    # Other members can continue working, and the over-limit member can close one at a time.
+    unrelated = assigned_task(lab, "Other member", user=lab["reviewer"])
+    Issue.objects.filter(id=unrelated.id).update(name="Still editable")
+    Issue.objects.filter(id=tasks[0].id).update(state=lab["states"]["done"])
+    with pytest.raises(IntegrityError), transaction.atomic():
+        assigned_task(lab, "Cannot expand overage")
+    Issue.objects.filter(id=tasks[1].id).update(state=lab["states"]["done"])
+    with pytest.raises(IntegrityError), transaction.atomic():
+        assigned_task(lab, "Third remains prohibited")
+    Issue.objects.filter(id=tasks[2].id).update(state=lab["states"]["done"])
+    assigned_task(lab, "Within ordinary quota again")
+
+
+def test_rejection_closes_work_releases_unused_budget_and_preserves_partial_contribution(laboratory):
+    from plane.lab.models import Bounty
+
+    lab = laboratory
+    bounty, issue, _ = prepare(lab)
+    allocation = start(lab, bounty)
+    action(lab, lab["member"], bounty, "submit", {"evidence": "Partial evidence"})
+    partial = {
+        "request_key": str(uuid.uuid4()),
+        "result": "partial",
+        "reason": "First portion verified",
+        "targets": {allocation: "10"},
+    }
+    assert action(lab, lab["reviewer"], bounty, "accept", partial).status_code == 200
+    action(lab, lab["member"], bounty, "submit", {"evidence": "Remaining evidence"})
+    rejected = {
+        "request_key": str(uuid.uuid4()),
+        "result": "reject",
+        "reason": "Remaining portion does not meet criteria",
+    }
+    assert action(lab, lab["reviewer"], bounty, "accept", rejected).status_code == 200
+    assert action(lab, lab["reviewer"], bounty, "accept", rejected).status_code == 200
+    closed = Bounty.objects.get(id=bounty)
+    assert closed.status == "rejected" and closed.reserved == 10
+    assert Allocation.objects.get(id=allocation).closed
+    assert total_awarded(bounty) == 10
+    issue.refresh_from_db()
+    assert issue.state_id == lab["states"]["todo"].id
+    assigned_task(lab, "Next 1")
+    assigned_task(lab, "Next 2")
+    with pytest.raises(IntegrityError), transaction.atomic():
+        assigned_task(lab, "Next 3")
+
+
+def total_awarded(bounty):
+    return sum(row.delta for row in Ledger.objects.filter(bounty_id=bounty))
+
+
+def test_completed_bounty_reopening_cannot_bypass_native_wip(laboratory):
+    lab = laboratory
+    bounty, issue, _ = prepare(lab)
+    allocation = start(lab, bounty)
+    action(lab, lab["member"], bounty, "submit", {"evidence": "Finished"})
+    assert (
+        action(
+            lab,
+            lab["reviewer"],
+            bounty,
+            "accept",
+            {"request_key": str(uuid.uuid4()), "result": "pass", "reason": "Verified", "targets": {allocation: "20"}},
+        ).status_code
+        == 200
+    )
+    assigned_task(lab, "Current 1")
+    assigned_task(lab, "Current 2")
+    with pytest.raises(IntegrityError), transaction.atomic():
+        Issue.objects.filter(id=issue.id).update(state=lab["states"]["active"])
+
+
+def test_native_edit_and_bounty_submission_do_not_deadlock(laboratory):
+    from threading import Barrier
+
+    lab = laboratory
+    bounty, issue, _ = prepare(lab)
+    start(lab, bounty)
+    barrier = Barrier(2)
+
+    def edit_native():
+        close_old_connections()
+        try:
+            barrier.wait(timeout=10)
+            with transaction.atomic():
+                return Issue.objects.filter(id=issue.id).update(name="Native edited title")
+        finally:
+            close_old_connections()
+
+    def submit_bounty():
+        close_old_connections()
+        try:
+            barrier.wait(timeout=10)
+            return action(lab, lab["member"], bounty, "submit", {"evidence": "Report"}).status_code
+        finally:
+            close_old_connections()
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        editing = pool.submit(edit_native)
+        submitting = pool.submit(submit_bounty)
+        assert editing.result(timeout=20) == 1
+        assert submitting.result(timeout=20) == 200

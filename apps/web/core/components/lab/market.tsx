@@ -287,7 +287,7 @@ export const LabMarket = observer(function LabMarket({ store }: { store: LabStor
                       复核验收
                     </Button>
                   )}
-                  {bounty.is_lead && !["done", "cancelled"].includes(bounty.status) && (
+                  {bounty.is_lead && !["done", "cancelled", "rejected"].includes(bounty.status) && (
                     <Button size="sm" variant="neutral-primary" onClick={() => actionReason(bounty, "cancel")}>
                       取消并释放未授予预算
                     </Button>

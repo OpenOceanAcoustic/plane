@@ -49,7 +49,7 @@ tools/lab/lab.sh access purge
 
 注册填写 3–64 位英文用户名（忽略大小写）、显示姓名、联系邮箱；邮箱用于联系，无需 SMTP 验证。恢复链接无需重新填写资料。扫码绑定 Authenticator 后输入六位码确认，再等待下一动态码登录。每个动态码时间步只能使用一次，管理后台和主应用也共用这一限制。动态码采用 30 秒标准 TOTP、前后一步时钟容差，依据 [PyOTP 文档](https://pyauth.github.io/pyotp/)。每账号十分钟五次登录提交，成功也计数；重复点击、切换 IP 或重启服务均不增加额度。
 
-`reset` 立即禁用旧凭据、删除旧会话、停用该用户的 API 令牌。重新绑定使用原用户 ID，任务、工作区角色、贡献历史保留。不要通过 `createsuperuser`、数据库明文密码、邮件或 OAuth 绕过流程；这些账号没有实验室凭据和会话标记，不能访问业务。
+`reset` 立即禁用旧凭据、删除旧会话、停用该用户的 API 令牌，并通过 Redis 断开既有 Live 文档连接。重新绑定使用原用户 ID，任务、工作区角色、贡献历史保留。不要通过 `createsuperuser`、数据库明文密码、邮件或 OAuth 绕过流程；这些账号没有实验室凭据和会话标记，不能访问业务。
 
 ## 规划与团队协作
 
@@ -57,7 +57,7 @@ tools/lab/lab.sh access purge
 
 项目负责人须在个人规划的“项目状态映射”选择四个不同状态。待做属于 backlog/unstarted，进行中和待验收属于 started，完成属于 completed。若上游项目没有待验收状态，请先在原生项目设置中新增。映射建立后可从任何入口维护原生状态，悬赏验收使用同一映射。
 
-周历使用上海时间、周一开周、十五分钟步长；点击“安排时间”或事项上的日历按钮新增时间块，拖动移动，点击调整开始/结束、拆分或删除。同一事项可有多个块；时间重叠会提示但允许保存。排期不会改动原任务起止日期。团队排期只允许管理员/项目负责人查看，成员只能维护本人时间块；私人及无项目访问权限的内容由 API 隐藏。
+周历使用上海时间、周一开周、十五分钟步长；点击“安排时间”或事项上的日历按钮新增时间块，拖动移动，拖动底边调整结束时间，点击调整开始/结束、拆分或删除。同一事项可有多个块；时间重叠会并排显示并提示，但允许保存。排期不会改动原任务起止日期。团队排期只允许管理员/项目负责人查看，成员只能维护本人时间块；私人及无项目访问权限的内容由 API 隐藏。
 
 负责人冻结阶段 B，再基于同项目顶层任务发布一张团队悬赏卡，明确 T、交付物、验收条件、验收人。成员申请个人分工，负责人批准，本人确认后团队开工。达到重大门槛须独立复核发布和验收；复核人与发布人、验收人不同，验收/复核人员不能认领本任务。默认每人最多两项进行中、一项重大；原生状态更新、指派、批量及 API 入口通过数据库约束检查。负责人批准例外须原因、截止时间及批准人，不能自批。
 
@@ -74,7 +74,24 @@ docker compose -f docker-compose-test.yml -f compose.lab-test.yml run --rm --bui
 docker compose -f docker-compose-test.yml -f compose.lab-test.yml run --rm api-tests pytest --migrations
 ```
 
-上述测试栈与实际部署使用独立网络和临时数据。只对测试栈 `down -v`；禁止对运行栈执行带 `-v` 的清理命令。浏览器检查仍需验证真实邀请、登录、原版看板和甘特、个人排期和悬赏流程。
+上述测试栈与实际部署使用独立网络和临时数据。只对测试栈 `down -v`；禁止对运行栈执行带 `-v` 的清理命令。组件浏览器契约通过以下命令运行，使用真实组件和模拟接口；不能替代完整部署验收。
+
+```bash
+node tools/lab/test-calendar.mjs
+pnpm --filter live test tests/extensions/lab-session-guard.test.ts
+pnpm exec playwright install chromium
+pnpm exec playwright test --config tools/lab/browser/playwright.config.ts
+```
+
+真实浏览器脚本位于 `tools/lab/e2e`，只允许使用独立 `ooa-plane-e2e` Compose 项目。它通过 SSH 初始化一次性测试管理员，验证真实动态码登录、原生看板和甘特以及个人排期；测试栈必须从空卷开始，且上述回环端口未被运行栈占用。脚本关闭录屏、截图与 tracing，避免记录绑定秘密。CI 的 `[full-regression]` 提交执行完整后端回归、真实部署浏览器流程和隔离恢复验证。
+
+```bash
+LAB_COMPOSE_PROJECT=ooa-plane-e2e tools/lab/lab.sh init
+LAB_COMPOSE_PROJECT=ooa-plane-e2e tools/lab/lab.sh start
+LAB_E2E_PROJECT=ooa-plane-e2e pnpm exec playwright test --config tools/lab/e2e/playwright.config.ts
+# 仅在明确使用测试项目时清理测试卷
+docker compose -p ooa-plane-e2e -f compose.lab.yml down -v
+```
 
 认证密钥保存在 `.secrets/lab-totp.key`，通过 Compose secret 挂载，独立于 Django SECRET_KEY。所有配置和密钥文件权限 0600，不进入 Git。数据库备份无法替代认证密钥备份。完整备份暂时暂停写入服务和 MinIO，结束后恢复原先运行的服务。
 

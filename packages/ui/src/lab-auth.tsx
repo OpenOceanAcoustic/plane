@@ -54,7 +54,10 @@ export function LabAuth({
       body: JSON.stringify(data),
     });
     const result = (await response.json()) as Enrollment & { error?: string; message?: string; retry_after?: number };
-    if (!response.ok) throw new Error(result.error ?? "暂时无法连接服务器");
+    if (!response.ok) {
+      const error = result.error ?? "暂时无法连接服务器";
+      throw new Error(result.retry_after ? `${error}，请在 ${result.retry_after} 秒后重试` : error);
+    }
     return result;
   }
 

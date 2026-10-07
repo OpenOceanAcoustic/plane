@@ -10,6 +10,7 @@ from zoneinfo import ZoneInfo
 
 from django.core.exceptions import ValidationError as ModelValidationError
 from django.db import IntegrityError, transaction
+from django.db.models import Max
 from django.http import HttpResponse
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
@@ -110,7 +111,13 @@ class FolderView(LabView):
                 user=request.user,
                 workspace=self.workspace,
                 name=name,
-                position=Folder.objects.filter(user=request.user, workspace=self.workspace).count(),
+                position=(
+                    Folder.objects.filter(user=request.user, workspace=self.workspace).aggregate(value=Max("position"))[
+                        "value"
+                    ]
+                    or 0
+                )
+                + 1,
             )
         return Response({"id": str(folder.id)}, status=201)
 
