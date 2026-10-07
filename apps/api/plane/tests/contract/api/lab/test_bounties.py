@@ -457,3 +457,51 @@ def test_full_wip_never_blocks_accounting_correction_and_reacceptance_adds_only_
     assert action(lab, lab["reviewer"], bounty, "accept", verified).status_code == 200
     assert action(lab, lab["reviewer"], bounty, "accept", verified).status_code == 200
     assert total_awarded(bounty) == 20 and Ledger.objects.filter(bounty_id=bounty).count() == 3
+
+
+@pytest.mark.parametrize("hidden_field", ["archived_at", "deleted_at"])
+def test_hidden_task_accounting_can_be_corrected_without_reopening_work(laboratory, hidden_field):
+    from django.utils import timezone
+    from plane.lab.models import Bounty
+
+    lab = laboratory
+    bounty, issue, _ = prepare(lab)
+    allocation = start(lab, bounty)
+    action(lab, lab["member"], bounty, "submit", {"evidence": "Report"})
+    assert (
+        action(
+            lab,
+            lab["reviewer"],
+            bounty,
+            "accept",
+            {"request_key": str(uuid.uuid4()), "result": "pass", "reason": "Verified", "targets": {allocation: "20"}},
+        ).status_code
+        == 200
+    )
+    Issue.objects.filter(id=issue.id).update(**{hidden_field: timezone.now()})
+    entry = Ledger.objects.get(bounty_id=bounty)
+    assert (
+        lab["client"](lab["lead"])
+        .post(
+            lab["base"] + f"ledger/{entry.id}/reverse/",
+            {"request_key": str(uuid.uuid4()), "reason": "Historical correction"},
+            format="json",
+        )
+        .status_code
+        == 200
+    )
+    assert action(lab, lab["lead"], bounty, "reopen", {"reason": "Hidden task"}).status_code == 404
+    assert total_awarded(bounty) == 0 and Bounty.objects.get(id=bounty).status == "done"
+    assert Allocation.objects.get(id=allocation).closed
+
+
+def test_native_state_paths_cannot_skip_team_start_confirmation(laboratory):
+    lab = laboratory
+    bounty, issue, _ = prepare(lab)
+    with pytest.raises(IntegrityError), transaction.atomic():
+        Issue.objects.filter(id=issue.id).update(state=lab["states"]["active"])
+    with pytest.raises(IntegrityError), transaction.atomic():
+        type(lab["states"]["todo"]).objects.filter(id=lab["states"]["todo"].id).update(group="started")
+    issue.refresh_from_db()
+    assert issue.state_id == lab["states"]["todo"].id
+    start(lab, bounty)

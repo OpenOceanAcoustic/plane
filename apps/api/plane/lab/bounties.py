@@ -102,6 +102,8 @@ def publish(user, stage_id, data):
     issue = issue_access(user, stage.workspace, data.get("issue_id"), edit=True)
     if issue.project_id != stage.project_id or issue.parent_id or Bounty.objects.filter(issue=issue).exists():
         raise ValidationError("请选择同项目未发布悬赏的顶层任务，避免父子重复贡献")
+    if issue.state.group not in ("backlog", "unstarted"):
+        raise ValidationError("悬赏须在开工前发布，请选择待做任务")
     budget = amount(data.get("budget"))
     if budget <= 0 or total(Bounty.objects.filter(stage=stage), "reserved") + budget > stage.budget:
         raise ValidationError("阶段预算 B 不足或团队预算 T 无效")
@@ -464,6 +466,7 @@ def reopen(user, bounty_id, reason):
     require_lead(user, bounty.stage.project)
     if bounty.status not in ("done", "active", "partial", "rework") or not str(reason).strip() or not bounty.issue_id:
         raise ValidationError("仅可重新验收已关闭分工的贡献更正，须存在原任务并填写原因")
+    issue_access(user, bounty.stage.workspace, bounty.issue_id, edit=True)
     deficient = [
         row
         for row in Allocation.objects.filter(bounty=bounty, approved=True, closed=True)

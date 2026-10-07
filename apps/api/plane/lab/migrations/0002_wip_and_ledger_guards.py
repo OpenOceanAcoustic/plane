@@ -83,6 +83,9 @@ BEGIN
     SELECT * INTO bounty FROM lab_bounty WHERE issue_id = OLD.id;
     IF FOUND AND bounty.status NOT IN ('done','cancelled','rejected') THEN
       SELECT "group" INTO desired_group FROM states WHERE id=NEW.state_id;
+      IF desired_group='started' AND bounty.status IN ('open','publication_review') THEN
+        RAISE EXCEPTION 'lab_bounty_workflow: team work must be approved and confirmed before start' USING ERRCODE='23514';
+      END IF;
       IF desired_group IN ('completed','cancelled') OR NEW.parent_id IS NOT NULL THEN
         RAISE EXCEPTION 'lab_bounty_workflow: open team work requires independent acceptance' USING ERRCODE='23514';
       END IF;
@@ -134,6 +137,10 @@ BEGIN
   IF TG_OP='UPDATE' AND NEW."group" IN ('completed','cancelled') AND OLD."group" IS DISTINCT FROM NEW."group"
      AND EXISTS (SELECT 1 FROM issues i JOIN lab_bounty b ON b.issue_id=i.id WHERE i.state_id=OLD.id AND b.status NOT IN ('done','cancelled','rejected')) THEN
     RAISE EXCEPTION 'lab_bounty_workflow: state group cannot bypass acceptance' USING ERRCODE='23514';
+  END IF;
+  IF TG_OP='UPDATE' AND NEW."group"='started' AND OLD."group" IS DISTINCT FROM NEW."group"
+     AND EXISTS (SELECT 1 FROM issues i JOIN lab_bounty b ON b.issue_id=i.id WHERE i.state_id=OLD.id AND b.status IN ('open','publication_review')) THEN
+    RAISE EXCEPTION 'lab_bounty_workflow: state group cannot bypass team start confirmation' USING ERRCODE='23514';
   END IF;
   RETURN CASE WHEN TG_OP='DELETE' THEN OLD ELSE NEW END;
 END $$;
