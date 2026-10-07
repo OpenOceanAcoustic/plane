@@ -1,0 +1,4 @@
+# Copyright (c) 2026 OpenOceanAcoustic and contributors
+# SPDX-License-Identifier: AGPL-3.0-only
+
+"""OpenOceanAcoustic laboratory collaboration extension (AGPL-3.0-only)."""

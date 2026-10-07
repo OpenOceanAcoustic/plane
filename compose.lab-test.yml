@@ -1,0 +1,11 @@
+# Overlay the upstream isolated test stack; secrets stay outside test containers.
+services:
+  test-minio:
+    image: minio/minio:RELEASE.2025-04-22T22-12-26Z
+  api-tests:
+    image: ooa-plane-api:lab
+    environment:
+      LAB_TOTP_KEY_FILE: ""
+      LAB_AUTH_ENABLED: "0"
+      DJANGO_SETTINGS_MODULE: plane.settings.test
+      TZ: Asia/Shanghai

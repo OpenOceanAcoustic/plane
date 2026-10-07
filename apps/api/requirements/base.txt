@@ -50,6 +50,8 @@ beautifulsoup4==4.12.3
 posthog==3.5.0
 # crypto
 cryptography==50.0.0
+pyotp==2.9.0
+qrcode[pil]==8.2
 # html validator
 lxml==6.1.0
 # s3

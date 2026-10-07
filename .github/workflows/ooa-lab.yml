@@ -1,0 +1,48 @@
+name: OpenOceanAcoustic lab validation
+
+on:
+  push:
+    branches: [feat/lab-planning-bounty-auth]
+  pull_request:
+    branches: [ooa/main]
+  workflow_dispatch:
+    inputs:
+      full_suite:
+        description: Run the complete upstream Django suite after lab contracts
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ooa-lab-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    timeout-minutes: 50
+    steps:
+      - uses: actions/checkout@v6
+      - name: Prepare isolated configuration
+        run: python3 tools/lab/setup.py
+      - name: Build upstream Python container and run real PostgreSQL contracts
+        run: |
+          docker compose -f docker-compose-test.yml -f compose.lab-test.yml run --rm --build api-tests pytest --migrations plane/tests/lab --junitxml=/code/lab-test-results.xml
+      - name: Complete upstream regression
+        if: github.event_name == 'workflow_dispatch' && inputs.full_suite
+        run: docker compose -f docker-compose-test.yml -f compose.lab-test.yml run --rm api-tests pytest --migrations --junitxml=/code/lab-full-test-results.xml
+      - name: Check Django migration state
+        run: docker compose -f docker-compose-test.yml -f compose.lab-test.yml run --rm api-tests python manage.py makemigrations --check --dry-run lab
+      - name: API lint
+        run: docker compose -f docker-compose-test.yml -f compose.lab-test.yml run --rm api-tests ruff check plane/lab plane/tests/lab
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: lab-test-results
+          path: apps/api/lab*test-results.xml
+          if-no-files-found: ignore
+      - name: Remove test resources
+        if: always()
+        run: docker compose -f docker-compose-test.yml -f compose.lab-test.yml down -v

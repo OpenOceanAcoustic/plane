@@ -28,6 +28,7 @@ import {
   useWorkspaceNavigationPreferences,
 } from "@/hooks/use-navigation-preferences";
 import { SidebarItemBase } from "./sidebar-item";
+import { LabNavigation } from "@/components/lab/navigation";
 
 export const SidebarMenuItems = observer(function SidebarMenuItems() {
   // routers
@@ -102,6 +103,7 @@ export const SidebarMenuItems = observer(function SidebarMenuItems() {
           <SidebarItemBase key={`static_${_index}`} item={item} />
         ))}
       </div>
+      <LabNavigation />
       <Disclosure as="div" className="flex flex-col" defaultOpen={!!isWorkspaceMenuOpen}>
         <div className="group flex w-full items-center justify-between rounded-sm px-2 py-1.5 text-placeholder hover:bg-layer-transparent-hover">
           <Disclosure.Button

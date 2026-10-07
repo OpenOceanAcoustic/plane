@@ -1,0 +1,123 @@
+/**
+ * Copyright (c) 2026 OpenOceanAcoustic and contributors
+ * SPDX-License-Identifier: AGPL-3.0-only
+ */
+
+import { useEffect, useMemo, useState } from "react";
+import { observer } from "mobx-react";
+import { useParams } from "react-router";
+import { API_BASE_URL } from "@plane/constants";
+import { LabStore } from "@plane/shared-state";
+import type { LabItem } from "@plane/types";
+import { Button } from "@plane/ui";
+import { LabCalendar } from "./calendar";
+import { LabMarket } from "./market";
+import { LabPlannerBoard } from "./planner";
+
+export const LabPanel = observer(function LabPanel() {
+  const { workspaceSlug = "", section = "planner" } = useParams();
+  const store = useMemo(() => new LabStore(API_BASE_URL, workspaceSlug), [workspaceSlug]);
+  const [tab, setTab] = useState<"board" | "calendar">("board");
+  const [scheduled, setScheduled] = useState<LabItem>();
+  useEffect(() => {
+    void store.execute(store.loadPlanner);
+    const refresh = () => {
+      if (document.visibilityState === "visible") void store.execute(store.loadPlanner);
+    };
+    window.addEventListener("focus", refresh);
+    const timer = window.setInterval(refresh, 30000);
+    return () => {
+      window.removeEventListener("focus", refresh);
+      window.clearInterval(timer);
+    };
+  }, [store]);
+  const title = section === "team" ? "团队排期" : section === "bounties" ? "悬赏大厅" : "个人规划";
+  return (
+    <main className="flex h-full w-full flex-col overflow-auto bg-surface-1 text-primary">
+      <header className="flex flex-wrap items-center gap-3 border-b border-subtle px-6 py-4">
+        <h1 className="mr-auto text-18 font-semibold">{title}</h1>
+        <Button
+          size="sm"
+          variant="neutral-primary"
+          loading={store.busy}
+          onClick={() =>
+            void store.execute(async () => {
+              await store.loadPlanner();
+              if (section === "bounties") await store.loadMarket();
+            })
+          }
+        >
+          刷新
+        </Button>
+      </header>
+      <div className="flex flex-col gap-5 p-6">
+        {store.error && (
+          <p role="alert" className="border-orange-300 bg-orange-50 text-orange-800 rounded border p-3 text-13">
+            {store.error}
+          </p>
+        )}
+        {store.notice && (
+          <p role="status" className="rounded bg-layer-1 p-3 text-13">
+            {store.notice}
+          </p>
+        )}
+        {!store.planner && !store.error && <p className="text-13 text-tertiary">正在读取实验室规划…</p>}
+        {store.planner && section === "planner" && (
+          <>
+            <nav className="flex items-center gap-2">
+              <Button
+                size="sm"
+                variant={tab === "board" ? "primary" : "neutral-primary"}
+                onClick={() => setTab("board")}
+              >
+                文件夹看板
+              </Button>
+              <Button
+                size="sm"
+                variant={tab === "calendar" ? "primary" : "neutral-primary"}
+                onClick={() => setTab("calendar")}
+              >
+                个人周历
+              </Button>
+              <a
+                className="ml-auto text-13 text-accent-primary"
+                href={`${API_BASE_URL}/api/workspaces/${workspaceSlug}/lab/planning-export/?format=csv`}
+              >
+                导出排期 CSV
+              </a>
+              <a
+                className="text-13 text-accent-primary"
+                href={`${API_BASE_URL}/api/workspaces/${workspaceSlug}/lab/planning-export/`}
+                target="_blank"
+                rel="noreferrer"
+              >
+                JSON
+              </a>
+            </nav>
+            {tab === "board" ? (
+              <LabPlannerBoard
+                store={store}
+                schedule={(item) => {
+                  setScheduled(item);
+                  setTab("calendar");
+                }}
+              />
+            ) : (
+              <LabCalendar store={store} scheduled={scheduled} clearScheduled={() => setScheduled(undefined)} />
+            )}
+          </>
+        )}
+        {store.planner &&
+          section === "team" &&
+          (store.planner.team_access ? (
+            <LabCalendar key="team" store={store} team clearScheduled={() => undefined} />
+          ) : (
+            <p className="text-13 text-secondary">
+              仅工作区管理员和项目负责人可以查看团队排期。请在个人周历维护本人安排。
+            </p>
+          ))}
+        {store.planner && section === "bounties" && <LabMarket store={store} />}
+      </div>
+    </main>
+  );
+});

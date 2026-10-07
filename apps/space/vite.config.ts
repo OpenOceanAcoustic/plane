@@ -24,6 +24,8 @@ export default defineConfig(() => ({
   },
   build: {
     assetsInlineLimit: 0,
+    // Avoid an upstream OXC scope-index panic when minifying this large bundle.
+    minify: "esbuild" as const,
   },
   plugins: [reactRouter(), tsconfigPaths({ projects: [path.resolve(__dirname, "tsconfig.json")] })],
   resolve: {

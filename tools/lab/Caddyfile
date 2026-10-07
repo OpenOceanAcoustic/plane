@@ -1,0 +1,29 @@
+:80 {
+  encode gzip
+  header Referrer-Policy "no-referrer"
+  @api path /api/* /auth/* /static/*
+  handle @api {
+    reverse_proxy api:8000
+  }
+  handle /uploads/* {
+    reverse_proxy plane-minio:9000
+  }
+  handle /live/* {
+    reverse_proxy live:3000
+  }
+  handle_path /god-mode/* {
+    root * /srv/admin
+    try_files {path} /index.html
+    file_server
+  }
+  handle_path /spaces/* {
+    root * /srv/space
+    try_files {path} /index.html
+    file_server
+  }
+  handle {
+    root * /srv/web
+    try_files {path} /index.html
+    file_server
+  }
+}

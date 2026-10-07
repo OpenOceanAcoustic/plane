@@ -4,6 +4,7 @@
 
 # Django imports
 from django.utils import timezone
+from django.conf import settings
 from django.db.models import Q
 
 # Third party imports
@@ -36,6 +37,11 @@ class APIKeyAuthentication(authentication.BaseAuthentication):
             )
         except APIToken.DoesNotExist:
             raise AuthenticationFailed("Given API token is not valid")
+
+        if settings.LAB_AUTH_ENABLED and not api_token.user.is_bot:
+            from plane.lab.models import Credential
+            if not Credential.objects.filter(user=api_token.user, enabled=True).exists():
+                raise AuthenticationFailed("Given API token is not valid")
 
         # save api token last used
         api_token.last_used = timezone.now()
