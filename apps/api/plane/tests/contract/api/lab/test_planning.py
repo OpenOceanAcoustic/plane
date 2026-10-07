@@ -82,3 +82,46 @@ def test_guest_and_revoked_project_membership_cannot_leak_foreign_tasks(laborato
     assert client.get(base + "planner/").json()["items"] == []
     ProjectMember.objects.filter(project=lab["project"], member=lab["member"]).update(is_active=False)
     assert client.get(base + "tasks/").json() == []
+
+
+def test_cross_project_references_and_calendar_never_change_native_dates(laboratory):
+    from datetime import date
+    from plane.db.models import Project, State
+
+    lab = laboratory
+    member = lab["client"](lab["member"])
+    project = Project.objects.create(workspace=lab["workspace"], name="Field study", identifier="FS")
+    ProjectMember.objects.create(workspace=lab["workspace"], project=project, member=lab["member"], role=15)
+    state = State.objects.create(
+        workspace=lab["workspace"], project=project, name="Waiting", group="unstarted", default=True
+    )
+    issue = Issue.objects.create(
+        workspace=lab["workspace"],
+        project=project,
+        name="Cross-project reference",
+        state=state,
+        start_date=date(2026, 9, 1),
+        target_date=date(2026, 12, 31),
+    )
+    response = member.post(lab["base"] + "items/", {"issue_id": str(issue.id)}, format="json")
+    assert response.status_code == 201
+    row = member.get(lab["base"] + "planner/").json()["items"][0]
+    assert row["project_id"] == str(project.id) and row["issue_id"] == str(issue.id)
+    body = {"item_id": response.json()["id"], "start": "2026-10-08T09:00:00+08:00", "end": "2026-10-08T11:00:00+08:00"}
+    block = member.post(lab["base"] + "calendar/", body, format="json").json()["id"]
+    assert (
+        member.patch(
+            lab["base"] + f"calendar/{block}/", {"split_at": "2026-10-08T10:00:00+08:00"}, format="json"
+        ).status_code
+        == 200
+    )
+    assert (
+        member.patch(
+            lab["base"] + f"calendar/{block}/",
+            {"start": "2026-10-09T09:00:00+08:00", "end": "2026-10-09T10:00:00+08:00"},
+            format="json",
+        ).status_code
+        == 200
+    )
+    issue.refresh_from_db()
+    assert issue.start_date == date(2026, 9, 1) and issue.target_date == date(2026, 12, 31)

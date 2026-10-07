@@ -8,11 +8,13 @@ from datetime import timedelta
 from io import StringIO
 from zoneinfo import ZoneInfo
 
+from django.core.exceptions import ValidationError as ModelValidationError
 from django.db import IntegrityError, transaction
 from django.http import HttpResponse
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from django.utils.dateparse import parse_datetime
+from rest_framework.negotiation import DefaultContentNegotiation
 from rest_framework.exceptions import PermissionDenied, ValidationError
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -24,8 +26,18 @@ from .permissions import can_view_team, issue_access, project_ids, readable_issu
 from .planning import STATUSES, block_times, configure_flow, default_folders, item_data, overlaps, own_item, set_status
 
 
+class LabContentNegotiation(DefaultContentNegotiation):
+    def filter_renderers(self, renderers, format):
+        # CSV exports return a raw HttpResponse; avoid DRF rejecting the export parameter first.
+        return renderers if format == "csv" else super().filter_renderers(renderers, format)
+
+
 class LabView(APIView):
+    content_negotiation_class = LabContentNegotiation
+
     def handle_exception(self, exc):
+        if isinstance(exc, ModelValidationError):
+            return Response({"error": "字段或记录 ID 格式无效"}, status=400)
         if isinstance(exc, IntegrityError) and "lab_" in str(exc):
             return Response(
                 {"error": "操作超过 WIP 上限、违反独立验收流程，或试图修改冻结预算/历史账本。请联系负责人处理例外。"},

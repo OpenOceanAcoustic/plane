@@ -43,7 +43,8 @@ export function dayLayout<T extends { start: string; end: string }>(events: T[],
       const segment = eventSegment(event.start, event.end, day);
       return segment ? [{ event, ...segment, lane: 0, lanes: 1 }] : [];
     })
-    .toSorted((a, b) => a.top - b.top || b.height - a.height);
+    // oxlint-disable-next-line unicorn/no-array-sort -- this fresh array is owned here; web targets ES2022
+    .sort((a, b) => a.top - b.top || b.height - a.height);
   let group: typeof segments = [];
   let laneEnds: number[] = [];
   const finishGroup = () => {

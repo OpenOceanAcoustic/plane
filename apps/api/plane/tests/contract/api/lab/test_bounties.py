@@ -233,3 +233,32 @@ def test_self_acceptance_is_rejected_even_if_participant_added_through_other_cha
         ).status_code
         == 403
     )
+
+
+def test_parallel_claim_approvals_cannot_exceed_team_budget(laboratory):
+    lab = laboratory
+    bounty, _, _ = prepare(lab, budget="20")
+    claims = []
+    for user in (lab["member"], lab["lead"]):
+        response = action(lab, user, bounty, "claim", {"planned": "15", "deliverable": "Independent portion"})
+        assert response.status_code == 200
+        claims.append(response.json()["id"])
+
+    def approve(allocation):
+        close_old_connections()
+        try:
+            return action(lab, lab["lead"], bounty, "approve", {"allocation_id": allocation}).status_code
+        finally:
+            close_old_connections()
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        assert sorted(pool.map(approve, claims)) == [200, 400]
+    assert sum(row.planned for row in Allocation.objects.filter(bounty_id=bounty, approved=True)) == 15
+
+
+def test_stale_or_foreign_action_references_return_controlled_errors(laboratory):
+    lab = laboratory
+    bounty, _, _ = prepare(lab)
+    assert action(lab, lab["lead"], bounty, "approve", {"allocation_id": str(uuid.uuid4())}).status_code == 404
+    assert action(lab, lab["lead"], bounty, "approve", {"allocation_id": "invalid"}).status_code == 400
+    assert action(lab, lab["member"], bounty, "confirm").status_code == 404

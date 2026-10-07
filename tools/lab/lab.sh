@@ -4,7 +4,7 @@ export RAYON_NUM_THREADS=1
 export TURBO_TELEMETRY_DISABLED=1
 lab_root=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)
 cd "$lab_root"
-compose=(docker compose -f compose.lab.yml)
+compose=(docker compose -p "${LAB_COMPOSE_PROJECT:-ooa-plane-lab}" -f compose.lab.yml)
 case "${1:-help}" in
   setup) python3 tools/lab/setup.py ;;
   build)

@@ -205,7 +205,15 @@ def test_concurrent_login_cannot_exceed_five_submissions():
         assert LoginAttempt.objects.count() == 5
 
 
-def test_reset_invalidates_sessions_tokens_and_old_authenticator_preserves_user():
+def test_reset_invalidates_sessions_tokens_and_old_authenticator_preserves_user(monkeypatch):
+    import json
+    from types import SimpleNamespace
+
+    broadcasts = []
+    monkeypatch.setattr(
+        "plane.lab.auth.redis_instance",
+        lambda: SimpleNamespace(publish=lambda channel, message: broadcasts.append((channel, json.loads(message)))),
+    )
     from plane.db.models import APIToken, User
 
     with freeze_time("2026-10-08 03:00:00"):
@@ -223,6 +231,9 @@ def test_reset_invalidates_sessions_tokens_and_old_authenticator_preserves_user(
         assert "admin-session-id" in admin.cookies
         output = io.StringIO()
         call_command("lab_access", "reset", username="alice", stdout=output)
+        assert broadcasts[-1][0] == "hocuspocus:admin"
+        assert broadcasts[-1][1]["command"] == "revoke_user"
+        assert broadcasts[-1][1]["userId"] == str(original.id)
         api_token.refresh_from_db()
         assert not api_token.is_active
         assert app.get("/api/users/me/").status_code == 401

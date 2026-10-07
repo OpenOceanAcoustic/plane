@@ -14,7 +14,14 @@ import subprocess
 import uuid
 
 ROOT = Path(__file__).resolve().parents[2]
-COMPOSE = ["docker", "compose", "-f", str(ROOT / "compose.lab.yml")]
+COMPOSE = [
+    "docker",
+    "compose",
+    "-p",
+    os.environ.get("LAB_COMPOSE_PROJECT", "ooa-plane-lab"),
+    "-f",
+    str(ROOT / "compose.lab.yml"),
+]
 WRITERS = ["api", "worker", "beat-worker", "live"]
 
 
@@ -254,7 +261,7 @@ def restore_verify(directory, key_path):
                 "/verify.py",
             ]
         )
-        verify_code = "from cryptography.fernet import Fernet; from plane.lab.models import Credential; from django.conf import settings; key=Fernet(settings.LAB_TOTP_KEY.encode()); rows=list(Credential.objects.all()); [key.decrypt(row.encrypted_secret.encode()) for row in rows]; print('Restored encrypted credentials verified:', len(rows))"
+        verify_code = "from cryptography.fernet import Fernet; from plane.lab.models import Credential; from django.conf import settings; key=Fernet(settings.LAB_TOTP_KEY.encode()); rows=list(Credential.objects.all()); assert all(row.encrypted_secret or not row.enabled for row in rows); [key.decrypt(row.encrypted_secret.encode()) for row in rows if row.encrypted_secret]; print('Restored encrypted credentials verified:', len(rows))"
         run(
             [
                 "docker",

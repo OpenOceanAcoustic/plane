@@ -4,6 +4,7 @@
 """Single-use enrollment and replay-safe, durable account-scoped TOTP login."""
 
 import hashlib
+import json
 import math
 import re
 import secrets
@@ -24,6 +25,8 @@ from django.utils import timezone
 from django.views.decorators.debug import sensitive_variables
 
 from plane.db.models import APIToken, Profile, Session, User, Workspace, WorkspaceMember
+from plane.settings.redis import redis_instance
+from redis.exceptions import RedisError
 from plane.license.models import Instance, InstanceAdmin
 from .models import Audit, Credential, Enrollment, Invitation, LoginAccount, LoginAttempt, WorkspacePolicy
 
@@ -68,6 +71,23 @@ def usable(invitation):
         raise AccessError()
 
 
+def revoke_live_sessions(user_id):
+    try:
+        redis_instance().publish(
+            "hocuspocus:admin",
+            json.dumps(
+                {
+                    "command": "revoke_user",
+                    "userId": str(user_id),
+                    "originServer": "lab-ssh",
+                    "timestamp": timezone.now().isoformat(),
+                }
+            ),
+        )
+    except RedisError:
+        raise AccessError("账号凭据已禁用，但实时服务通知失败；请停止 live 服务并检查 Redis 后再次恢复", 503)
+
+
 @transaction.atomic
 @sensitive_variables()
 def issue_invitation(kind, workspace=None, workspace_slug="", role=15, user=None):
@@ -95,6 +115,7 @@ def issue_invitation(kind, workspace=None, workspace_slug="", role=15, user=None
         user.save(update_fields=["password", "token"])
         Session.objects.filter(user_id=str(user.id)).delete()
         APIToken.objects.filter(user=user).update(is_active=False)
+        transaction.on_commit(lambda: revoke_live_sessions(user.id))
         Invitation.objects.filter(user=user, kind="rebind", consumed_at__isnull=True).update(revoked_at=timezone.now())
     token = secrets.token_urlsafe(32)
     invitation = Invitation.objects.create(
