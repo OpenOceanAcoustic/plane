@@ -12,10 +12,14 @@ def workspace_policy_on_create(sender, instance, created, raw, using, **kwargs):
         WorkspacePolicy.objects.using(using).get_or_create(workspace_id=instance.pk)
 
 
-def backfill_workspace_policies(sender, apps, using, **kwargs):
+def backfill_workspace_policies(sender, using, apps=None, **kwargs):
     """Also runs when migrate has no pending migrations, including mode changes."""
     if not settings.LAB_AUTH_ENABLED:
         return
+    if apps is None:
+        # flush emits the same signal without migrate's historical app registry.
+        from django.apps import apps
+
     try:
         workspace = apps.get_model("db", "Workspace")
         policy = apps.get_model("lab", "WorkspacePolicy")

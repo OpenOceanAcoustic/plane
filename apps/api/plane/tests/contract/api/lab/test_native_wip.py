@@ -5,6 +5,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 import pytest
 from django.core.management import call_command
+from django.core.management.sql import emit_post_migrate_signal
 from django.db import IntegrityError, close_old_connections, transaction
 from django.test import Client
 
@@ -121,6 +122,8 @@ def test_migrate_backfills_missing_policies_and_allows_existing_work_to_finish(l
     settings.LAB_AUTH_ENABLED = True
     call_command("migrate", interactive=False, verbosity=0)
     assert WorkspacePolicy.objects.filter(workspace=lab["workspace"]).exists()
+    # flush emits post_migrate without an apps registry; that path must work too.
+    emit_post_migrate_signal(verbosity=0, interactive=False, db="default")
     Issue.objects.filter(id=tasks[0].id).update(name="Existing work can be edited")
     with pytest.raises(IntegrityError), transaction.atomic():
         extra = Issue.objects.create(
