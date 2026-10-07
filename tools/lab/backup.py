@@ -301,14 +301,14 @@ def restore_verify(directory, key_path):
             run(restore + ["down", "-v"])
         finally:
             docker_env.unlink(missing_ok=True)
-        # Attachments volume is created by docker run rather than compose up.
-        subprocess.run(
-            ["docker", "volume", "rm", f"{project}_attachments"],
-            cwd=ROOT,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-        )
-        compose_path.unlink(missing_ok=True)
+            # Attachments volume is created by docker run rather than compose up.
+            subprocess.run(
+                ["docker", "volume", "rm", f"{project}_attachments"],
+                cwd=ROOT,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+            compose_path.unlink(missing_ok=True)
 
 
 def main():

@@ -414,3 +414,46 @@ def test_native_edit_and_bounty_submission_do_not_deadlock(laboratory):
         submitting = pool.submit(submit_bounty)
         assert editing.result(timeout=20) == 1
         assert submitting.result(timeout=20) == 200
+
+
+def test_full_wip_never_blocks_accounting_correction_and_reacceptance_adds_only_delta(laboratory):
+    from plane.lab.models import Bounty
+
+    lab = laboratory
+    bounty, issue, _ = prepare(lab)
+    allocation = start(lab, bounty)
+    action(lab, lab["member"], bounty, "submit", {"evidence": "Report"})
+    assert (
+        action(
+            lab,
+            lab["reviewer"],
+            bounty,
+            "accept",
+            {"request_key": str(uuid.uuid4()), "result": "pass", "reason": "Verified", "targets": {allocation: "20"}},
+        ).status_code
+        == 200
+    )
+    ongoing = assigned_task(lab, "Current 1")
+    assigned_task(lab, "Current 2")
+    entry = Ledger.objects.get(bounty_id=bounty)
+    correction = {"request_key": str(uuid.uuid4()), "reason": "Accounting correction"}
+    assert (
+        lab["client"](lab["lead"])
+        .post(lab["base"] + f"ledger/{entry.id}/reverse/", correction, format="json")
+        .status_code
+        == 200
+    )
+    assert total_awarded(bounty) == 0
+    assert Bounty.objects.get(id=bounty).status == "done" and Allocation.objects.get(id=allocation).closed
+    assert action(lab, lab["lead"], bounty, "reopen", {"reason": "Recheck corrected award"}).status_code == 409
+    Issue.objects.filter(id=ongoing.id).update(state=lab["states"]["done"])
+    assert action(lab, lab["lead"], bounty, "reopen", {"reason": "Recheck corrected award"}).status_code == 200
+    verified = {
+        "request_key": str(uuid.uuid4()),
+        "result": "pass",
+        "reason": "Reverified",
+        "targets": {allocation: "20"},
+    }
+    assert action(lab, lab["reviewer"], bounty, "accept", verified).status_code == 200
+    assert action(lab, lab["reviewer"], bounty, "accept", verified).status_code == 200
+    assert total_awarded(bounty) == 20 and Ledger.objects.filter(bounty_id=bounty).count() == 3

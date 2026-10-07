@@ -292,6 +292,13 @@ export const LabMarket = observer(function LabMarket({ store }: { store: LabStor
                       取消并释放未授予预算
                     </Button>
                   )}
+                  {bounty.is_lead &&
+                    ["done", "active", "partial", "rework"].includes(bounty.status) &&
+                    bounty.allocations.some((row) => row.closed && Number(row.awarded) < Number(row.planned)) && (
+                      <Button size="sm" onClick={() => actionReason(bounty, "reopen")}>
+                        更正后重新验收
+                      </Button>
+                    )}
                 </div>
                 {bounty.acceptances.length > 0 && (
                   <details className="mt-4 text-12">

@@ -449,18 +449,34 @@ def reverse(user, ledger_id, data):
         participant_snapshot=entry.participant_snapshot,
         request_key=key,
     )
-    entry.allocation.closed = bounty.status in ("rejected", "cancelled")
-    entry.allocation.save(update_fields=["closed"])
     if bounty.status in ("rejected", "cancelled"):
         bounty.reserved = total(Ledger.objects.filter(bounty=bounty), "delta")
         bounty.save(update_fields=["reserved"])
-    # Corrected completed work returns to independent acceptance, never silently re-awards.
-    if bounty.status == "done":
-        bounty.status = "review"
-        bounty.due_at = working_days(timezone.now(), 5 if bounty.major else 3)
-        bounty.save(update_fields=["status", "due_at"])
-        if bounty.issue_id:
-            bounty.issue.state = ProjectFlow.objects.get(project=bounty.stage.project).review
-            bounty.issue.save(update_fields=["state", "completed_at"])
+    # Accounting corrections must succeed even when participants have full WIP.
+    # A lead can explicitly reopen corrected work for independent re-acceptance.
     audit("ledger.reversed", reversal, user, bounty.stage.workspace, reason=str(data["reason"]))
     return reversal
+
+
+@transaction.atomic
+def reopen(user, bounty_id, reason):
+    bounty = locked_bounty(bounty_id)
+    require_lead(user, bounty.stage.project)
+    if bounty.status not in ("done", "active", "partial", "rework") or not str(reason).strip() or not bounty.issue_id:
+        raise ValidationError("仅可重新验收已关闭分工的贡献更正，须存在原任务并填写原因")
+    deficient = [
+        row
+        for row in Allocation.objects.filter(bounty=bounty, approved=True, closed=True)
+        if total(row.ledger.all(), "delta") < row.planned
+    ]
+    if not deficient:
+        raise ValidationError("没有待复验的贡献差额")
+    for row in deficient:
+        row.closed = False
+        row.save(update_fields=["closed"])
+    bounty.status = "review"
+    bounty.due_at = working_days(timezone.now(), 5 if bounty.major else 3)
+    bounty.save(update_fields=["status", "due_at"])
+    bounty.issue.state = ProjectFlow.objects.get(project=bounty.stage.project).review
+    bounty.issue.save(update_fields=["state", "completed_at"])
+    audit("bounty.reopened", bounty, user, bounty.stage.workspace, reason=str(reason))

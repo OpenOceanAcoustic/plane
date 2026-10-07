@@ -163,6 +163,8 @@ class BountyActionView(LabView):
             bounties.review_acceptance(request.user, row.id, data.get("acceptance_id"), data.get("reason", ""))
         elif action == "cancel":
             bounties.cancel(request.user, row.id, data.get("reason", ""))
+        elif action == "reopen":
+            bounties.reopen(request.user, row.id, data.get("reason", ""))
         else:
             raise ValidationError("操作无效")
         return Response({"ok": True, "id": str(result.id) if result else None})
