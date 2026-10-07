@@ -6,12 +6,13 @@
 from django.utils import timezone
 from django.core.validators import URLValidator
 from django.core.exceptions import ValidationError
-from django.db import IntegrityError
+from django.db import transaction
 
 # Third Party imports
 from rest_framework import serializers
 
 # Module imports
+from plane.lab.native import optional_issue_relation
 from .base import BaseSerializer, DynamicBaseSerializer
 from .user import UserLiteSerializer
 from .state import StateLiteSerializer
@@ -196,6 +197,7 @@ class IssueCreateSerializer(BaseSerializer):
 
         return attrs
 
+    @transaction.atomic
     def create(self, validated_data):
         assignees = validated_data.pop("assignee_ids", None)
         labels = validated_data.pop("label_ids", None)
@@ -212,7 +214,7 @@ class IssueCreateSerializer(BaseSerializer):
         updated_by_id = issue.updated_by_id
 
         if assignees is not None and len(assignees):
-            try:
+            with optional_issue_relation():
                 IssueAssignee.objects.bulk_create(
                     [
                         IssueAssignee(
@@ -227,8 +229,6 @@ class IssueCreateSerializer(BaseSerializer):
                     ],
                     batch_size=10,
                 )
-            except IntegrityError:
-                pass
         else:
             # Then assign it to default assignee, if it is a valid assignee
             if (
@@ -240,7 +240,7 @@ class IssueCreateSerializer(BaseSerializer):
                     is_active=True,
                 ).exists()
             ):
-                try:
+                with optional_issue_relation():
                     IssueAssignee.objects.create(
                         assignee_id=default_assignee_id,
                         issue=issue,
@@ -249,11 +249,9 @@ class IssueCreateSerializer(BaseSerializer):
                         created_by_id=created_by_id,
                         updated_by_id=updated_by_id,
                     )
-                except IntegrityError:
-                    pass
 
         if labels is not None and len(labels):
-            try:
+            with optional_issue_relation():
                 IssueLabel.objects.bulk_create(
                     [
                         IssueLabel(
@@ -268,11 +266,10 @@ class IssueCreateSerializer(BaseSerializer):
                     ],
                     batch_size=10,
                 )
-            except IntegrityError:
-                pass
 
         return issue
 
+    @transaction.atomic
     def update(self, instance, validated_data):
         assignees = validated_data.pop("assignee_ids", None)
         labels = validated_data.pop("label_ids", None)
@@ -285,7 +282,7 @@ class IssueCreateSerializer(BaseSerializer):
 
         if assignees is not None:
             IssueAssignee.objects.filter(issue=instance).delete()
-            try:
+            with optional_issue_relation():
                 IssueAssignee.objects.bulk_create(
                     [
                         IssueAssignee(
@@ -301,12 +298,10 @@ class IssueCreateSerializer(BaseSerializer):
                     batch_size=10,
                     ignore_conflicts=True,
                 )
-            except IntegrityError:
-                pass
 
         if labels is not None:
             IssueLabel.objects.filter(issue=instance).delete()
-            try:
+            with optional_issue_relation():
                 IssueLabel.objects.bulk_create(
                     [
                         IssueLabel(
@@ -322,8 +317,6 @@ class IssueCreateSerializer(BaseSerializer):
                     batch_size=10,
                     ignore_conflicts=True,
                 )
-            except IntegrityError:
-                pass
 
         # Time updation occues even when other related models are updated
         instance.updated_at = timezone.now()

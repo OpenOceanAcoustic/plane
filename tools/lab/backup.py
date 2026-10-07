@@ -47,8 +47,8 @@ def checksum(path):
 
 
 def backup(directory, key_directory):
-    directory.mkdir(parents=True, exist_ok=False)
-    key_directory.mkdir(parents=True, exist_ok=True)
+    directory.mkdir(parents=True, exist_ok=False, mode=0o700)
+    key_directory.mkdir(parents=True, exist_ok=True, mode=0o700)
     configuration = config()
     project = configuration["name"]
     volume = configuration["volumes"]["uploads"]["name"]
@@ -80,24 +80,26 @@ def backup(directory, key_directory):
                 ],
                 stdout=output,
             )
-        run(
-            [
-                "docker",
-                "run",
-                "--rm",
-                "-v",
-                f"{volume}:/source:ro",
-                "-v",
-                f"{directory}:/backup",
-                "alpine:3.20",
-                "tar",
-                "-czf",
-                "/backup/attachments.tar.gz",
-                "-C",
-                "/source",
-                ".",
-            ]
-        )
+        # Root must read MinIO's private volume, while the host caller owns the
+        # resulting archive and can secure it without sudo or a chown step.
+        with (directory / "attachments.tar.gz").open("wb") as output:
+            run(
+                [
+                    "docker",
+                    "run",
+                    "--rm",
+                    "-v",
+                    f"{volume}:/source:ro",
+                    "alpine:3.20",
+                    "tar",
+                    "-czf",
+                    "-",
+                    "-C",
+                    "/source",
+                    ".",
+                ],
+                stdout=output,
+            )
         shutil.copy2(ROOT / ".env", directory / "root.env")
         shutil.copy2(ROOT / "apps/api/.env", directory / "api.env")
         shutil.copy2(ROOT / "apps/live/.env", directory / "live.env")
