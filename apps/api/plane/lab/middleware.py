@@ -31,6 +31,7 @@ class LabAccessMiddleware:
                 "/api/instances/admins/sign-up",
                 "/api/instances/admins/sign-up-screen-visited",
             )
+            blocked |= path.rstrip("/") == "/api/instances/admins" and request.method == "POST"
             if blocked:
                 return JsonResponse({"error": "仅支持 SSH 邀请注册和 Authenticator 动态码登录"}, status=403)
             public_instance = path.rstrip("/") == "/api/instances" and request.method in ("GET", "HEAD", "OPTIONS")

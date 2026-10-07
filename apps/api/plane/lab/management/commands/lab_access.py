@@ -43,13 +43,12 @@ class Command(BaseCommand):
                 return
             if action == "purge":
                 from datetime import timedelta
-                from plane.lab.models import Enrollment, LoginAttempt, LoginAccount
+                from plane.lab.models import Enrollment, LoginAttempt
 
                 Enrollment.objects.filter(invitation__expires_at__lte=timezone.now()).delete()
                 LoginAttempt.objects.filter(submitted_at__lte=timezone.now() - timedelta(seconds=600)).delete()
-                LoginAccount.objects.filter(
-                    loginattempt__isnull=True, created_at__lt=timezone.now() - timedelta(days=1)
-                ).delete()
+                # Keep identity rows: deleting one concurrently with a login
+                # could cascade-delete a newly committed quota submission.
                 self.stdout.write("过期绑定和限流记录已清理；邀请和审计记录保留")
                 return
             if action == "bootstrap":

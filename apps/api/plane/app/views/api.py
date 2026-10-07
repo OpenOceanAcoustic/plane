@@ -5,6 +5,7 @@
 # Python import
 from uuid import uuid4
 from typing import Optional
+from django.db import transaction
 
 # Third party
 from rest_framework.response import Response
@@ -15,10 +16,13 @@ from rest_framework import status
 from .base import BaseAPIView
 from plane.db.models import APIToken
 from plane.app.serializers import APITokenSerializer, APITokenReadSerializer
+from plane.lab.auth import require_lab_session
 
 
 class ApiTokenEndpoint(BaseAPIView):
+    @transaction.atomic
     def post(self, request: Request) -> Response:
+        require_lab_session(request)
         label = request.data.get("label", str(uuid4().hex))
         description = request.data.get("description", "")
         expired_at = request.data.get("expired_at", None)
@@ -53,7 +57,9 @@ class ApiTokenEndpoint(BaseAPIView):
         api_token.delete()
         return Response(status=status.HTTP_204_NO_CONTENT)
 
+    @transaction.atomic
     def patch(self, request: Request, pk: str) -> Response:
+        require_lab_session(request)
         api_token = APIToken.objects.get(user=request.user, pk=pk, is_service=False)
         serializer = APITokenSerializer(api_token, data=request.data, partial=True)
         if serializer.is_valid():

@@ -151,6 +151,7 @@ jobs:
             apps/web/build/client
             apps/admin/build/client
             apps/space/build/client
+            apps/space/build/server
             apps/live/dist
             packages/*/dist
           retention-days: 3

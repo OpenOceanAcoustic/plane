@@ -51,7 +51,7 @@ def issue_access(user, workspace, issue_id, edit=False):
     issue = (
         readable_issues(user, workspace).select_related("project", "state").filter(id=issue_id, is_draft=False).first()
     )
-    if not issue:
+    if not issue or (edit and issue.archived_at):
         raise NotFound("任务不可访问")
     if edit and not (
         issue.created_by_id == user.id

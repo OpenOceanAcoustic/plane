@@ -47,6 +47,7 @@ def test_bootstrap_requires_totp_and_disables_legacy_paths():
         "/auth/magic-sign-in/",
         "/auth/spaces/sign-up/",
         "/api/instances/admins/sign-up/",
+        "/api/instances/admins/",
         "/auth/google/",
     ):
         assert client.post(path).status_code == 403
@@ -320,3 +321,62 @@ def test_reset_and_old_rebinding_confirmation_share_lock_order(monkeypatch):
         old_invitation.refresh_from_db()
         assert old_invitation.consumed_at or old_invitation.revoked_at
         assert Invitation.objects.get(id=latest).revoked_at is None
+
+
+def test_login_quota_follows_account_id_after_server_side_username_change():
+    from plane.db.models import User
+
+    with freeze_time("2026-10-08 03:00:00"):
+        enrollment = bootstrap(Client())
+        assert (
+            post(
+                "confirm", {"token": enrollment["token"], "code": pyotp.parse_uri(enrollment["otpauth"]).now()}
+            ).status_code
+            == 201
+        )
+        for _ in range(5):
+            assert post("sign-in", {"username": "alice", "code": "000000"}).status_code == 401
+        User.objects.filter(username="alice").update(username="renamed")
+        assert post("sign-in", {"username": "RENAMED", "code": "000000"}).status_code == 429
+
+
+def test_recovery_rejects_token_creation_from_an_already_admitted_old_session(monkeypatch):
+    from threading import Event
+    from plane.db.models import APIToken, User
+    from plane.lab.auth import issue_invitation, require_lab_session
+
+    monkeypatch.setattr("plane.lab.auth.revoke_live_sessions", lambda user_id: None)
+    admitted, proceed = Event(), Event()
+
+    def pause_before_token_lock(request):
+        admitted.set()
+        assert proceed.wait(timeout=15)
+        require_lab_session(request)
+
+    monkeypatch.setattr("plane.app.views.api.require_lab_session", pause_before_token_lock)
+    with freeze_time("2026-10-08 03:00:00"):
+        enrollment = bootstrap(Client())
+        totp = pyotp.parse_uri(enrollment["otpauth"])
+        assert post("confirm", {"token": enrollment["token"], "code": totp.now()}).status_code == 201
+    with freeze_time("2026-10-08 03:00:30"):
+        client = Client()
+        assert post("sign-in", {"username": "alice", "code": totp.now()}, client).status_code == 200
+
+        def create_token():
+            close_old_connections()
+            try:
+                return client.post(
+                    "/api/users/api-tokens/", {"label": "Pending old-session token"}, content_type="application/json"
+                ).status_code
+            finally:
+                close_old_connections()
+
+        with ThreadPoolExecutor(max_workers=1) as pool:
+            pending = pool.submit(create_token)
+            try:
+                assert admitted.wait(timeout=15)
+                issue_invitation("rebind", user=User.objects.get(username="alice"))
+            finally:
+                proceed.set()
+            assert pending.result(timeout=20) in (401, 403)
+        assert not APIToken.objects.exists()

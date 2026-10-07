@@ -28,7 +28,7 @@ tools/lab/lab.sh start
 tools/lab/lab.sh status
 ```
 
-主应用 `http://localhost:8080`，管理后台 `http://localhost:8080/god-mode/`，Space `http://localhost:8080/spaces/`。API 回环端口 8010，MinIO 9100、控制台 9190。数据库、Valkey、RabbitMQ 不向宿主机暴露端口；8080/8010/9100/9190 都只监听 127.0.0.1。数据位于独立 Compose 项目的持久卷。停止用 `tools/lab/lab.sh stop`，再次运行用 `start`，停止不会删除数据。
+主应用 `http://localhost:8080`，管理后台 `http://localhost:8080/god-mode/`，Space `http://localhost:8080/spaces/`。Space 保留上游服务端渲染，运行独立 Node 服务；前端服务不会挂载后台认证密钥。API 回环端口 8010，MinIO 9100、控制台 9190。数据库、Valkey、RabbitMQ 不向宿主机暴露端口；8080/8010/9100/9190 都只监听 127.0.0.1。数据位于独立 Compose 项目的持久卷。停止用 `tools/lab/lab.sh stop`，再次运行用 `start`，停止不会删除数据。
 
 前端开发可使用同一后台容器：把 web/admin 的 `VITE_API_BASE_URL` 改为 `http://localhost:8010`，对应 base URL 改为 localhost:3000/3001，执行 `pnpm --filter web dev` 和 `pnpm --filter admin dev`。完成后重新 `setup` 与串行构建，恢复最终 8080 的配置。不要同时启动第二套数据库来占用有限内存。推荐通过 localhost 访问，确保 cookie 来源一致。
 

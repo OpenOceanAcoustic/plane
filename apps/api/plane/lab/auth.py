@@ -302,7 +302,9 @@ def authenticate(data, request, admin=False):
     username = str(data.get("username", "")).strip().casefold()[:128]
     result = None
     with transaction.atomic():
-        account, _ = LoginAccount.objects.get_or_create(identity_hash=digest(username))
+        user = User.objects.only("id").filter(username__iexact=username).first()
+        identity = "user:" + str(user.id) if user else "unknown:" + username
+        account, _ = LoginAccount.objects.get_or_create(identity_hash=digest(identity))
         account = LoginAccount.objects.select_for_update().get(id=account.id)
         now = timezone.now()
         LoginAttempt.objects.filter(account=account, submitted_at__lte=now - timedelta(seconds=600)).delete()
@@ -316,14 +318,17 @@ def authenticate(data, request, admin=False):
         else:
             LoginAttempt.objects.create(account=account, submitted_at=now)
             credential = (
-                Credential.objects.select_for_update()
+                Credential.objects.select_for_update(of=("self",))
                 .select_related("user")
-                .filter(user__username__iexact=username)
+                .filter(user_id=user.id if user else None)
                 .first()
             )
             step = (
                 verified_step(credential.encrypted_secret, data.get("code", ""), credential.last_step)
-                if credential and credential.enabled and credential.user.is_active
+                if credential
+                and credential.enabled
+                and credential.user.is_active
+                and credential.user.username.casefold() == username
                 else None
             )
             if step is None or (
@@ -342,3 +347,18 @@ def authenticate(data, request, admin=False):
     if result:
         raise result
     return credential.user
+
+
+def require_lab_session(request):
+    """Serialize token writes with SSH recovery; caller owns the transaction."""
+    if not settings.LAB_AUTH_ENABLED:
+        return
+    from rest_framework.exceptions import NotAuthenticated
+
+    credential = (
+        Credential.objects.select_for_update(of=("self",))
+        .filter(user_id=request.user.id, enabled=True, user__is_active=True)
+        .first()
+    )
+    if not credential or request.session.get("lab_generation") != str(credential.generation):
+        raise NotAuthenticated("认证已失效，请重新登录")

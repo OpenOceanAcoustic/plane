@@ -8,13 +8,15 @@ import { readFileSync } from "node:fs";
 import { expect, test } from "@playwright/test";
 
 const project = process.env.LAB_E2E_PROJECT;
-function ssh(args: string[], input?: string): string {
+function compose(args: string[], input?: string): string {
   if (project !== "ooa-plane-e2e") throw new Error("Real browser tests require an isolated ooa-plane-e2e project");
-  return execFileSync(
-    "docker",
-    ["compose", "-p", project, "-f", "compose.lab.yml", "exec", "-T", "api", "python", "manage.py", ...args],
-    { encoding: "utf8", input }
-  );
+  return execFileSync("docker", ["compose", "-p", project, "-f", "compose.lab.yml", ...args], {
+    encoding: "utf8",
+    input,
+  });
+}
+function ssh(args: string[], input?: string): string {
+  return compose(["exec", "-T", "api", "python", "manage.py", ...args], input);
 }
 function dynamicCode(uri: string): string {
   const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
@@ -98,4 +100,38 @@ test("SSH bootstrap, real TOTP login, original task layouts and personal schedul
   await expect(page.getByRole("button", { name: /^科研学习排期 / }).first()).toBeVisible();
   // Public bootstrap endpoints cannot recreate an administrator after the SSH invitation was consumed.
   expect((await page.request.post("/api/instances/admins/sign-up/", { data: {} })).status()).toBe(403);
+});
+
+for (const path of ["/god-mode/", "/spaces/"]) {
+  test(`${path} serves the invitation-only Authenticator entry`, async ({ page }) => {
+    const response = await page.goto(path);
+    expect(response?.status()).toBe(200);
+    await expect(page.getByLabel("用户名", { exact: true })).toBeVisible();
+    await expect(page.getByLabel("六位动态码")).toBeVisible();
+    await expect(page.locator('input[type="password"]')).toHaveCount(0);
+  });
+}
+
+test("the sixth submission remains limited after the API service restarts", async ({ request }) => {
+  // The earlier successful sign-in already used one of this account's five submissions.
+  const csrf = (await (await request.get("/auth/get-csrf-token/")).json()) as { csrf_token: string };
+  const options = { headers: { "X-CSRFToken": csrf.csrf_token }, data: { username: "E2E-ADMIN", code: "invalid" } };
+  const attempts = await Promise.all(Array.from({ length: 4 }, () => request.post("/auth/lab/sign-in/", options)));
+  for (const attempt of attempts) expect(attempt.status()).toBe(401);
+  compose(["restart", "api"]);
+  await expect
+    .poll(
+      async () => {
+        try {
+          return (await request.get("/api/instances/")).status();
+        } catch {
+          return 0;
+        }
+      },
+      { timeout: 45000 }
+    )
+    .toBe(200);
+  const sixth = await request.post("/auth/lab/sign-in/", options);
+  expect(sixth.status()).toBe(429);
+  expect(Number(sixth.headers()["retry-after"])).toBeGreaterThan(0);
 });

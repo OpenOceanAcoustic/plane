@@ -59,9 +59,9 @@ services:
     command: [uvicorn, plane.asgi:application, --host, "0.0.0.0", --port, "8000"]
     ports: ["127.0.0.1:8010:8000"]
     depends_on:
-      plane-db: {condition: service_healthy}
-      plane-redis: {condition: service_started}
-      plane-mq: {condition: service_started}
+      plane-db: { condition: service_healthy }
+      plane-redis: { condition: service_started }
+      plane-mq: { condition: service_started }
     restart: unless-stopped
 
   worker:
@@ -79,10 +79,31 @@ services:
   live:
     image: node:22.22.1-bookworm-slim
     working_dir: /app
-    volumes: [.:/app:ro]
+    volumes:
+      - ./apps/live:/app/apps/live:ro
+      - ./packages:/app/packages:ro
+      - ./node_modules:/app/node_modules:ro
+      - ./package.json:/app/package.json:ro
     env_file: ./apps/live/.env
     command: [node, apps/live/dist/start.mjs]
     depends_on: [api, plane-redis]
+    init: true
+    restart: unless-stopped
+
+  space:
+    image: node:22.22.1-bookworm-slim
+    working_dir: /app/apps/space
+    volumes:
+      - ./apps/space:/app/apps/space:ro
+      - ./packages:/app/packages:ro
+      - ./node_modules:/app/node_modules:ro
+      - ./package.json:/app/package.json:ro
+    environment:
+      NODE_ENV: production
+      HOST: 0.0.0.0
+      PORT: "3000"
+    command: [node, node_modules/@react-router/serve/bin.js, ./build/server/index.js]
+    depends_on: [api]
     init: true
     restart: unless-stopped
 
@@ -92,9 +113,8 @@ services:
       - ./tools/lab/Caddyfile:/etc/caddy/Caddyfile:ro
       - ./apps/web/build/client:/srv/web:ro
       - ./apps/admin/build/client:/srv/admin:ro
-      - ./apps/space/build/client:/srv/space:ro
     ports: ["127.0.0.1:8080:80"]
-    depends_on: [api, live, plane-minio]
+    depends_on: [api, live, space, plane-minio]
     restart: unless-stopped
 
 volumes:

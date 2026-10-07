@@ -16,10 +16,8 @@
     try_files {path} /index.html
     file_server
   }
-  handle_path /spaces/* {
-    root * /srv/space
-    try_files {path} /index.html
-    file_server
+  handle /spaces/* {
+    reverse_proxy space:3000
   }
   handle {
     root * /srv/web
