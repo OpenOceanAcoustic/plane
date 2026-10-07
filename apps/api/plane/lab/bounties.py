@@ -7,6 +7,7 @@ import uuid
 from datetime import timedelta
 from decimal import Decimal, InvalidOperation
 
+from django.shortcuts import get_object_or_404
 from django.db import connection, transaction
 from django.db.models import Sum
 from django.utils import timezone
@@ -69,7 +70,7 @@ def locked_bounty(bounty_id):
     with connection.cursor() as cursor:
         cursor.execute("SELECT lab_wip_lock(%s)", [preliminary.stage.workspace_id])
     return (
-        Bounty.objects.select_for_update()
+        Bounty.objects.select_for_update(of=("self",))
         .select_related("stage__project", "stage__workspace", "issue")
         .get(id=bounty_id)
     )
@@ -93,7 +94,7 @@ def valid_reviewer(user_id, project):
 
 @transaction.atomic
 def publish(user, stage_id, data):
-    stage = Stage.objects.select_for_update().select_related("project", "workspace").get(id=stage_id)
+    stage = Stage.objects.select_for_update(of=("self",)).select_related("project", "workspace").get(id=stage_id)
     require_lead(user, stage.project)
     issue = issue_access(user, stage.workspace, data.get("issue_id"), edit=True)
     if issue.project_id != stage.project_id or issue.parent_id or Bounty.objects.filter(issue=issue).exists():
@@ -187,7 +188,7 @@ def claim(user, bounty_id, data):
 def approve_claim(user, bounty_id, allocation_id):
     bounty = locked_bounty(bounty_id)
     require_lead(user, bounty.stage.project)
-    allocation = Allocation.objects.select_for_update().get(id=allocation_id, bounty=bounty)
+    allocation = get_object_or_404(Allocation.objects.select_for_update(), id=allocation_id, bounty=bounty)
     if bounty.status != "open" or not allocation.user or not allocation.user.is_active:
         raise ValidationError("当前不能批准")
     if allocation.approved:
@@ -202,7 +203,7 @@ def approve_claim(user, bounty_id, allocation_id):
 @transaction.atomic
 def confirm_claim(user, bounty_id):
     bounty = locked_bounty(bounty_id)
-    allocation = Allocation.objects.get(bounty=bounty, user=user, approved=True)
+    allocation = get_object_or_404(Allocation, bounty=bounty, user=user, approved=True)
     if bounty.status != "open":
         raise ValidationError("当前不在开工确认阶段")
     allocation.confirmed = True
@@ -379,7 +380,7 @@ def accept(user, bounty_id, data):
 def review_acceptance(user, bounty_id, acceptance_id, reason):
     bounty = locked_bounty(bounty_id)
     reviewer_allowed(user, bounty, independent=True)
-    acceptance = Acceptance.objects.select_for_update().get(id=acceptance_id, bounty=bounty)
+    acceptance = get_object_or_404(Acceptance.objects.select_for_update(), id=acceptance_id, bounty=bounty)
     if acceptance.approved_at:
         return
     if bounty.status != "acceptance_review" or not str(reason).strip():
@@ -413,7 +414,10 @@ def reverse(user, ledger_id, data):
     require_lead(user, bounty.stage.project)
     if entry.delta <= 0 or not str(data.get("reason", "")).strip():
         raise ValidationError("仅可以冲正正向贡献，必须填写原因")
-    key = uuid.UUID(str(data.get("request_key")))
+    try:
+        key = uuid.UUID(str(data.get("request_key")))
+    except (ValueError, TypeError, AttributeError):
+        raise ValidationError("需要 UUID 幂等键")
     existing = Ledger.objects.filter(reverses=entry).first()
     if existing:
         if existing.request_key != key:

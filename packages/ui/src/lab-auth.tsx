@@ -5,7 +5,7 @@
 
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { FormEvent } from "react";
 import { Button } from "./button";
 
@@ -30,10 +30,12 @@ export function LabAuth({
   const [enrollment, setEnrollment] = useState<Enrollment>();
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState(false);
+  const invitationCaptured = useRef(false);
   const [invitation, setInvitation] = useState("");
 
   useEffect(() => {
-    if (register) {
+    if (register && !invitationCaptured.current) {
+      invitationCaptured.current = true;
       setInvitation(window.location.hash.slice(1));
       window.history.replaceState(null, "", window.location.pathname);
     }

@@ -5,7 +5,7 @@
 
 import { useEffect, useRef } from "react";
 import type { FormEvent, ReactNode } from "react";
-import { Button } from "@plane/ui";
+import { Button } from "./button";
 
 export const labInputClass =
   "w-full rounded-md border border-subtle bg-surface-1 px-3 py-2 text-13 text-primary outline-none focus:border-accent-strong";

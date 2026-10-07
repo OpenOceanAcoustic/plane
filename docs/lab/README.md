@@ -2,6 +2,8 @@
 
 基线为免费 AGPL-3.0 Community Edition v1.4.2。Fork 保留上游 LICENSE 和原生项目/看板/甘特功能；新增代码在同一许可下发布。规格见 [spec.md](spec.md)，实际完成情况和验证结果见 [progress.md](progress.md)。
 
+附件服务从官方 MinIO 和 mc 固定源码提交构建，构建说明见 `tools/lab/Dockerfile.minio`；不依赖已无法拉取的上游公开镜像。原始源码和许可随固定提交保留。
+
 ## 首次准备
 
 本机需要 Docker Engine、Compose v2，以及当前用户运行 Docker 的权限。管理员认证需由机器使用者在终端输入，不要将 sudo 密码交给开发代理。
@@ -67,7 +69,7 @@ tools/lab/lab.sh access purge
 
 ```bash
 tools/lab/lab.sh check
-docker compose -f docker-compose-test.yml -f compose.lab-test.yml run --rm --build api-tests pytest --migrations plane/tests/lab
+docker compose -f docker-compose-test.yml -f compose.lab-test.yml run --rm --build api-tests pytest --migrations plane/tests/contract/api/lab
 # 发布前完整回归，务必启用真实迁移，以验证 PostgreSQL 触发器
 docker compose -f docker-compose-test.yml -f compose.lab-test.yml run --rm api-tests pytest --migrations
 ```

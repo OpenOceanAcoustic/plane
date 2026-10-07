@@ -1,7 +1,10 @@
 # Overlay the upstream isolated test stack; secrets stay outside test containers.
 services:
   test-minio:
-    image: minio/minio:RELEASE.2025-04-22T22-12-26Z
+    image: ooa-plane-minio:source
+    build:
+      context: .
+      dockerfile: tools/lab/Dockerfile.minio
   api-tests:
     image: ooa-plane-api:lab
     environment:

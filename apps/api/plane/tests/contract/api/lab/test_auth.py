@@ -15,7 +15,7 @@ from freezegun import freeze_time
 from concurrent.futures import ThreadPoolExecutor
 from django.db import close_old_connections
 
-pytestmark = [pytest.mark.django_db(transaction=True), pytest.mark.unit]
+pytestmark = [pytest.mark.django_db(transaction=True), pytest.mark.contract]
 
 
 @pytest.fixture(autouse=True)

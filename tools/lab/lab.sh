@@ -13,6 +13,7 @@ case "${1:-help}" in
     pnpm --filter admin build
     pnpm --filter space build
     pnpm --filter live build
+    "${compose[@]}" build plane-minio
     "${compose[@]}" build api
     ;;
   init)

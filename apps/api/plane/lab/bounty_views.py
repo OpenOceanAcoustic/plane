@@ -2,6 +2,8 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 
 import csv
+
+from .export import csv_cell
 import uuid
 from io import StringIO
 from datetime import timedelta
@@ -200,14 +202,10 @@ class LedgerView(LabView):
                 ["记录ID", "时间", "项目", "任务ID", "任务", "人员ID", "人员", "VC变化", "验收人", "原因", "冲正记录"]
             )
 
-            def safe(value):
-                value = str(value or "")
-                return "'" + value if value.startswith(("=", "+", "-", "@", "\t", "\r")) else value
-
             for row in records:
                 writer.writerow(
                     [
-                        safe(value)
+                        csv_cell(value)
                         for value in (
                             row["id"],
                             row["created_at"],

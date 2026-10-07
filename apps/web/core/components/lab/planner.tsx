@@ -9,7 +9,7 @@ import { Folder, Plus, CalendarDays, Trash2, Pencil, ChevronLeft, ChevronRight }
 import { Button } from "@plane/ui";
 import type { LabItem, LabStatus, LabTask } from "@plane/types";
 import type { LabStore } from "@plane/shared-state";
-import { LabDialog, LabField, labInputClass } from "./form";
+import { LabDialog, LabField, labInputClass } from "@plane/ui";
 
 const statuses: { key: LabStatus; title: string }[] = [
   { key: "todo", title: "待做" },

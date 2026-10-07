@@ -38,3 +38,5 @@ export * from "./typography";
 export * from "./utils";
 export * from "./oauth";
 export * from "./lab-auth";
+
+export * from "./lab-form";

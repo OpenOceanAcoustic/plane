@@ -4,6 +4,19 @@
  */
 
 export type LabStatus = "todo" | "active" | "review" | "done";
+export type LabAcceptanceResult = "pass" | "partial" | "rework" | "reject" | "negative";
+export type LabBountyStatus =
+  | "draft"
+  | "publication_review"
+  | "open"
+  | "active"
+  | "review"
+  | "acceptance_review"
+  | "partial"
+  | "rework"
+  | "rejected"
+  | "done"
+  | "cancelled";
 export type LabFolder = { id: string; name: string; position: number };
 export type LabItem = {
   id: string;
@@ -69,7 +82,7 @@ export type LabAllocation = {
 };
 export type LabAcceptance = {
   id: string;
-  result: string;
+  result: LabAcceptanceResult;
   reason: string;
   targets: Record<string, string>;
   reviewer: string;
@@ -87,7 +100,7 @@ export type LabBounty = {
   budget: string;
   reserved: string;
   awarded: string;
-  status: string;
+  status: LabBountyStatus;
   major: boolean;
   major_reasons: string[];
   evidence: string;

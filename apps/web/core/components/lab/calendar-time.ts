@@ -35,3 +35,30 @@ export function eventSegment(start: string, end: string, day: Date): { top: numb
     height: ((clippedEnd - clippedStart) / 86400000) * 100,
   };
 }
+
+/** Give each connected group of overlapping events enough lanes to keep every block selectable. */
+export function dayLayout<T extends { start: string; end: string }>(events: T[], day: Date) {
+  const segments = events
+    .flatMap((event) => {
+      const segment = eventSegment(event.start, event.end, day);
+      return segment ? [{ event, ...segment, lane: 0, lanes: 1 }] : [];
+    })
+    .toSorted((a, b) => a.top - b.top || b.height - a.height);
+  let group: typeof segments = [];
+  let laneEnds: number[] = [];
+  const finishGroup = () => {
+    for (const segment of group) segment.lanes = laneEnds.length;
+    group = [];
+    laneEnds = [];
+  };
+  for (const segment of segments) {
+    if (laneEnds.length && segment.top >= Math.max(...laneEnds)) finishGroup();
+    let lane = laneEnds.findIndex((end) => end <= segment.top);
+    if (lane < 0) lane = laneEnds.length;
+    segment.lane = lane;
+    laneEnds[lane] = segment.top + segment.height;
+    group.push(segment);
+  }
+  finishGroup();
+  return segments;
+}

@@ -2,6 +2,8 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 
 import csv
+
+from .export import csv_cell
 from datetime import timedelta
 from io import StringIO
 from zoneinfo import ZoneInfo
@@ -345,15 +347,11 @@ class PlanningExportView(LabView):
         writer = csv.writer(output)
         writer.writerow(["事项ID", "原任务ID", "名称", "状态", "开始", "结束", "时区"])
 
-        def safe(value):
-            value = str(value or "")
-            return "'" + value if value.startswith(("=", "+", "-", "@", "\t", "\r")) else value
-
         for item in items:
             for block in item["blocks"] or [{"start": "", "end": ""}]:
                 writer.writerow(
                     [
-                        safe(value)
+                        csv_cell(value)
                         for value in (
                             item["id"],
                             item["issue_id"],

@@ -21,6 +21,7 @@ from django.core.exceptions import ValidationError
 from django.core.validators import validate_email, validate_slug
 from django.db import connection, transaction
 from django.utils import timezone
+from django.views.decorators.debug import sensitive_variables
 
 from plane.db.models import APIToken, Profile, Session, User, Workspace, WorkspaceMember
 from plane.license.models import Instance, InstanceAdmin
@@ -68,6 +69,7 @@ def usable(invitation):
 
 
 @transaction.atomic
+@sensitive_variables()
 def issue_invitation(kind, workspace=None, workspace_slug="", role=15, user=None):
     cipher()  # Fail before distributing a link that cannot be redeemed.
     if kind == "bootstrap":
@@ -109,6 +111,7 @@ def issue_invitation(kind, workspace=None, workspace_slug="", role=15, user=None
 
 
 @transaction.atomic
+@sensitive_variables()
 def begin_enrollment(data):
     invitation = Invitation.objects.select_for_update().filter(token_hash=digest(str(data.get("token", "")))).first()
     if not invitation:
@@ -155,6 +158,7 @@ def begin_enrollment(data):
     }
 
 
+@sensitive_variables()
 def verified_step(encrypted_secret, code, last_step=-1):
     if not re.fullmatch(r"[0-9]{6}", str(code)):
         return None
@@ -166,6 +170,7 @@ def verified_step(encrypted_secret, code, last_step=-1):
     return None
 
 
+@sensitive_variables()
 def confirm_enrollment(data):
     # Incorrect submissions must commit their counter; errors are returned after the transaction.
     with transaction.atomic():
@@ -266,6 +271,7 @@ def confirm_enrollment(data):
     return user
 
 
+@sensitive_variables()
 def authenticate(data, request, admin=False):
     from django.contrib.auth import login
 

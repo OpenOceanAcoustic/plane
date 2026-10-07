@@ -8,7 +8,7 @@ import { observer } from "mobx-react";
 import { Button } from "@plane/ui";
 import type { LabBounty, LabTask } from "@plane/types";
 import type { LabStore } from "@plane/shared-state";
-import { LabDialog, LabField, labInputClass } from "./form";
+import { LabDialog, LabField, labInputClass } from "@plane/ui";
 import { calendarInstant } from "./calendar-time";
 import { LabLedger } from "./ledger";
 

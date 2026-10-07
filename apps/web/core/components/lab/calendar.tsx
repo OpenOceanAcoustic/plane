@@ -9,8 +9,8 @@ import { CalendarDays, ChevronLeft, ChevronRight, Plus } from "lucide-react";
 import { Button } from "@plane/ui";
 import type { LabEvent, LabItem } from "@plane/types";
 import type { LabStore } from "@plane/shared-state";
-import { LabDialog, LabField, labInputClass } from "./form";
-import { calendarInstant, dropInstant, eventSegment, localInput, SLOT_MS, weekDays } from "./calendar-time";
+import { LabDialog, LabField, labInputClass } from "@plane/ui";
+import { calendarInstant, dayLayout, dropInstant, eventSegment, localInput, SLOT_MS, weekDays } from "./calendar-time";
 
 const displayDay = (day: Date) =>
   day.toLocaleDateString("zh-CN", { timeZone: "Asia/Shanghai", month: "numeric", day: "numeric", weekday: "short" });
@@ -75,9 +75,10 @@ export const LabCalendar = observer(function LabCalendar({
     if (block?.editable) {
       await store.execute(async () => {
         const duration = new Date(block.end).getTime() - new Date(block.start).getTime();
+        const resize = event.dataTransfer.getData("lab-resize") === "end";
         const result = await store.request<{ overlap: boolean }>(`calendar/${block.id}/`, "PATCH", {
-          start: when.toISOString(),
-          end: new Date(when.getTime() + duration).toISOString(),
+          start: resize ? block.start : when.toISOString(),
+          end: new Date(when.getTime() + (resize ? SLOT_MS : duration)).toISOString(),
         });
         store.notice = result.overlap ? "已移动，存在排期重叠。" : "已移动";
         await reload();
@@ -115,7 +116,7 @@ export const LabCalendar = observer(function LabCalendar({
         {displayDay(days[0]!)} — {displayDay(days[6]!)} · 上海时间 ·{" "}
         {team
           ? "私人或无权限内容仅显示忙碌；成员维护本人安排。"
-          : "十五分钟步长，拖动时间块可移动，点击可调整时长和拆分。"}
+          : "十五分钟步长，拖动时间块可移动，拖动底边可调整时长，点击可拆分。"}
       </p>
       {team ? (
         <div className="overflow-x-auto rounded-md border border-subtle">
@@ -189,12 +190,18 @@ export const LabCalendar = observer(function LabCalendar({
                     setEditing("new");
                   }}
                 >
-                  {store.events.map((event) => {
-                    const segment = eventSegment(event.start, event.end, day);
-                    if (!segment) return null;
-                    return (
+                  {dayLayout(store.events, day).map(({ event, top, height, lane, lanes }) => (
+                    <div
+                      key={event.id}
+                      className="absolute min-h-5 overflow-hidden rounded border border-accent-strong/30 bg-accent-primary/10 text-12 text-primary"
+                      style={{
+                        top: `${top}%`,
+                        height: `${height}%`,
+                        left: `calc(${(lane * 100) / lanes}% + 3px)`,
+                        width: `calc(${100 / lanes}% - 6px)`,
+                      }}
+                    >
                       <button
-                        key={event.id}
                         draggable={event.editable}
                         onDragStart={(drag) => drag.dataTransfer.setData("lab-block", event.id)}
                         onClick={() => {
@@ -203,8 +210,7 @@ export const LabCalendar = observer(function LabCalendar({
                             setSplit(false);
                           }
                         }}
-                        className="absolute inset-x-1 min-h-5 overflow-hidden rounded border border-accent-strong/30 bg-accent-primary/10 px-1.5 text-left text-12 text-primary"
-                        style={{ top: `${segment.top}%`, height: `${segment.height}%` }}
+                        className="h-full w-full px-1.5 pb-2 text-left"
                         title={`${event.title} ${clock(event.start)}–${clock(event.end)}`}
                       >
                         <strong className="block truncate">{event.title}</strong>
@@ -212,8 +218,20 @@ export const LabCalendar = observer(function LabCalendar({
                           {clock(event.start)}–{clock(event.end)}
                         </span>
                       </button>
-                    );
-                  })}
+                      {event.editable && new Date(event.end).getTime() <= day.getTime() + 86400000 && (
+                        <button
+                          aria-label={`调整 ${event.title} 的结束时间`}
+                          draggable
+                          onDragStart={(drag) => {
+                            drag.stopPropagation();
+                            drag.dataTransfer.setData("lab-block", event.id);
+                            drag.dataTransfer.setData("lab-resize", "end");
+                          }}
+                          className="absolute inset-x-0 bottom-0 h-2 cursor-ns-resize bg-accent-primary/30"
+                        />
+                      )}
+                    </div>
+                  ))}
                 </div>
               ))}
             </div>
