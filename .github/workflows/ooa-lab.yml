@@ -127,14 +127,15 @@ jobs:
           pnpm install --frozen-lockfile --network-concurrency 4 --child-concurrency 1
       - name: Prepare configuration
         run: python3 tools/lab/setup.py
+      - uses: actions/cache@v5
+        with:
+          path: .turbo
+          key: lab-turbo-${{ runner.os }}-${{ github.sha }}
+          restore-keys: lab-turbo-${{ runner.os }}-
       - name: Type checks and lint serially
         run: pnpm turbo run check:types check:lint --filter=web --filter=admin --filter=space --filter=live --filter=@plane/ui --filter=@plane/shared-state --filter=@plane/types --concurrency=1
       - name: Build applications serially
-        run: |
-          pnpm --filter web build
-          pnpm --filter admin build
-          pnpm --filter space build
-          pnpm --filter live build
+        run: pnpm turbo run build --filter=web --filter=admin --filter=space --filter=live --concurrency=1
       - name: Calendar and established-session contracts
         run: |
           node tools/lab/test-calendar.mjs

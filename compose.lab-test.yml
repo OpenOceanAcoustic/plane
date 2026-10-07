@@ -10,5 +10,10 @@ services:
     environment:
       LAB_TOTP_KEY_FILE: ""
       LAB_AUTH_ENABLED: "0"
+      # Preserve upstream fixtures in native-mode regression. Lab auth tests
+      # explicitly enable the lab gate, which rejects these legacy endpoints.
+      ENABLE_SIGNUP: "1"
+      ENABLE_EMAIL_PASSWORD: "1"
+      ENABLE_MAGIC_LINK_LOGIN: "1"
       DJANGO_SETTINGS_MODULE: plane.settings.test
       TZ: Asia/Shanghai
