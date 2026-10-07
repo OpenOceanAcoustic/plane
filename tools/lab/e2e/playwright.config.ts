@@ -3,6 +3,9 @@
  * SPDX-License-Identifier: AGPL-3.0-only
  */
 import { defineConfig } from "@playwright/test";
+// The pinned Playwright version otherwise records the binding URI and code in
+// an accessibility snapshot on failure, even when tracing/screenshots are off.
+process.env.PLAYWRIGHT_NO_COPY_PROMPT = "1";
 export default defineConfig({
   testDir: ".",
   testMatch: "*.spec.ts",

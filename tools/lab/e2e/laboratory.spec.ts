@@ -62,8 +62,10 @@ test("SSH bootstrap, real TOTP login, original task layouts and personal schedul
   const signedIn = page.waitForResponse(
     (response) => response.url().endsWith("/auth/lab/sign-in/") && response.status() === 200
   );
+  const workspaceHome = page.waitForURL(/\/browser-lab(?:\/|$)/, { waitUntil: "domcontentloaded" });
   await page.getByRole("button", { name: "登录", exact: true }).click();
   await signedIn;
+  await workspaceHome;
   await page.goto("/browser-lab/lab/planner");
   await expect(page.getByRole("heading", { name: "个人规划", exact: true })).toBeVisible();
   await page.getByRole("button", { name: "引用项目任务", exact: true }).click();

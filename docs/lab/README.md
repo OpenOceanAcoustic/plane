@@ -2,6 +2,8 @@
 
 基线为免费 AGPL-3.0 Community Edition v1.4.2。Fork 保留上游 LICENSE 和原生项目/看板/甘特功能；新增代码在同一许可下发布。规格见 [spec.md](spec.md)，实际完成情况和验证结果见 [progress.md](progress.md)。
 
+原生项目页面的甘特视图在中文界面名为“时间线”（英文 Timeline），与看板等布局按钮并列。
+
 附件服务从官方 MinIO 和 mc 固定源码提交构建，构建说明见 `tools/lab/Dockerfile.minio`；不依赖已无法拉取的上游公开镜像。原始源码和许可随固定提交保留。
 
 ## 首次准备
@@ -83,7 +85,7 @@ pnpm exec playwright install chromium
 pnpm exec playwright test --config tools/lab/browser/playwright.config.ts
 ```
 
-真实浏览器脚本位于 `tools/lab/e2e`，只允许使用独立 `ooa-plane-e2e` Compose 项目。它通过 SSH 初始化一次性测试管理员，验证真实动态码登录、原生看板和甘特以及个人排期；测试栈必须从空卷开始，且上述回环端口未被运行栈占用。脚本关闭录屏、截图与 tracing，避免记录绑定秘密。CI 的 `[full-regression]` 提交执行完整后端回归、真实部署浏览器流程和隔离恢复验证。
+真实浏览器脚本位于 `tools/lab/e2e`，只允许使用独立 `ooa-plane-e2e` Compose 项目。它通过 SSH 初始化一次性测试管理员，验证真实动态码登录、原生看板和甘特以及个人排期；测试栈必须从空卷开始，且上述回环端口未被运行栈占用。脚本关闭录屏、截图、tracing 与失败页面快照，避免记录绑定秘密。CI 的 `[full-regression]` 提交执行完整后端回归、真实部署浏览器流程和隔离恢复验证。
 
 ```bash
 LAB_COMPOSE_PROJECT=ooa-plane-e2e tools/lab/lab.sh init
