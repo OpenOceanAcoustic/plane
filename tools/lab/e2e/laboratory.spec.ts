@@ -83,7 +83,7 @@ test("SSH bootstrap, real TOTP login, original task layouts and personal schedul
   await kanban.click();
   await expect(kanban).toHaveAttribute("aria-pressed", "true");
   await expect(page.getByText("Original project task", { exact: true }).first()).toBeVisible();
-  const gantt = page.getByRole("button", { name: /甘特|Gantt/i }).first();
+  const gantt = page.getByRole("button", { name: /时间线|Timeline|甘特|Gantt/i }).first();
   await gantt.click();
   await expect(gantt).toHaveAttribute("aria-pressed", "true");
   await expect(page.locator("#gantt-container")).toBeVisible();
