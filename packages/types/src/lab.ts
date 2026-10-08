@@ -60,6 +60,7 @@ export type LabPlanner = {
   week_start: number;
   step_minutes: number;
 };
+export type LabCalendarColor = "" | "blue" | "purple" | "green" | "orange" | "pink" | "cyan";
 export type LabEvent = {
   id: string;
   title: string;
@@ -68,6 +69,7 @@ export type LabEvent = {
   end: string;
   editable: boolean;
   revision?: number;
+  color?: LabCalendarColor;
   kind?: string;
   status?: LabStatus;
   item_id?: string;

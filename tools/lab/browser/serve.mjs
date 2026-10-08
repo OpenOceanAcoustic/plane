@@ -51,4 +51,6 @@ createServer((req, res) => {
   }
   res.setHeader("Content-Type", req.url === "/harness.js" ? "text/javascript" : "text/html; charset=utf-8");
   res.end(req.url === "/harness.js" ? script.contents : html);
-}).listen(3105, "127.0.0.1", () => process.stdout.write("Lab component browser harness ready\n"));
+}).listen(Number(process.env.LAB_BROWSER_PORT ?? "3105"), "127.0.0.1", () =>
+  process.stdout.write("Lab component browser harness ready\n")
+);

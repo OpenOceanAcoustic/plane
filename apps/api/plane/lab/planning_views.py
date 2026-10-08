@@ -26,6 +26,7 @@ from .models import Folder, PersonalItem, ProjectFlow, TimeBlock, WorkspacePolic
 from .permissions import can_view_team, issue_access, project_ids, readable_issues, workspace_member
 from .planning import (
     STATUSES,
+    block_color,
     block_times,
     calendar_events,
     check_block_revision,
@@ -320,7 +321,7 @@ class CalendarView(LabView):
         if item.issue_id:
             issue_access(request.user, self.workspace, item.issue_id)
         start, end = block_times(request.data)
-        block = TimeBlock.objects.create(item=item, start=start, end=end)
+        block = TimeBlock.objects.create(item=item, start=start, end=end, color=block_color(request.data))
         return Response({"id": str(block.id), "revision": block.revision, "overlap": overlaps(block)}, status=201)
 
 
@@ -341,7 +342,7 @@ class BlockDetailView(LabView):
                     raise ValueError()
             except (ValueError, TypeError, AttributeError):
                 raise ValidationError("拆分点须位于时间块内且按十五分钟对齐")
-            following = TimeBlock.objects.create(item=block.item, start=split, end=block.end)
+            following = TimeBlock.objects.create(item=block.item, start=split, end=block.end, color=block.color)
             block.end = split
             block.revision += 1
             block.save(update_fields=["end", "revision"])
@@ -362,8 +363,9 @@ class BlockDetailView(LabView):
                 }
             )
         block.start, block.end = block_times(request.data)
+        block.color = block_color(request.data, block.color)
         block.revision += 1
-        block.save(update_fields=["start", "end", "revision"])
+        block.save(update_fields=["start", "end", "color", "revision"])
         audit("planning.block_update", obj=block, actor=request.user, workspace=self.workspace)
         return Response({"id": str(block.id), "revision": block.revision, "overlap": overlaps(block)})
 
@@ -389,7 +391,9 @@ class PlanningExportView(LabView):
         ):
             data = item_data(row, request.user, allowed)
             if data:
-                data["blocks"] = [{"start": b.start.isoformat(), "end": b.end.isoformat()} for b in row.blocks.all()]
+                data["blocks"] = [
+                    {"start": b.start.isoformat(), "end": b.end.isoformat(), "color": b.color} for b in row.blocks.all()
+                ]
                 items.append(data)
         if request.query_params.get("format") != "csv":
             return Response(items)

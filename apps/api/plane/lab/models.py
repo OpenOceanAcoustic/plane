@@ -105,14 +105,28 @@ class PersonalItem(Record):
 
 
 class TimeBlock(Record):
+    COLOR_CHOICES = [
+        ("", "按类别"),
+        ("blue", "蓝色"),
+        ("purple", "紫色"),
+        ("green", "绿色"),
+        ("orange", "橙色"),
+        ("pink", "粉色"),
+        ("cyan", "青色"),
+    ]
     item = models.ForeignKey(PersonalItem, on_delete=models.CASCADE, related_name="blocks")
     start = models.DateTimeField(db_index=True)
     end = models.DateTimeField()
     revision = models.PositiveIntegerField(default=1)
+    color = models.CharField(max_length=8, choices=COLOR_CHOICES, default="", blank=True)
 
     class Meta:
         constraints = [
-            models.CheckConstraint(condition=models.Q(end__gt=models.F("start")), name="lab_positive_time_block")
+            models.CheckConstraint(condition=models.Q(end__gt=models.F("start")), name="lab_positive_time_block"),
+            models.CheckConstraint(
+                condition=models.Q(color__in=["", "blue", "purple", "green", "orange", "pink", "cyan"]),
+                name="lab_valid_block_color",
+            ),
         ]
 
 

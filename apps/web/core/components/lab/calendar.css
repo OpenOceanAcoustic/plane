@@ -44,3 +44,27 @@
 .lab-calendar .lab-busy-event {
   opacity: 0.65;
 }
+.lab-calendar-resize {
+  display: flex;
+  height: 18px;
+  align-items: center;
+  justify-content: center;
+  border-top: 1px solid var(--border-color-subtle);
+  color: var(--text-color-tertiary);
+  cursor: ns-resize;
+  touch-action: none;
+  user-select: none;
+}
+.lab-calendar-resize:hover,
+.lab-calendar-resize:focus-visible {
+  background: var(--background-color-layer-1);
+  outline: 2px solid var(--border-color-accent-strong);
+  outline-offset: -2px;
+}
+.lab-folder-marker {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  flex-shrink: 0;
+  border-radius: 3px;
+}

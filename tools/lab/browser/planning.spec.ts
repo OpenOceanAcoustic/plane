@@ -53,6 +53,7 @@ async function planningServer(page: Page) {
         revision: 1,
         item_id: "personal",
         kind: "research",
+        color: body.color ?? "",
         start: body.start,
         end: body.end,
       });
@@ -79,6 +80,7 @@ async function planningServer(page: Page) {
       } else {
         event.start = body.start;
         event.end = body.end;
+        if (body.color !== undefined) event.color = body.color;
         result = { id: event.id, revision: event.revision, overlap: false };
       }
     }
@@ -100,6 +102,62 @@ async function createScheduledItem(page: Page) {
   await dialog.getByRole("button", { name: "保存", exact: true }).click();
   await expect(page.getByRole("button", { name: "科研规划 09:00–11:00", exact: true })).toBeVisible();
 }
+
+test("schedule colors default by category and manual overrides survive saving, splitting and reload", async ({
+  page,
+}) => {
+  const { events } = await planningServer(page);
+  await createScheduledItem(page);
+  const block = page.locator('[data-lab-calendar-event="block"]');
+  await expect(block).toHaveCSS("--fc-event-color", "#7c3aed");
+  await page.getByRole("button", { name: "事项时间轴", exact: true }).click();
+  await expect(block).toHaveCSS("--fc-event-color", "#7c3aed");
+  await page.getByRole("button", { name: "周", exact: true }).first().click();
+  await block.click();
+  const dialog = page.getByRole("dialog");
+  await dialog.getByLabel("排期颜色", { exact: true }).selectOption("orange");
+  await dialog.getByRole("button", { name: "保存", exact: true }).click();
+  await expect(block).toHaveCSS("--fc-event-color", "#c2410c");
+  expect(events[0]!.color).toBe("orange");
+  await page.reload();
+  await expect(block).toHaveCSS("--fc-event-color", "#c2410c");
+  await block.click();
+  await dialog.getByRole("button", { name: "拆分时间块", exact: true }).click();
+  await dialog.getByLabel("拆分时间（上海）").fill("2026-10-08T10:00");
+  await dialog.getByRole("button", { name: "保存", exact: true }).click();
+  await expect(page.locator('[data-lab-calendar-event="following"]')).toHaveCSS("--fc-event-color", "#c2410c");
+  await block.click();
+  await dialog.getByLabel("排期颜色", { exact: true }).selectOption("");
+  await dialog.getByRole("button", { name: "保存", exact: true }).click();
+  await expect(block).toHaveCSS("--fc-event-color", "#7c3aed");
+});
+
+test("calendar categories have distinct colors and opaque busy blocks use a neutral color", async ({ page }) => {
+  const { events } = await planningServer(page);
+  for (const kind of ["project", "research", "study", "mentoring", undefined]) {
+    events.push({
+      id: kind ?? "busy",
+      kind,
+      user_id: "member",
+      title: kind ?? "忙碌",
+      editable: false,
+      start: "2026-10-08T09:00:00+08:00",
+      end: "2026-10-08T10:00:00+08:00",
+    });
+  }
+  await page.goto("/planner");
+  await Promise.all(
+    [
+      ["project", "#1d4ed8"],
+      ["research", "#7c3aed"],
+      ["study", "#15803d"],
+      ["mentoring", "#c2410c"],
+      ["busy", "#64748b"],
+    ].map(([id, color]) =>
+      expect(page.locator(`[data-lab-calendar-event="${id}"]`)).toHaveCSS("--fc-event-color", color!)
+    )
+  );
+});
 
 test("keyboard folder ordering, pointer moves and calendar splitting preserve the original item", async ({ page }) => {
   const { planner, events } = await planningServer(page);
@@ -254,6 +312,7 @@ test("native planning fields have exact labels independent of their select optio
 for (const insecureOrigin of [false, true]) {
   test(`blank calendar selection opens a form without crashing on ${insecureOrigin ? "LAN HTTP" : "localhost"}`, async ({
     page,
+    baseURL,
   }) => {
     const errors: string[] = [];
     page.on("pageerror", (error) => errors.push(error.message));
@@ -261,7 +320,7 @@ for (const insecureOrigin of [false, true]) {
       // Exercise the deployed non-loopback HTTP browser context with isolated assets/data.
       await page.route("http://planning.lab.test/**", async (route) => {
         const url = new URL(route.request().url());
-        const response = await route.fetch({ url: `http://127.0.0.1:3105${url.pathname}${url.search}` });
+        const response = await route.fetch({ url: new URL(`${url.pathname}${url.search}`, baseURL).href });
         await route.fulfill({ response });
       });
     }

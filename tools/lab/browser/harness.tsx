@@ -30,10 +30,10 @@ const Planning = observer(function Planning() {
   );
 });
 const path = window.location.pathname;
-function Workbench() {
+function Workbench({ section = "planner" }: { section?: "planner" | "team" }) {
   return (
     <div style={{ height: "calc(100dvh - 48px)" }}>
-      <MemoryRouter initialEntries={["/lab/lab/planner"]}>
+      <MemoryRouter initialEntries={[`/lab/lab/${section}`]}>
         <Routes>
           <Route path="/:workspaceSlug/lab/:section" element={<LabPanel />} />
         </Routes>
@@ -53,6 +53,8 @@ createRoot(document.getElementById("root")!).render(
       <Planning />
     ) : path === "/workbench" ? (
       <Workbench />
+    ) : path === "/team" ? (
+      <Workbench section="team" />
     ) : (
       <LabAuth
         register={path === "/register"}

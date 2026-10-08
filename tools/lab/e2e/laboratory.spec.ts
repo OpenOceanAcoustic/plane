@@ -131,6 +131,9 @@ test("SSH bootstrap, TOTP login, project cover upload, original layouts and pers
   const recordCalendarError = (error: Error) => calendarErrors.push(error.message);
   page.on("pageerror", recordCalendarError);
   const emptyGrid = calendarPane.locator(".lab-calendar");
+  await calendarPane.getByRole("spinbutton", { name: "日历高度", exact: true }).fill("440");
+  await calendarPane.getByRole("spinbutton", { name: "日历高度", exact: true }).press("Enter");
+  await expect.poll(async () => Math.round((await emptyGrid.boundingBox())!.height)).toBe(460);
   await emptyGrid.scrollIntoViewIfNeeded();
   const gridBounds = await emptyGrid.boundingBox();
   expect(gridBounds).not.toBeNull();
@@ -237,9 +240,16 @@ test("SSH bootstrap, TOTP login, project cover upload, original layouts and pers
   const shanghaiDate = await page.evaluate(() => new Date(Date.now() + 8 * 3600000).toISOString().slice(0, 10));
   await dialog.getByLabel("开始（上海）", { exact: true }).fill(`${shanghaiDate}T09:00`);
   await dialog.getByLabel("结束（上海）", { exact: true }).fill(`${shanghaiDate}T10:00`);
+  await dialog.getByLabel("排期颜色", { exact: true }).selectOption("pink");
   await dialog.getByRole("button", { name: "保存", exact: true }).click();
   await expect(page.getByRole("heading", { name: "个人周历", exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: /^科研学习排期 / }).first()).toBeVisible();
+  await expect(page.getByRole("button", { name: /^科研学习排期 / }).first()).toHaveCSS("--fc-event-color", "#be185d");
+  const savedColors = await (await page.request.get("/api/workspaces/browser-lab/lab/calendar/")).json();
+  expect(savedColors.events.find((event: { title: string }) => event.title === "科研学习排期").color).toBe("pink");
+  await page.reload();
+  await expect(page.getByRole("spinbutton", { name: "日历高度", exact: true })).toHaveValue("440");
+  await expect(page.getByRole("button", { name: /^科研学习排期 / }).first()).toHaveCSS("--fc-event-color", "#be185d");
   const personalCard = page.locator("article").filter({ hasText: "科研学习排期" });
   await expect(personalCard).toContainText("私人事项");
   await expect(personalCard).toContainText("本周计划 1 小时");

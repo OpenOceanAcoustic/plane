@@ -17,6 +17,13 @@ from .permissions import can_read_issue, issue_access, require_lead
 STATUSES = ("todo", "active", "review", "done")
 
 
+def block_color(data, current=""):
+    value = data.get("color", current)
+    if not isinstance(value, str) or value not in dict(TimeBlock.COLOR_CHOICES):
+        raise ValidationError("排期颜色须为按类别或可选颜色")
+    return value
+
+
 @transaction.atomic
 def default_folders(user, workspace):
     lock(f"lab-folders:{workspace.id}:{user.id}")
@@ -102,9 +109,7 @@ def item_schedules(item_ids):
         for item_id in item_ids
     }
     blocks = (
-        TimeBlock.objects.filter(item_id__in=item_ids)
-        .order_by("start", "id")
-        .values_list("item_id", "start", "end")
+        TimeBlock.objects.filter(item_id__in=item_ids).order_by("start", "id").values_list("item_id", "start", "end")
     )
     for item_id, start, end in blocks.iterator():
         schedule = schedules[str(item_id)]
@@ -269,7 +274,9 @@ def calendar_events(user, workspace, start, end, *, team=False, user_id=None, pr
             "editable": own and bool(details),
         }
         if details:
-            event.update({"item_id": str(item.id), "kind": details["kind"], "status": details["status"]})
+            event.update(
+                {"item_id": str(item.id), "kind": details["kind"], "status": details["status"], "color": block.color}
+            )
             if details.get("issue_id"):
                 event.update({"issue_id": details["issue_id"], "project_id": details["project_id"]})
         if event["editable"]:

@@ -20,11 +20,14 @@ import themePlugin from "@fullcalendar/react/themes/monarch";
 import zhCN from "@fullcalendar/react/locales/zh-cn";
 import resourceTimelinePlugin from "@fullcalendar/react-scheduler/resource-timeline";
 import resourceTimeGridPlugin from "@fullcalendar/react-scheduler/resource-timegrid";
-import { CalendarDays, ChevronLeft, ChevronRight, Download, Plus } from "lucide-react";
+import type { ResourceInput } from "@fullcalendar/react-scheduler";
+import { CalendarDays, ChevronLeft, ChevronRight, Download, Folder, Plus } from "lucide-react";
 import { Button, LabDialog, LabField, LabSelect, labInputClass } from "@plane/ui";
 import type { LabEvent, LabItem, LabMember } from "@plane/types";
 import type { LabStore } from "@plane/shared-state";
 import { calendarInstant, localInput, SLOT_MS, weekDays } from "./calendar-time";
+import { CalendarHeightControl, CalendarResizeHandle, useCalendarHeight } from "./calendar-size";
+import { calendarCategories, calendarColor, calendarColors } from "./calendar-colors";
 // oxlint-disable-next-line import/no-unassigned-import -- bundled FullCalendar layout styles
 import "@fullcalendar/react/skeleton.css";
 // oxlint-disable-next-line import/no-unassigned-import -- local theme, no CDN
@@ -44,11 +47,18 @@ const personalViews = [
   { value: "timeGridDay", label: "日" },
   { value: "timeGridWeek", label: "周" },
   { value: "dayGridMonth", label: "月" },
+  { value: "resourceTimeline", label: "事项时间轴" },
 ];
 const teamViews = [
-  { value: "resourceTimelineWeek", label: "人员时间轴" },
+  { value: "resourceTimeline", label: "人员时间轴" },
   { value: "resourceTimeGridWeek", label: "人员分列" },
 ];
+const timelineViews = [
+  { value: "resourceTimelineDay", label: "日" },
+  { value: "resourceTimelineWeek", label: "周" },
+  { value: "resourceTimelineMonth", label: "月" },
+];
+const folderPalette = ["indigo", "emerald", "orange", "purple", "pink", "crimson", "yellow"];
 const clock = (instant: string) =>
   new Date(instant).toLocaleTimeString("zh-CN", { timeZone: "Asia/Shanghai", hour: "2-digit", minute: "2-digit" });
 const roundedNow = () => new Date(Math.ceil(Date.now() / SLOT_MS) * SLOT_MS);
@@ -100,16 +110,51 @@ export const LabCalendar = observer(function LabCalendar({
   });
   const [title, setTitle] = useState("");
   const [view, setView] = useState(team ? "resourceTimelineWeek" : "timeGridWeek");
+  const [timelineView, setTimelineView] = useState("resourceTimelineWeek");
+  const timeline = view.startsWith("resourceTimeline");
   const [userId, setUserId] = useState("all"),
     [projectId, setProjectId] = useState("all");
   const [allMembers, setAllMembers] = useState<LabMember[]>([]);
   const [editing, setEditing] = useState<LabEvent | "new">();
   const [initialStart, setInitialStart] = useState(roundedNow),
     [initialEnd, setInitialEnd] = useState(() => new Date(roundedNow().getTime() + 3600000));
+  const [initialItemId, setInitialItemId] = useState("");
+  const [folderColors, setFolderColors] = useState<Record<string, string>>({});
+  const [hiddenFolderIds, setHiddenFolderIds] = useState<string[]>([]);
+  const [choosingFolders, setChoosingFolders] = useState(false);
   const [split, setSplit] = useState(false),
     [confirmDelete, setConfirmDelete] = useState(false);
   const editingEvent = editing && editing !== "new" ? editing : undefined;
   const planner = store.planner;
+  const { height, setHeight } = useCalendarHeight(
+    `lab-calendar-height:${store.slug}:${planner?.user_id ?? ""}:${team ? "team" : "personal"}`
+  );
+  useEffect(() => {
+    if (team || !planner) return;
+    setFolderColors((previous) => {
+      const next = { ...previous };
+      let changed = false;
+      for (const folder of planner.folders) {
+        if (!next[folder.id]) {
+          next[folder.id] = folderPalette[Object.keys(next).length % folderPalette.length]!;
+          changed = true;
+        }
+      }
+      return changed ? next : previous;
+    });
+  }, [team, planner]);
+  // oxlint-disable-next-line unicorn/no-array-sort -- copy first; web's ES2022 library excludes toSorted
+  const folders = useMemo(() => [...(planner?.folders ?? [])].sort((a, b) => a.position - b.position), [planner]);
+  const folderGroups = useMemo(
+    () => [...folders, { id: "unclassified", name: "未分类", position: folders.length }],
+    [folders]
+  );
+  const itemFolders = useMemo(() => {
+    const ids = new Set(folders.map((folder) => folder.id));
+    return new Map(
+      planner?.items.map((item) => [item.id, ids.has(item.folder_id ?? "") ? item.folder_id! : "unclassified"])
+    );
+  }, [folders, planner]);
   const reload = useCallback(async () => {
     await store.loadCalendar(range.start, range.end, team, {
       userId: userId === "all" ? undefined : userId,
@@ -121,9 +166,10 @@ export const LabCalendar = observer(function LabCalendar({
     void store.execute(reload);
   }, [reload, store, planner]);
   const openNew = useCallback(
-    (start = roundedNow(), end = new Date(start.getTime() + 3600000)) => {
+    (start = roundedNow(), end = new Date(start.getTime() + 3600000), itemId = "") => {
       setInitialStart(start);
       setInitialEnd(end);
+      setInitialItemId(itemId);
       setEditing("new");
       setSplit(false);
       setConfirmDelete(false);
@@ -132,7 +178,7 @@ export const LabCalendar = observer(function LabCalendar({
     [store]
   );
   useEffect(() => {
-    if (scheduled) openNew();
+    if (scheduled) openNew(undefined, undefined, scheduled.id);
   }, [scheduled, openNew]);
   const close = () => {
     setEditing(undefined);
@@ -146,6 +192,7 @@ export const LabCalendar = observer(function LabCalendar({
     setRange((previous) => (previous.start === start && previous.end === end ? previous : { start, end }));
     setTitle(info.view.title);
     setView(info.view.type);
+    if (info.view.type.startsWith("resourceTimeline")) setTimelineView(info.view.type);
   }, []);
   const select = useCallback(
     (info: DateSelectInfo) => {
@@ -153,12 +200,17 @@ export const LabCalendar = observer(function LabCalendar({
         calendar.current?.getApi().unselect();
         return;
       }
+      const itemId = !team && timeline ? (info.resource?.extendedProps.itemId as string | undefined) : undefined;
+      if (!team && timeline && !itemId) {
+        calendar.current?.getApi().unselect();
+        return;
+      }
       // Month selections describe whole days. Start at 09:00 for a useful first block.
       const start = info.allDay ? new Date(info.start.getTime() + 9 * 3600000) : info.start;
-      openNew(start, info.allDay ? new Date(start.getTime() + 3600000) : info.end);
+      openNew(start, info.allDay ? new Date(start.getTime() + 3600000) : info.end, itemId);
       calendar.current?.getApi().unselect();
     },
-    [team, store, openNew]
+    [team, timeline, store, openNew]
   );
   const change = useCallback(
     (info: EventDropInfo | EventResizeDoneInfo) => {
@@ -189,26 +241,69 @@ export const LabCalendar = observer(function LabCalendar({
     },
     [store, reload, onCalendarChanged]
   );
+  const visibleEvents = useMemo(
+    () =>
+      store.events.filter((event) => {
+        const folderId = itemFolders.get(event.item_id ?? "");
+        // Opaque blocks have no readable item or folder. Keep them in a neutral
+        // busy row even when the member hides their unclassified folder.
+        return team || !timeline || !folderId || !hiddenFolderIds.includes(folderId);
+      }),
+    [store.events, team, timeline, hiddenFolderIds, itemFolders]
+  );
   const events = useMemo<EventInput[]>(
     () =>
-      store.events.map((event) => ({
+      visibleEvents.map((event) => ({
         id: event.id,
         title: event.title,
         start: event.start,
         end: event.end,
-        resourceId: event.user_id,
+        resourceId: team ? event.user_id : itemFolders.has(event.item_id ?? "") ? `item:${event.item_id}` : "busy",
         editable: event.editable && !store.busy,
         interactive: event.editable,
         resourceEditable: false,
         extendedProps: { block: event },
         className: event.kind ? "" : "lab-busy-event",
+        color: calendarColor(event),
+        contrastColor: "#ffffff",
       })),
-    [store.events, store.busy]
+    [visibleEvents, store.busy, team, itemFolders]
   );
-  const resources = useMemo(
-    () => store.members.map((member) => ({ id: member.id, title: member.name })),
-    [store.members]
-  );
+  const resources = useMemo<ResourceInput[]>(() => {
+    if (team) return store.members.map((member) => ({ id: member.id, title: member.name }));
+    if (!planner) return [];
+    const groups: ResourceInput[] = folderGroups
+      .filter((folder) => !hiddenFolderIds.includes(folder.id))
+      .map((folder, order) => ({
+        id: `folder:${folder.id}`,
+        title: folder.name,
+        order,
+        extendedProps: { color: folderColors[folder.id] ?? "grey", folder: true },
+        children: planner.items
+          .filter((item) => itemFolders.get(item.id) === folder.id)
+          .filter((item) => projectId === "all" || item.project_id === projectId)
+          .map((item, itemOrder) => ({
+            id: `item:${item.id}`,
+            title: item.title,
+            order: itemOrder,
+            extendedProps: { itemId: item.id, issueKey: item.issue_key, color: folderColors[folder.id] ?? "grey" },
+          })),
+      }));
+    if (visibleEvents.some((event) => !itemFolders.has(event.item_id ?? ""))) {
+      groups.push({ id: "busy", title: "忙碌", order: folderGroups.length, extendedProps: { color: "grey" } });
+    }
+    return groups;
+  }, [
+    team,
+    store.members,
+    planner,
+    projectId,
+    folderGroups,
+    folderColors,
+    hiddenFolderIds,
+    itemFolders,
+    visibleEvents,
+  ]);
   async function save(data: FormData) {
     await store.execute(async () => {
       const path = editingEvent ? `calendar/${editingEvent.id}/` : "calendar/";
@@ -218,6 +313,7 @@ export const LabCalendar = observer(function LabCalendar({
             ...(editingEvent ? { expected_revision: editingEvent.revision } : { item_id: data.get("item_id") }),
             start: calendarInstant(String(data.get("start"))),
             end: calendarInstant(String(data.get("end"))),
+            color: String(data.get("color") ?? ""),
           };
       const result = await store
         .request<{ overlap?: boolean }>(path, editingEvent ? "PATCH" : "POST", body)
@@ -263,9 +359,13 @@ export const LabCalendar = observer(function LabCalendar({
           <Button
             key={option.value}
             size="sm"
-            aria-pressed={view === option.value}
-            variant={view === option.value ? "primary" : "neutral-primary"}
-            onClick={() => calendar.current?.getApi().changeView(option.value)}
+            aria-pressed={option.value === "resourceTimeline" ? timeline : view === option.value}
+            variant={
+              (option.value === "resourceTimeline" ? timeline : view === option.value) ? "primary" : "neutral-primary"
+            }
+            onClick={() =>
+              calendar.current?.getApi().changeView(option.value === "resourceTimeline" ? timelineView : option.value)
+            }
           >
             {option.label}
           </Button>
@@ -276,6 +376,31 @@ export const LabCalendar = observer(function LabCalendar({
           </Button>
         )}
       </div>
+      {timeline && (
+        <nav aria-label="时间轴范围" className="flex flex-wrap items-center gap-2">
+          {timelineViews.map((option) => (
+            <Button
+              key={option.value}
+              size="sm"
+              aria-pressed={view === option.value}
+              variant={view === option.value ? "primary" : "neutral-primary"}
+              onClick={() => calendar.current?.getApi().changeView(option.value)}
+            >
+              {option.label}
+            </Button>
+          ))}
+          {!team && (
+            <Button
+              size="sm"
+              variant="neutral-primary"
+              prependIcon={<Folder size={14} />}
+              onClick={() => setChoosingFolders(true)}
+            >
+              显示文件夹
+            </Button>
+          )}
+        </nav>
+      )}
       <div className="flex flex-wrap items-center gap-2">
         <input
           type="date"
@@ -313,7 +438,7 @@ export const LabCalendar = observer(function LabCalendar({
           variant="neutral-primary"
           prependIcon={<Download size={13} />}
           disabled={store.busy}
-          onClick={() => exportEvents(store.events, store.members, "csv")}
+          onClick={() => exportEvents(visibleEvents, store.members, "csv")}
         >
           CSV
         </Button>
@@ -321,7 +446,7 @@ export const LabCalendar = observer(function LabCalendar({
           size="sm"
           variant="neutral-primary"
           disabled={store.busy}
-          onClick={() => exportEvents(store.events, store.members, "json")}
+          onClick={() => exportEvents(visibleEvents, store.members, "json")}
         >
           JSON
         </Button>
@@ -336,20 +461,61 @@ export const LabCalendar = observer(function LabCalendar({
           firstDay={1}
           initialView={team ? "resourceTimelineWeek" : "timeGridWeek"}
           headerToolbar={false}
-          height={team ? 650 : "auto"}
+          height={height}
           events={events}
           resources={resources}
-          resourceColumns={[{ field: "title", headerContent: "成员" }]}
-          resourceColumnsWidth={150}
+          resourceColumns={[{ field: "title", headerContent: team ? "成员" : "文件夹 / 事项" }]}
+          resourceColumnsWidth={team ? 150 : 240}
+          resourceOrder={team ? "title" : "order,title"}
+          resourcesInitiallyExpanded
+          filterResourcesWithEvents={false}
+          resourceCellContent={(info) =>
+            info.resource && (
+              <span className="flex min-w-0 items-center gap-2" title={info.resource.title}>
+                {!team && (
+                  <span
+                    aria-hidden
+                    className="lab-folder-marker"
+                    style={{ backgroundColor: `var(--label-${String(info.resource.extendedProps.color)}-bg-strong)` }}
+                  />
+                )}
+                <span className={`min-w-0 truncate ${info.resource.extendedProps.folder ? "font-medium" : ""}`}>
+                  {info.resource.title}
+                  {!team && info.resource.extendedProps.issueKey && (
+                    <span className="ml-2 text-11 text-tertiary">{String(info.resource.extendedProps.issueKey)}</span>
+                  )}
+                </span>
+              </span>
+            )
+          }
+          resourceLaneDidMount={(info) => {
+            info.el.dataset.labResource = info.resource.id;
+            if (!team && info.resource.extendedProps.itemId) {
+              info.el.dataset.labItem = String(info.resource.extendedProps.itemId);
+            }
+          }}
           editable={!store.busy}
           selectable={!store.busy}
           eventResourceEditable={false}
           selectMirror
+          selectAllow={(info) =>
+            team ? info.resource?.id === planner?.user_id : !timeline || Boolean(info.resource?.extendedProps.itemId)
+          }
           eventOverlap
           selectOverlap
-          slotDuration={team && view === "resourceTimelineWeek" ? "01:00:00" : "00:15:00"}
+          slotDuration={
+            timeline
+              ? view === "resourceTimelineMonth"
+                ? { days: 1 }
+                : view === "resourceTimelineWeek"
+                  ? "06:00:00"
+                  : "01:00:00"
+              : "00:15:00"
+          }
           snapDuration="00:15:00"
-          slotHeaderInterval="01:00:00"
+          slotHeaderInterval={timeline && view !== "resourceTimelineDay" ? { days: 1 } : "01:00:00"}
+          slotMinWidth={60}
+          eventMinWidth={24}
           scrollTime="08:00:00"
           allDaySlot={false}
           nowIndicator
@@ -387,7 +553,55 @@ export const LabCalendar = observer(function LabCalendar({
             );
           }}
         />
+        <CalendarResizeHandle height={height} setHeight={setHeight} />
       </div>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <CalendarHeightControl height={height} setHeight={setHeight} />
+        <ul aria-label="排期类别颜色" className="flex flex-wrap items-center gap-3 text-12 text-secondary">
+          {calendarCategories.map((category) => (
+            <li key={category.kind} className="flex items-center gap-1">
+              <span
+                aria-hidden
+                className="h-2.5 w-2.5 rounded-full"
+                style={{ backgroundColor: calendarColor({ kind: category.kind }) }}
+              />
+              {category.name}
+            </li>
+          ))}
+        </ul>
+      </div>
+      {choosingFolders && (
+        <LabDialog
+          title="选择显示的文件夹"
+          busy={false}
+          onClose={() => setChoosingFolders(false)}
+          onSubmit={async (data) => {
+            const shown = new Set(data.getAll("folder_id").map(String));
+            setHiddenFolderIds(folderGroups.filter((folder) => !shown.has(folder.id)).map((folder) => folder.id));
+            setChoosingFolders(false);
+          }}
+        >
+          {folderGroups.map((folder) => (
+            <label
+              key={folder.id}
+              className="flex items-center gap-3 rounded-md border border-subtle px-3 py-2 text-13"
+            >
+              <input
+                type="checkbox"
+                name="folder_id"
+                value={folder.id}
+                defaultChecked={!hiddenFolderIds.includes(folder.id)}
+              />
+              <span
+                aria-hidden
+                className="lab-folder-marker"
+                style={{ backgroundColor: `var(--label-${folderColors[folder.id] ?? "grey"}-bg-strong)` }}
+              />
+              {folder.name}
+            </label>
+          ))}
+        </LabDialog>
+      )}
       {editing && !confirmDelete && (
         <LabDialog
           title={split ? "拆分时间块" : editingEvent ? "调整时间块" : "安排个人时间"}
@@ -398,7 +612,7 @@ export const LabCalendar = observer(function LabCalendar({
         >
           {!editingEvent && (
             <LabField label="事项">
-              <select name="item_id" className={labInputClass} defaultValue={scheduled?.id} required>
+              <select name="item_id" className={labInputClass} defaultValue={initialItemId} required>
                 <option value="">请选择本人事项</option>
                 {store.planner?.items.map((item) => (
                   <option key={item.id} value={item.id}>
@@ -440,6 +654,16 @@ export const LabCalendar = observer(function LabCalendar({
                   required
                   defaultValue={localInput(editingEvent?.end ?? initialEnd)}
                 />
+              </LabField>
+              <LabField label="排期颜色">
+                <select name="color" className={labInputClass} defaultValue={editingEvent?.color ?? ""}>
+                  <option value="">按事项类别</option>
+                  {calendarColors.map((color) => (
+                    <option key={color.value} value={color.value}>
+                      {color.name}
+                    </option>
+                  ))}
+                </select>
               </LabField>
             </>
           )}
