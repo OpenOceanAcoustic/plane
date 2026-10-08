@@ -10,6 +10,7 @@ import { SortableContext, arrayMove, horizontalListSortingStrategy } from "@dnd-
 import { observer } from "mobx-react";
 import { Folder, Plus, CalendarDays, Trash2, Pencil, LockKeyhole, Globe2, Flag, Clock3, Layers3 } from "lucide-react";
 import { Button } from "@plane/ui";
+import { TOAST_TYPE, setToast } from "@plane/propel/toast";
 import type { LabFolder, LabItem, LabStatus, LabTask } from "@plane/types";
 import type { LabStore } from "@plane/shared-state";
 import { LabDialog, LabField, LabSelect, labInputClass } from "@plane/ui";
@@ -114,8 +115,17 @@ export const LabPlannerBoard = observer(function LabPlannerBoard({
   const items = matched.filter((item) => selected === "all" || item.folder_id === selected);
   const mutation = (path: string, method: string, body?: unknown) =>
     store.execute(async () => {
-      await store.request(path, method, body);
-      await store.loadPlanner();
+      try {
+        await store.request(path, method, body);
+        await store.loadPlanner();
+      } catch (error: unknown) {
+        setToast({
+          type: TOAST_TYPE.ERROR,
+          title: "规划更新失败",
+          message: error instanceof Error ? error.message : "请稍后重试",
+        });
+        throw error;
+      }
     });
   const finish = async (action: () => Promise<void>) => {
     await store.execute(async () => {

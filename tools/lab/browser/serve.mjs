@@ -25,6 +25,7 @@ const built = await build({
     "react-dom": dirname(webRequire.resolve("react-dom")),
     "mobx-react": webRequire.resolve("mobx-react"),
     "react-router": webRequire.resolve("react-router"),
+    "@plane/propel/toast": fileURLToPath(new URL("../../../packages/propel/src/toast/index.ts", import.meta.url)),
     "@plane/ui": fileURLToPath(new URL("ui-entry.ts", import.meta.url)),
   },
 });

@@ -6,6 +6,7 @@ import { StrictMode, useEffect, useMemo, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { observer } from "mobx-react";
 import { MemoryRouter, Route, Routes } from "react-router";
+import { Toast } from "@plane/propel/toast";
 import { LabAuth } from "../../../packages/ui/src/lab-auth";
 import { LabStore } from "../../../packages/shared-state/src/lab.store";
 import { LabPlannerBoard } from "../../../apps/web/core/components/lab/planner";
@@ -49,6 +50,7 @@ function Analytics() {
 }
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
+    <Toast theme="light" />
     {path === "/analytics" ? (
       <Analytics />
     ) : path === "/planner" ? (

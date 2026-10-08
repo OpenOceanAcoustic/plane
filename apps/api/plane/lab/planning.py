@@ -4,12 +4,12 @@
 from datetime import timedelta
 from zoneinfo import ZoneInfo
 
-from django.db import transaction
+from django.db import connection, transaction
 from django.utils import timezone
 from django.utils.dateparse import parse_datetime
 from rest_framework.exceptions import APIException, PermissionDenied, ValidationError
 
-from plane.db.models import State
+from plane.db.models import Issue, IssueActivity, State
 from .auth import audit, lock
 from .models import Folder, PersonalItem, ProjectFlow, TimeBlock
 from .permissions import can_read_issue, issue_access, require_lead
@@ -131,18 +131,70 @@ def own_item(user, workspace, item_id):
     return get_object_or_404(PersonalItem, id=item_id, user=user, workspace=workspace)
 
 
+def project_status_state(project, status):
+    """Use configured states, or native groups for an unconfigured project.
+
+    Review has no native group and must have its own explicit mapping. An
+    invalid configured mapping is never silently replaced with another state.
+    """
+    groups = {
+        "todo": ("unstarted", "backlog"),
+        "active": ("started",),
+        "review": ("started",),
+        "done": ("completed",),
+    }
+    flow = ProjectFlow.objects.filter(project=project).first()
+    states = State.objects.filter(project=project)
+    if flow:
+        state = states.filter(pk=getattr(flow, status + "_id"), group__in=groups[status]).first()
+        if not state:
+            raise ValidationError("项目状态映射已失效，请项目负责人重新配置「项目状态映射」")
+        return state
+    if status == "review":
+        raise ValidationError("项目未设置待验收状态，请项目负责人在「项目状态映射」中配置独立的待验收状态")
+    for group in groups[status]:
+        state = states.filter(group=group).order_by("-default", "sequence", "id").first()
+        if state:
+            return state
+    raise ValidationError("项目缺少对应状态，请项目负责人在项目设置中补齐状态")
+
+
 @transaction.atomic
 def set_status(item, user, status):
     if status not in STATUSES:
         raise ValidationError("状态无效")
     if item.issue_id:
+        # Native WIP statement triggers take this lock before issue tuple locks.
+        # Use the same order when reading the previous state for activity history.
+        with connection.cursor() as cursor:
+            cursor.execute("""DO $$ BEGIN
+                IF to_regprocedure('lab_wip_lock(uuid)') IS NOT NULL THEN
+                    PERFORM lab_wip_lock(NULL);
+                END IF;
+            END $$;""")
         issue = issue_access(user, item.workspace, item.issue_id, edit=True)
-        flow = ProjectFlow.objects.filter(project=issue.project).first()
-        state = getattr(flow, status, None) if flow else None
-        if not state:
-            raise ValidationError("请项目负责人先配置四类状态映射")
+        issue = Issue.objects.select_related("state").select_for_update(of=("self",)).get(pk=issue.id)
+        state = project_status_state(issue.project, status)
+        if issue.state_id == state.id:
+            return
+        previous = issue.state
         issue.state = state
-        issue.save(update_fields=["state", "completed_at"])
+        issue.updated_by = user
+        issue.save(update_fields=["state", "completed_at", "updated_at", "updated_by"])
+        IssueActivity.objects.create(
+            workspace=item.workspace,
+            project=issue.project,
+            issue=issue,
+            actor=user,
+            verb="updated",
+            field="state",
+            comment="updated the state to",
+            old_value=previous.name if previous else None,
+            new_value=state.name,
+            old_identifier=previous.id if previous else None,
+            new_identifier=state.id,
+            epoch=timezone.now().timestamp(),
+        )
         audit("planning.issue_status", obj=item, actor=user, workspace=item.workspace, status=status)
     else:
         item.status = status
