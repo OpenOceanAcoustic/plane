@@ -24,6 +24,7 @@ const built = await build({
     react: dirname(uiRequire.resolve("react")),
     "react-dom": dirname(webRequire.resolve("react-dom")),
     "mobx-react": webRequire.resolve("mobx-react"),
+    "react-router": webRequire.resolve("react-router"),
     "@plane/ui": fileURLToPath(new URL("ui-entry.ts", import.meta.url)),
   },
 });

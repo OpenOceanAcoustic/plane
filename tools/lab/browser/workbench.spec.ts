@@ -182,3 +182,32 @@ test("combined layout retains keyboard folder sorting and pointer moves on the o
   expect(planner.items[0]!.issue_id).toBe("source-issue");
   expect(planner.items[0]!.status).toBe("active");
 });
+
+for (const layout of ["综合", "个人周历"]) {
+  test(`personal calendar scrolls with the whole planning page in ${layout}`, async ({ page }) => {
+    await page.setViewportSize({ width: 1920, height: 900 });
+    await fixture(page);
+    await page.getByRole("button", { name: layout, exact: true }).click();
+    const main = page.getByRole("main");
+    const grid = page.getByRole("region", { name: "个人周历区域", exact: true }).locator(".lab-calendar");
+    await expect(grid).toBeVisible();
+    const innerScrollers = () =>
+      grid.evaluate(
+        (element) =>
+          [element, ...element.querySelectorAll<HTMLElement>("*")].filter(
+            (node) => node.scrollHeight > node.clientHeight + 1 && /auto|scroll/.test(getComputedStyle(node).overflowY)
+          ).length
+      );
+    await expect.poll(innerScrollers).toBe(0);
+    const bounds = await grid.boundingBox();
+    expect(bounds).not.toBeNull();
+    const before = await main.evaluate((element) => element.scrollTop);
+    await page.mouse.move(bounds!.x + 200, bounds!.y + 120);
+    await page.mouse.wheel(0, 400);
+    await expect.poll(() => main.evaluate((element) => element.scrollTop)).toBeGreaterThan(before);
+    await main.evaluate((element) => {
+      element.scrollTop = element.scrollHeight;
+    });
+    await expect(grid.locator('[data-time="23:45:00"]').last()).toBeInViewport();
+  });
+}
