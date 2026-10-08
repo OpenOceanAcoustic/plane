@@ -94,6 +94,7 @@ jobs:
           LAB_E2E_PROJECT: ooa-plane-e2e
           LAB_COMPOSE_PROJECT: ooa-plane-e2e
         run: |
+          docker compose -p ooa-plane-e2e -f compose.lab.yml exec -T api python - < tools/lab/test_upload.py
           pnpm exec playwright test --config tools/lab/e2e/playwright.config.ts
           docker compose -p ooa-plane-e2e -f compose.lab.yml exec -T plane-minio sh -c 'mc alias set lab http://localhost:9000 "$MINIO_ROOT_USER" "$MINIO_ROOT_PASSWORD" >/dev/null && printf lab-backup-contract | mc pipe lab/uploads/browser-contract.txt'
           python3 tools/lab/backup.py backup "$RUNNER_TEMP/lab-backup" "$RUNNER_TEMP/lab-keys"

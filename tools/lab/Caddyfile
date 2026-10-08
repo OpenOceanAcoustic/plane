@@ -5,7 +5,8 @@
   handle @api {
     reverse_proxy api:8000
   }
-  handle /uploads/* {
+  @uploads path /uploads /uploads/*
+  handle @uploads {
     reverse_proxy plane-minio:9000
   }
   handle /live/* {

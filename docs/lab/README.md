@@ -110,6 +110,14 @@ pnpm exec playwright test --config tools/lab/browser/playwright.config.ts
 
 真实浏览器脚本位于 `tools/lab/e2e`，只允许使用独立 `ooa-plane-e2e` Compose 项目。它从临时工作目录运行 `sh backend.sh` 初始化一次性测试管理员，验证真实动态码登录、原生看板和甘特以及个人排期；测试栈必须从空卷开始，且上述端口未被运行栈占用。本机与正式实例并行验收时须使用独立端口及配置，并设置 `LAB_E2E_BASE_URL` 与测试后台的访问地址一致。脚本关闭录屏、截图、tracing 与失败页面快照，注册页导航失败也不输出带 token 的地址。CI 的 `[full-regression]` 提交执行完整后端回归、真实部署浏览器流程和隔离恢复验证。
 
+`check` 还通过真实代理验证项目封面的签名上传和下载，写入的独立临时对象在成功或失败后都会删除；签名和凭据不输出。创建项目即使没有手动选择封面，也会上传默认封面，因此代理须同时处理 `/uploads` 和 `/uploads/*`。单独检查上传链路：
+
+```bash
+docker compose -p ooa-plane-lab -f compose.lab.yml exec -T api python - < tools/lab/test_upload.py
+```
+
+真实浏览器回归从原生项目创建按钮上传默认封面，验证项目创建及封面关联成功，再检查原生任务和实验室规划。CI 的完整部署流程也运行真实上传检查。
+
 ```bash
 LAB_COMPOSE_PROJECT=ooa-plane-e2e tools/lab/lab.sh init
 LAB_COMPOSE_PROJECT=ooa-plane-e2e tools/lab/lab.sh start

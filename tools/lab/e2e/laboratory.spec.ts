@@ -36,7 +36,7 @@ function dynamicCode(uri: string): string {
   return String((digest.readUInt32BE(digest[19]! & 15) & 0x7fffffff) % 1000000).padStart(6, "0");
 }
 
-test("SSH bootstrap, real TOTP login, original task layouts and personal schedule", async ({ page }) => {
+test("SSH bootstrap, TOTP login, project cover upload, original layouts and personal schedule", async ({ page }) => {
   // Keep bearer tokens and provisioning secrets in memory; no traces, screenshots or CLI output.
   if (project !== "ooa-plane-e2e") throw new Error("SSH bootstrap requires an isolated ooa-plane-e2e project");
   const output = execFileSync("sh", [resolve("backend.sh"), "bootstrap", "--workspace", "browser-lab"], {
@@ -77,6 +77,29 @@ test("SSH bootstrap, real TOTP login, original task layouts and personal schedul
   await page.getByRole("button", { name: "登录", exact: true }).click();
   await signedIn;
   await workspaceHome;
+  // A default project cover goes through the real signed POST before creation.
+  await page.goto("/browser-lab/projects");
+  await page.getByRole("button", { name: /^(添加项目|Add Project)$/ }).click();
+  const projectDialog = page.getByRole("dialog");
+  await projectDialog.locator('input[name="name"]').fill("Uploaded cover project");
+  await projectDialog.locator('input[name="identifier"]').fill("COVER");
+  const coverUploaded = page.waitForResponse(
+    (response) => new URL(response.url()).pathname === "/uploads" && response.request().method() === "POST"
+  );
+  const projectCreated = page.waitForResponse(
+    (response) =>
+      response.url().endsWith("/api/workspaces/browser-lab/projects/") && response.request().method() === "POST"
+  );
+  await projectDialog.getByRole("button", { name: /^(创建项目|Create project)$/i }).click();
+  expect([200, 201, 204]).toContain((await coverUploaded).status());
+  const createdResponse = await projectCreated;
+  expect(createdResponse.status()).toBe(201);
+  const created = (await createdResponse.json()) as { id: string };
+  await expect(projectDialog.getByRole("link", { name: /^(打开项目|Open project)$/i })).toBeVisible();
+  const projectDetail = await page.request.get(`/api/workspaces/browser-lab/projects/${created.id}/`);
+  expect(projectDetail.status()).toBe(200);
+  const detail = (await projectDetail.json()) as { cover_image_url: string | null };
+  expect(detail.cover_image_url).toContain("/api/assets/");
   await page.goto("/browser-lab/lab/planner");
   await expect(page.getByRole("heading", { name: "个人规划", exact: true })).toBeVisible();
   await page.getByRole("button", { name: "引用项目任务", exact: true }).click();

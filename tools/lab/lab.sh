@@ -37,6 +37,7 @@ case "${1:-help}" in
     pnpm turbo run check:types check:lint --filter=web --filter=admin --filter=space --filter=@plane/ui --filter=@plane/shared-state --filter=@plane/types --concurrency=1
     "${compose[@]}" exec -T api python manage.py check
     "${compose[@]}" exec -T api python manage.py makemigrations --check --dry-run lab
+    "${compose[@]}" exec -T api python - < tools/lab/test_upload.py
     ;;
   *) echo 'Usage: tools/lab/lab.sh setup|build|init|start|stop|status|access <action/options>|check' ;;
 esac
