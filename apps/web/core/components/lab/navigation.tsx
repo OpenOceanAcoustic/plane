@@ -33,7 +33,7 @@ export function LabNavigation() {
         );
       })}
       <a
-        href="https://github.com/OpenOceanAcoustic/plane/tree/feat/lab-planning-bounty-auth"
+        href="https://github.com/OpenOceanAcoustic/plane/tree/feat/personal-planning-workbench"
         target="_blank"
         rel="noreferrer"
         className="mt-2 px-3 text-12 text-tertiary hover:text-secondary"

@@ -87,6 +87,7 @@ async function fixture(page: Page, section: "team" | "workbench") {
   };
   const calendarQueries: URLSearchParams[] = [];
   const writes: { method: string; path: string; body: Record<string, unknown> }[] = [];
+  let folderCounter = 0;
   await page.clock.install({ time: new Date("2026-10-08T00:00:00Z") });
   await page.route("**/auth/get-csrf-token/", (route) => route.fulfill({ json: { csrf_token: "test" } }));
   await page.route("**/api/workspaces/lab/lab/**", async (route) => {
@@ -111,6 +112,25 @@ async function fixture(page: Page, section: "team" | "workbench") {
         };
       }
       result = planner;
+    } else if (path === "folders/" && method === "PUT") {
+      planner.folders = (body!.ids as string[]).map((id, position) => {
+        const folder = planner.folders.find((row) => row.id === id)!;
+        folder.position = position;
+        return folder;
+      });
+    } else if (path === "folders/" && method === "POST") {
+      folderCounter += 1;
+      const folder = {
+        id: folderCounter === 1 ? "new-folder" : `new-folder-${folderCounter}`,
+        name: String(body!.name),
+        position: planner.folders.length,
+      };
+      planner.folders.push(folder);
+      result = folder;
+    } else if (path.startsWith("folders/") && method === "PATCH") {
+      const folder = planner.folders.find((row) => path === `folders/${row.id}/`)!;
+      folder.name = String(body!.name);
+      result = folder;
     } else if (path === "calendar/" && method === "GET") {
       calendarQueries.push(new URLSearchParams(url.searchParams));
       const team = url.searchParams.get("team") === "1";
@@ -189,6 +209,33 @@ async function chooseDay(page: Page) {
   await page.getByLabel("跳转日期", { exact: true }).fill("2026-10-08");
 }
 
+async function createFolder(page: Page, name: string) {
+  await page
+    .getByRole("region", { name: "文件夹看板区域", exact: true })
+    .getByRole("button", { name: "新增文件夹", exact: true })
+    .click();
+  const dialog = page.getByRole("dialog", { name: "新增文件夹", exact: true });
+  await dialog.getByLabel("名称", { exact: true }).fill(name);
+  await dialog.getByRole("button", { name: "保存", exact: true }).click();
+  await expect(dialog).toHaveCount(0);
+}
+
+async function folderEventColors(locator: Locator) {
+  return locator.evaluate((element) => {
+    const marker = element as HTMLElement;
+    const background = marker.style.backgroundColor.replace("-bg-strong", "-bg");
+    const foreground = marker.style.backgroundColor.replace("-bg-strong", "-text");
+    const probe = document.createElement("span");
+    probe.style.backgroundColor = background;
+    probe.style.color = foreground;
+    marker.append(probe);
+    const style = getComputedStyle(probe);
+    const result = { background: style.backgroundColor, foreground: style.color };
+    probe.remove();
+    return result;
+  });
+}
+
 test("team timeline day week and month request matching ranges and filters", async ({ page }) => {
   const { calendarQueries } = await fixture(page, "team");
   const scale = page.getByRole("navigation", { name: "时间轴范围", exact: true });
@@ -199,9 +246,9 @@ test("team timeline day week and month request matching ranges and filters", asy
     ["周", 7, 7],
     ["月", 28, 31],
   ] as const) {
-    // oxlint-disable-next-line no-await-in-loop -- each calendar view loads before switching again
+    // oxlint-disable-next-line no-await-in-loop -- Scale transitions share one calendar and must finish in order.
     await scale.getByRole("button", { name: label, exact: true }).click();
-    // oxlint-disable-next-line no-await-in-loop -- inspect the loaded range before the next view change
+    // oxlint-disable-next-line no-await-in-loop -- Verify the request produced by this scale before changing it again.
     await expect
       .poll(() => {
         const query = calendarQueries.at(-1)!;
@@ -295,7 +342,7 @@ test("personal timeline keeps unscheduled item rows and selection prefills the o
 
 test("personal folder groups collapse natively and use distinct consistent folder colors", async ({ page }) => {
   await page.setViewportSize({ width: 1920, height: 1080 });
-  const { ownEvents } = await fixture(page, "workbench");
+  const { planner, ownEvents } = await fixture(page, "workbench");
   const pane = page.getByRole("region", { name: "个人周历区域", exact: true });
   await pane.getByRole("button", { name: "事项时间轴", exact: true }).click();
   ownEvents.push({
@@ -324,11 +371,23 @@ test("personal folder groups collapse natively and use distinct consistent folde
   expect(aColor).not.toBe(bColor);
   const itemMarker = pane.locator('[role="rowheader"][data-resource-id="item:project-item"] .lab-folder-marker');
   await expect(itemMarker).toHaveCSS("background-color", aColor);
-  // Folder markers retain their own palette; time blocks follow category/manual colors.
-  await Promise.all([
-    expect(pane.locator('[data-lab-calendar-event="own-block"]')).toHaveCSS("background-color", "rgb(29, 78, 216)"),
-    expect(pane.locator('[data-lab-calendar-event="private-block"]')).toHaveCSS("background-color", "rgb(21, 128, 61)"),
-  ]);
+  const aEventColors = await folderEventColors(folderA.locator(".lab-folder-marker"));
+  const bEventColors = await folderEventColors(folderB.locator(".lab-folder-marker"));
+  expect(aEventColors.background).not.toBe(bEventColors.background);
+  await Promise.all(
+    (
+      [
+        ["own-block", aEventColors],
+        ["private-block", bEventColors],
+      ] as const
+    ).map(([id, colors]) => {
+      const bar = pane.locator(`[data-lab-calendar-event="${id}"]`);
+      return Promise.all([
+        expect(bar).toHaveCSS("background-color", colors.background),
+        expect(bar.locator("strong")).toHaveCSS("color", colors.foreground),
+      ]);
+    })
+  );
   const projectLane = pane.locator('[data-lab-item="project-item"]');
   await expect(projectLane).toBeVisible();
   await folderA.locator('span[aria-hidden="true"]').first().click();
@@ -338,6 +397,54 @@ test("personal folder groups collapse natively and use distinct consistent folde
   await folderA.locator('span[aria-hidden="true"]').first().click();
   await expect(projectLane).toBeVisible();
   await expect(pane.locator('[data-lab-calendar-event="own-block"]')).toBeVisible();
+  const board = page.getByRole("region", { name: "文件夹看板区域", exact: true });
+  const handle = board.getByRole("button", { name: "拖动排序文件夹 A", exact: true });
+  await handle.focus();
+  await page.keyboard.press("Space");
+  await expect(handle).toHaveAttribute("aria-pressed", "true");
+  await page.clock.runFor(50);
+  await page.evaluate(
+    () => new Promise<void>((ready) => requestAnimationFrame(() => requestAnimationFrame(() => ready())))
+  );
+  await page.keyboard.press("ArrowRight");
+  await page.clock.runFor(50);
+  await expect(page.getByText("移动到B", { exact: true })).toHaveCount(1);
+  await page.keyboard.press("Space");
+  await page.clock.runFor(50);
+  await expect.poll(() => planner.folders.map((folder) => folder.id)).toEqual(["B", "A", "C", "D"]);
+  await expect(folderA.locator(".lab-folder-marker")).toHaveCSS("background-color", aColor);
+  await expect(folderB.locator(".lab-folder-marker")).toHaveCSS("background-color", bColor);
+  await board.getByLabel("A 文件夹操作", { exact: true }).click();
+  await board.getByRole("button", { name: "改名", exact: true }).click();
+  const dialog = page.getByRole("dialog");
+  await dialog.getByLabel("名称", { exact: true }).fill("研究 A");
+  await dialog.getByRole("button", { name: "保存", exact: true }).click();
+  await expect(folderA).toContainText("研究 A");
+  await expect(folderA.locator(".lab-folder-marker")).toHaveCSS("background-color", aColor);
+  await createFolder(page, "E");
+  const folderE = pane.locator('[role="rowheader"][data-resource-id="folder:new-folder"]');
+  await expect(folderE).toContainText("E");
+  const eColor = await folderE
+    .locator(".lab-folder-marker")
+    .evaluate((element) => getComputedStyle(element).backgroundColor);
+  expect(eColor).not.toBe(aColor);
+  expect(eColor).not.toBe(bColor);
+  await page.reload();
+  await pane.getByRole("button", { name: "事项时间轴", exact: true }).click();
+  await expect(folderA).toContainText("研究 A");
+  await Promise.all([
+    expect(folderA.locator(".lab-folder-marker")).toHaveCSS("background-color", aColor),
+    expect(folderB.locator(".lab-folder-marker")).toHaveCSS("background-color", bColor),
+    expect(folderE.locator(".lab-folder-marker")).toHaveCSS("background-color", eColor),
+    expect(pane.locator('[data-lab-calendar-event="own-block"]')).toHaveCSS(
+      "background-color",
+      aEventColors.background
+    ),
+    expect(pane.locator('[data-lab-calendar-event="private-block"]')).toHaveCSS(
+      "background-color",
+      bEventColors.background
+    ),
+  ]);
 });
 
 async function checkOpaqueExport(page: Page, pane: Locator) {
@@ -386,6 +493,27 @@ test("personal folder visibility survives calendar modes dates and refreshed pla
   await expect(pane.locator('[data-lab-item="private-item"]')).toBeVisible();
   await expect(pane.locator('[data-lab-calendar-event="own-opaque"]')).toBeVisible();
   await checkOpaqueExport(page, pane);
+  const retainedColor = await pane
+    .locator('[role="rowheader"][data-resource-id="folder:B"] .lab-folder-marker')
+    .evaluate((element) => getComputedStyle(element).backgroundColor);
+  await page.reload();
+  await pane.getByRole("button", { name: "事项时间轴", exact: true }).click();
+  await Promise.all([
+    expect(pane.locator('[data-lab-resource="folder:A"]')).toHaveCount(0),
+    expect(pane.locator('[data-lab-resource="folder:unclassified"]')).toHaveCount(0),
+    expect(pane.locator('[data-lab-item="private-item"]')).toBeVisible(),
+    expect(pane.locator('[role="rowheader"][data-resource-id="folder:B"] .lab-folder-marker')).toHaveCSS(
+      "background-color",
+      retainedColor
+    ),
+    expect(pane.locator('[data-lab-calendar-event="own-opaque"]')).toBeVisible(),
+  ]);
+  await pane.getByRole("button", { name: "显示文件夹", exact: true }).click();
+  await Promise.all([
+    expect(picker.getByRole("checkbox", { name: "A", exact: true })).not.toBeChecked(),
+    expect(picker.getByRole("checkbox", { name: "未分类", exact: true })).not.toBeChecked(),
+  ]);
+  await picker.getByRole("button", { name: "取消", exact: true }).click();
   await pane.getByLabel("跳转日期", { exact: true }).fill("2026-11-16");
   await expect.poll(() => calendarQueries.at(-1)!.get("start")).toBe("2026-11-15T16:00:00.000Z");
   await page.getByRole("button", { name: "文件夹看板", exact: true }).click();
@@ -458,4 +586,115 @@ test("team timeline native moves resizing and splitting preserve owner and item 
     expect(Object.keys(write.body).toSorted()).toEqual(
       write.body.split_at ? ["expected_revision", "split_at"] : ["end", "expected_revision", "start"]
     );
+});
+
+test("monthly native selection moves and resizing retain quarter-hour precision", async ({ page }) => {
+  await page.setViewportSize({ width: 1920, height: 1080 });
+  const { ownEvents, writes } = await fixture(page, "workbench");
+  await page.getByRole("button", { name: "个人周历", exact: true }).click();
+  const pane = page.getByRole("region", { name: "个人周历区域", exact: true });
+  await pane.getByRole("button", { name: "事项时间轴", exact: true }).click();
+  ownEvents[0]!.start = "2026-10-08T01:15:00.000Z";
+  ownEvents[0]!.end = "2026-10-08T03:45:00.000Z";
+  await pane
+    .getByRole("navigation", { name: "时间轴范围", exact: true })
+    .getByRole("button", { name: "月", exact: true })
+    .click();
+  const day = pane.locator('[data-date^="2026-10-08"]').first();
+  await day.scrollIntoViewIfNeeded();
+  const column = await day.boundingBox();
+  const lane = await pane.locator('[data-lab-item="unscheduled-item"]').boundingBox();
+  expect(column).not.toBeNull();
+  expect(lane).not.toBeNull();
+  const startX = column!.x + (column!.width * 9.25) / 24;
+  const endX = column!.x + (column!.width * 12.25) / 24;
+  const y = lane!.y + lane!.height / 2;
+  await page.mouse.move(startX, y);
+  await page.mouse.down();
+  await page.mouse.move(endX, y, { steps: 12 });
+  await page.clock.runFor(50);
+  await page.mouse.up();
+  const dialog = page.getByRole("dialog", { name: "安排个人时间", exact: true });
+  await expect(dialog).toBeVisible();
+  await expect(dialog.getByLabel("事项", { exact: true })).toHaveValue("unscheduled-item");
+  await dialog.getByRole("button", { name: "保存", exact: true }).click();
+  await expect.poll(() => ownEvents.length).toBe(2);
+  const selected = ownEvents[1]!;
+  const selectedDuration = Date.parse(selected.end) - Date.parse(selected.start);
+  expect(selectedDuration).toBeGreaterThanOrEqual(2 * 3600000);
+  expect(selectedDuration).toBeLessThanOrEqual(4 * 3600000);
+  expect(Date.parse(selected.start) % 900000).toBe(0);
+  expect(Date.parse(selected.end) % 900000).toBe(0);
+  const block = pane.locator('[data-lab-calendar-event="own-block"]');
+  await block.scrollIntoViewIfNeeded();
+  await expect(block).toContainText("09:15–11:45");
+  const originalStart = Date.parse(ownEvents[0]!.start);
+  const originalEnd = Date.parse(ownEvents[0]!.end);
+  let box = await block.boundingBox();
+  expect(box).not.toBeNull();
+  await page.mouse.move(box!.x + box!.width / 2, box!.y + box!.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(box!.x + box!.width / 2 + column!.width / 4, box!.y + box!.height / 2, { steps: 12 });
+  await page.clock.runFor(50);
+  await page.mouse.up();
+  await expect.poll(() => Date.parse(ownEvents[0]!.start)).not.toBe(originalStart);
+  const move = Date.parse(ownEvents[0]!.start) - originalStart;
+  expect(move).toBeGreaterThan(0);
+  expect(move).toBeLessThan(86400000);
+  expect(move % 900000).toBe(0);
+  expect(Date.parse(ownEvents[0]!.start) % 3600000).toBe(originalStart % 3600000);
+  expect(Date.parse(ownEvents[0]!.end) - Date.parse(ownEvents[0]!.start)).toBe(originalEnd - originalStart);
+  const resize = block.locator(".fc-qd.fc-2I");
+  await block.hover();
+  await page.clock.runFor(50);
+  await expect(resize).toBeVisible();
+  box = await resize.boundingBox();
+  expect(box).not.toBeNull();
+  const beforeResizeStart = Date.parse(ownEvents[0]!.start);
+  const beforeResizeEnd = Date.parse(ownEvents[0]!.end);
+  await page.mouse.move(box!.x + box!.width / 2, box!.y + box!.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(box!.x + box!.width / 2 + column!.width / 8, box!.y + box!.height / 2, { steps: 12 });
+  await page.clock.runFor(50);
+  await page.mouse.up();
+  await expect.poll(() => Date.parse(ownEvents[0]!.end)).toBeGreaterThan(beforeResizeEnd);
+  const resized = Date.parse(ownEvents[0]!.end) - beforeResizeEnd;
+  expect(resized).toBeLessThan(86400000);
+  expect(resized % 900000).toBe(0);
+  expect(Date.parse(ownEvents[0]!.start)).toBe(beforeResizeStart);
+  expect(ownEvents[0]!.item_id).toBe("project-item");
+  expect(ownEvents[0]!.issue_id).toBe("source-issue");
+  expect(writes.filter((write) => write.method === "PATCH")).toHaveLength(2);
+});
+
+test("more than seven user-created folders retain distinct colors after reloading", async ({ page }) => {
+  await page.setViewportSize({ width: 1920, height: 1400 });
+  const { planner } = await fixture(page, "workbench");
+  const pane = page.getByRole("region", { name: "个人周历区域", exact: true });
+  await pane.getByRole("button", { name: "事项时间轴", exact: true }).click();
+  await pane.getByRole("spinbutton", { name: "日历高度", exact: true }).fill("1200");
+  for (const name of ["E", "F", "G", "H", "I", "J", "K", "L"]) {
+    // oxlint-disable-next-line no-await-in-loop -- Each creation opens and submits the same real dialog.
+    await createFolder(page, name);
+  }
+  expect(planner.folders).toHaveLength(12);
+  const colors = await Promise.all(
+    planner.folders.map(async (folder) => ({
+      id: folder.id,
+      color: await pane
+        .locator(`[role="rowheader"][data-resource-id="folder:${folder.id}"] .lab-folder-marker`)
+        .evaluate((element) => getComputedStyle(element).backgroundColor),
+    }))
+  );
+  expect(new Set(colors.map((folder) => folder.color)).size).toBe(12);
+  await page.reload();
+  await pane.getByRole("button", { name: "事项时间轴", exact: true }).click();
+  await Promise.all(
+    colors.map(({ id, color }) =>
+      expect(pane.locator(`[role="rowheader"][data-resource-id="folder:${id}"] .lab-folder-marker`)).toHaveCSS(
+        "background-color",
+        color
+      )
+    )
+  );
 });

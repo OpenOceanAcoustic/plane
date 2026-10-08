@@ -27,6 +27,7 @@ import type { LabEvent, LabItem, LabMember } from "@plane/types";
 import type { LabStore } from "@plane/shared-state";
 import { calendarInstant, localInput, SLOT_MS, weekDays } from "./calendar-time";
 import { CalendarHeightControl, CalendarResizeHandle, useCalendarHeight } from "./calendar-size";
+import { calendarFolderColors, useCalendarFolders } from "./calendar-folders";
 import { calendarCategories, calendarColor, calendarColors } from "./calendar-colors";
 // oxlint-disable-next-line import/no-unassigned-import -- bundled FullCalendar layout styles
 import "@fullcalendar/react/skeleton.css";
@@ -58,7 +59,6 @@ const timelineViews = [
   { value: "resourceTimelineWeek", label: "周" },
   { value: "resourceTimelineMonth", label: "月" },
 ];
-const folderPalette = ["indigo", "emerald", "orange", "purple", "pink", "crimson", "yellow"];
 const clock = (instant: string) =>
   new Date(instant).toLocaleTimeString("zh-CN", { timeZone: "Asia/Shanghai", hour: "2-digit", minute: "2-digit" });
 const roundedNow = () => new Date(Math.ceil(Date.now() / SLOT_MS) * SLOT_MS);
@@ -111,6 +111,7 @@ export const LabCalendar = observer(function LabCalendar({
   const [title, setTitle] = useState("");
   const [view, setView] = useState(team ? "resourceTimelineWeek" : "timeGridWeek");
   const [timelineView, setTimelineView] = useState("resourceTimelineWeek");
+  const [calendarView, setCalendarView] = useState("timeGridWeek");
   const timeline = view.startsWith("resourceTimeline");
   const [userId, setUserId] = useState("all"),
     [projectId, setProjectId] = useState("all");
@@ -119,8 +120,6 @@ export const LabCalendar = observer(function LabCalendar({
   const [initialStart, setInitialStart] = useState(roundedNow),
     [initialEnd, setInitialEnd] = useState(() => new Date(roundedNow().getTime() + 3600000));
   const [initialItemId, setInitialItemId] = useState("");
-  const [folderColors, setFolderColors] = useState<Record<string, string>>({});
-  const [hiddenFolderIds, setHiddenFolderIds] = useState<string[]>([]);
   const [choosingFolders, setChoosingFolders] = useState(false);
   const [split, setSplit] = useState(false),
     [confirmDelete, setConfirmDelete] = useState(false);
@@ -129,22 +128,15 @@ export const LabCalendar = observer(function LabCalendar({
   const { height, setHeight } = useCalendarHeight(
     `lab-calendar-height:${store.slug}:${planner?.user_id ?? ""}:${team ? "team" : "personal"}`
   );
-  useEffect(() => {
-    if (team || !planner) return;
-    setFolderColors((previous) => {
-      const next = { ...previous };
-      let changed = false;
-      for (const folder of planner.folders) {
-        if (!next[folder.id]) {
-          next[folder.id] = folderPalette[Object.keys(next).length % folderPalette.length]!;
-          changed = true;
-        }
-      }
-      return changed ? next : previous;
-    });
-  }, [team, planner]);
-  // oxlint-disable-next-line unicorn/no-array-sort -- copy first; web's ES2022 library excludes toSorted
-  const folders = useMemo(() => [...(planner?.folders ?? [])].sort((a, b) => a.position - b.position), [planner]);
+  const folders = useMemo(() => {
+    const sorted = [...(planner?.folders ?? [])];
+    // oxlint-disable-next-line unicorn/no-array-sort -- ES2022 lacks toSorted; only this local copy is mutated
+    return sorted.sort((a, b) => a.position - b.position);
+  }, [planner]);
+  const { folderColors, hiddenFolderIds, setHiddenFolderIds } = useCalendarFolders(
+    `lab-calendar-folders:${store.slug}:${planner?.user_id ?? ""}`,
+    folders
+  );
   const folderGroups = useMemo(
     () => [...folders, { id: "unclassified", name: "未分类", position: folders.length }],
     [folders]
@@ -193,6 +185,7 @@ export const LabCalendar = observer(function LabCalendar({
     setTitle(info.view.title);
     setView(info.view.type);
     if (info.view.type.startsWith("resourceTimeline")) setTimelineView(info.view.type);
+    if (["timeGridDay", "timeGridWeek", "dayGridMonth"].includes(info.view.type)) setCalendarView(info.view.type);
   }, []);
   const select = useCallback(
     (info: DateSelectInfo) => {
@@ -264,10 +257,9 @@ export const LabCalendar = observer(function LabCalendar({
         resourceEditable: false,
         extendedProps: { block: event },
         className: event.kind ? "" : "lab-busy-event",
-        color: calendarColor(event),
-        contrastColor: "#ffffff",
+        ...(!team && timeline ? {} : { color: calendarColor(event), contrastColor: "#ffffff" }),
       })),
-    [visibleEvents, store.busy, team, itemFolders]
+    [visibleEvents, store.busy, team, timeline, itemFolders]
   );
   const resources = useMemo<ResourceInput[]>(() => {
     if (team) return store.members.map((member) => ({ id: member.id, title: member.name }));
@@ -286,11 +278,20 @@ export const LabCalendar = observer(function LabCalendar({
             id: `item:${item.id}`,
             title: item.title,
             order: itemOrder,
+            eventColor: calendarFolderColors(folderColors[folder.id]).background,
+            eventContrastColor: calendarFolderColors(folderColors[folder.id]).foreground,
             extendedProps: { itemId: item.id, issueKey: item.issue_key, color: folderColors[folder.id] ?? "grey" },
           })),
       }));
     if (visibleEvents.some((event) => !itemFolders.has(event.item_id ?? ""))) {
-      groups.push({ id: "busy", title: "忙碌", order: folderGroups.length, extendedProps: { color: "grey" } });
+      groups.push({
+        id: "busy",
+        title: "忙碌",
+        order: folderGroups.length,
+        eventColor: "var(--label-grey-bg)",
+        eventContrastColor: "var(--label-grey-text)",
+        extendedProps: { color: "grey" },
+      });
     }
     return groups;
   }, [
@@ -313,7 +314,7 @@ export const LabCalendar = observer(function LabCalendar({
             ...(editingEvent ? { expected_revision: editingEvent.revision } : { item_id: data.get("item_id") }),
             start: calendarInstant(String(data.get("start"))),
             end: calendarInstant(String(data.get("end"))),
-            color: String(data.get("color") ?? ""),
+            ...(!team && timeline ? {} : { color: String(data.get("color") ?? "") }),
           };
       const result = await store
         .request<{ overlap?: boolean }>(path, editingEvent ? "PATCH" : "POST", body)
@@ -355,7 +356,15 @@ export const LabCalendar = observer(function LabCalendar({
       </div>
       <div className="flex flex-wrap items-center gap-2">
         <span className="mr-auto text-13 font-medium">{title}</span>
-        {(team ? teamViews : personalViews).map((option) => (
+        {(team
+          ? teamViews
+          : timeline
+            ? [
+                { value: calendarView, label: "日历" },
+                { value: "resourceTimeline", label: "事项时间轴" },
+              ]
+            : personalViews
+        ).map((option) => (
           <Button
             key={option.value}
             size="sm"
@@ -378,6 +387,7 @@ export const LabCalendar = observer(function LabCalendar({
       </div>
       {timeline && (
         <nav aria-label="时间轴范围" className="flex flex-wrap items-center gap-2">
+          <span className="text-12 text-secondary">范围</span>
           {timelineViews.map((option) => (
             <Button
               key={option.value}
@@ -465,7 +475,7 @@ export const LabCalendar = observer(function LabCalendar({
           events={events}
           resources={resources}
           resourceColumns={[{ field: "title", headerContent: team ? "成员" : "文件夹 / 事项" }]}
-          resourceColumnsWidth={team ? 150 : 240}
+          resourceColumnsWidth={team ? 150 : "35%"}
           resourceOrder={team ? "title" : "order,title"}
           resourcesInitiallyExpanded
           filterResourcesWithEvents={false}
@@ -476,10 +486,20 @@ export const LabCalendar = observer(function LabCalendar({
                   <span
                     aria-hidden
                     className="lab-folder-marker"
-                    style={{ backgroundColor: `var(--label-${String(info.resource.extendedProps.color)}-bg-strong)` }}
+                    style={{ backgroundColor: calendarFolderColors(String(info.resource.extendedProps.color)).marker }}
                   />
                 )}
-                <span className={`min-w-0 truncate ${info.resource.extendedProps.folder ? "font-medium" : ""}`}>
+                <span
+                  className={`min-w-0 truncate ${info.resource.extendedProps.folder ? "rounded px-2 py-1 font-medium" : ""}`}
+                  style={
+                    info.resource.extendedProps.folder
+                      ? {
+                          backgroundColor: calendarFolderColors(String(info.resource.extendedProps.color)).background,
+                          color: calendarFolderColors(String(info.resource.extendedProps.color)).foreground,
+                        }
+                      : undefined
+                  }
+                >
                   {info.resource.title}
                   {!team && info.resource.extendedProps.issueKey && (
                     <span className="ml-2 text-11 text-tertiary">{String(info.resource.extendedProps.issueKey)}</span>
@@ -506,14 +526,15 @@ export const LabCalendar = observer(function LabCalendar({
           slotDuration={
             timeline
               ? view === "resourceTimelineMonth"
-                ? { days: 1 }
+                ? "24:00:00"
                 : view === "resourceTimelineWeek"
                   ? "06:00:00"
                   : "01:00:00"
               : "00:15:00"
           }
           snapDuration="00:15:00"
-          slotHeaderInterval={timeline && view !== "resourceTimelineDay" ? { days: 1 } : "01:00:00"}
+          slotHeaderInterval={timeline && view !== "resourceTimelineDay" ? "24:00:00" : "01:00:00"}
+          slotHeaderFormat={view === "resourceTimelineMonth" ? { day: "numeric", weekday: "short" } : undefined}
           slotMinWidth={60}
           eventMinWidth={24}
           scrollTime="08:00:00"
@@ -557,18 +578,20 @@ export const LabCalendar = observer(function LabCalendar({
       </div>
       <div className="flex flex-wrap items-center justify-between gap-3">
         <CalendarHeightControl height={height} setHeight={setHeight} />
-        <ul aria-label="排期类别颜色" className="flex flex-wrap items-center gap-3 text-12 text-secondary">
-          {calendarCategories.map((category) => (
-            <li key={category.kind} className="flex items-center gap-1">
-              <span
-                aria-hidden
-                className="h-2.5 w-2.5 rounded-full"
-                style={{ backgroundColor: calendarColor({ kind: category.kind }) }}
-              />
-              {category.name}
-            </li>
-          ))}
-        </ul>
+        {(team || !timeline) && (
+          <ul aria-label="排期类别颜色" className="flex flex-wrap items-center gap-3 text-12 text-secondary">
+            {calendarCategories.map((category) => (
+              <li key={category.kind} className="flex items-center gap-1">
+                <span
+                  aria-hidden
+                  className="h-2.5 w-2.5 rounded-full"
+                  style={{ backgroundColor: calendarColor({ kind: category.kind }) }}
+                />
+                {category.name}
+              </li>
+            ))}
+          </ul>
+        )}
       </div>
       {choosingFolders && (
         <LabDialog
@@ -595,7 +618,7 @@ export const LabCalendar = observer(function LabCalendar({
               <span
                 aria-hidden
                 className="lab-folder-marker"
-                style={{ backgroundColor: `var(--label-${folderColors[folder.id] ?? "grey"}-bg-strong)` }}
+                style={{ backgroundColor: calendarFolderColors(folderColors[folder.id]).marker }}
               />
               {folder.name}
             </label>
@@ -655,16 +678,18 @@ export const LabCalendar = observer(function LabCalendar({
                   defaultValue={localInput(editingEvent?.end ?? initialEnd)}
                 />
               </LabField>
-              <LabField label="排期颜色">
-                <select name="color" className={labInputClass} defaultValue={editingEvent?.color ?? ""}>
-                  <option value="">按事项类别</option>
-                  {calendarColors.map((color) => (
-                    <option key={color.value} value={color.value}>
-                      {color.name}
-                    </option>
-                  ))}
-                </select>
-              </LabField>
+              {(team || !timeline) && (
+                <LabField label="排期颜色">
+                  <select name="color" className={labInputClass} defaultValue={editingEvent?.color ?? ""}>
+                    <option value="">按事项类别</option>
+                    {calendarColors.map((color) => (
+                      <option key={color.value} value={color.value}>
+                        {color.name}
+                      </option>
+                    ))}
+                  </select>
+                </LabField>
+              )}
             </>
           )}
           {editingEvent && (

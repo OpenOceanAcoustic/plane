@@ -22,7 +22,7 @@ The personnel resource calendar and horizontal timeline use FullCalendar's AGPLv
 
 ## Source and modifications
 
-- [This Plane fork](https://github.com/OpenOceanAcoustic/plane/tree/feat/lab-planning-bounty-auth), including backend, client, deployment instructions, dependency lockfile and patches.
+- [This Plane fork](https://github.com/OpenOceanAcoustic/plane/tree/feat/personal-planning-workbench), including backend, client, deployment instructions, dependency lockfile and patches.
 - [Frappe Gantt](https://github.com/frappe/gantt): upstream CSS copied locally because the package export map does not expose its stylesheet. Selectors are scoped under `.lab-frappe-gantt`; the patch adds deterministic removal of its document mouse handler on disposal.
 - [shadcn/ui registry](https://github.com/shadcn-ui/ui/tree/main/apps/v4/registry/new-york-v4/ui): Dialog/Select composition adapted to Plane's existing controls, typography and theme tokens.
 

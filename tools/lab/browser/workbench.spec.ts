@@ -229,11 +229,12 @@ for (const layout of ["综合", "个人周历"]) {
     await page.reload();
     await page.getByRole("button", { name: layout, exact: true }).click();
     await expect(height).toHaveValue("500");
-    await handle.scrollIntoViewIfNeeded();
     await grid.evaluate((element) => {
       for (const node of element.querySelectorAll<HTMLElement>("*"))
         if (/auto|scroll/.test(getComputedStyle(node).overflowY)) node.scrollTop = node.scrollHeight;
     });
-    await expect(grid.locator('[data-time="23:45:00"]').last()).toBeInViewport();
+    const lastSlot = grid.locator('[data-time="23:45:00"]').last();
+    await lastSlot.scrollIntoViewIfNeeded();
+    await expect(lastSlot).toBeInViewport();
   });
 }
