@@ -60,7 +60,11 @@ test("members edit their category names and colors, and choose arbitrary schedul
       result = categories[1];
     } else if (path.startsWith("categories/") && method === "PATCH")
       Object.assign(categories.find((row) => path === `categories/${row.id}/`)!, body);
-    else if (path === "items/item/" && method === "PATCH") Object.assign(item, body);
+    else if (path.startsWith("categories/") && method === "DELETE") {
+      const index = categories.findIndex((row) => path === `categories/${row.id}/`);
+      expect(index).toBeGreaterThanOrEqual(0);
+      categories.splice(index, 1);
+    } else if (path === "items/item/" && method === "PATCH") Object.assign(item, body);
     else if (path === "calendar/" && method === "GET")
       result = {
         members: [{ id: "member", name: "本人" }],
@@ -125,4 +129,13 @@ test("members edit their category names and colors, and choose arbitrary schedul
   await dialog.getByRole("checkbox", { name: "跟随事项类别", exact: true }).check();
   await dialog.getByRole("button", { name: "保存", exact: true }).click();
   await expect(block).toHaveCSS("--fc-event-color", "#0e7490");
+  await page.getByRole("button", { name: "管理类别", exact: true }).click();
+  await page.getByRole("button", { name: "删除类别海上实验", exact: true }).click();
+  await page.getByRole("dialog").getByRole("button", { name: "删除", exact: true }).click();
+  await expect(page.locator("article")).toContainText("未分类");
+  await expect(block).toHaveCSS("--fc-event-color", "#64748b");
+  await expect(page.getByRole("list", { name: "排期类别颜色" })).not.toContainText("海上实验");
+  await page.reload();
+  await expect(page.locator("article")).toContainText("未分类");
+  await expect(block).toBeVisible();
 });
