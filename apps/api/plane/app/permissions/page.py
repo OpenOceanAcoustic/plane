@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 # See the LICENSE file for details.
 
-from plane.db.models import ProjectMember, Page
+from plane.db.models import ProjectMember, Page, WorkspaceMember
 from plane.app.permissions import ROLE
 
 
@@ -69,16 +69,24 @@ class ProjectPagePermission(BasePermission):
         """
         Check if the user is a project member.
         """
-        return (
-            ProjectMember.objects.filter(
+        if not request.user.is_active or not WorkspaceMember.objects.filter(
+            member=request.user, workspace__slug=slug, is_active=True
+        ).exists():
+            return None
+        membership = (
+            ProjectMember.objects.select_related("project").filter(
                 member=request.user,
                 workspace__slug=slug,
                 is_active=True,
                 project_id=project_id,
+                project__deleted_at__isnull=True,
+                project__archived_at__isnull=True,
             )
-            .values_list("role", flat=True)
             .first()
         )
+        if not membership or (membership.role == GUEST and not membership.project.guest_view_all_features):
+            return None
+        return membership.role
 
     def _check_access_and_get_role(self, request, slug, project_id):
         """

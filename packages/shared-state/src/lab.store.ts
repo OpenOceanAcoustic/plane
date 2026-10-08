@@ -17,6 +17,7 @@ export class LabStore {
   busy = false;
   error = "";
   notice = "";
+  private calendarRequestId = 0;
 
   constructor(
     readonly apiBase: string,
@@ -61,11 +62,14 @@ export class LabStore {
     });
   }
 
-  async loadCalendar(start: string, end: string, team: boolean) {
-    const calendar = await this.request<{ events: LabEvent[]; members: LabMember[] }>(
-      `calendar/?start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}&team=${team ? "1" : "0"}`
-    );
+  async loadCalendar(start: string, end: string, team: boolean, filters: { userId?: string; projectId?: string } = {}) {
+    const requestId = ++this.calendarRequestId;
+    const query = new URLSearchParams({ start, end, team: team ? "1" : "0" });
+    if (filters.userId) query.set("user_id", filters.userId);
+    if (filters.projectId) query.set("project_id", filters.projectId);
+    const calendar = await this.request<{ events: LabEvent[]; members: LabMember[] }>(`calendar/?${query}`);
     runInAction(() => {
+      if (requestId !== this.calendarRequestId) return;
       this.events = calendar.events;
       this.members = calendar.members;
     });

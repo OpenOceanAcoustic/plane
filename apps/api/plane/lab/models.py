@@ -108,6 +108,7 @@ class TimeBlock(Record):
     item = models.ForeignKey(PersonalItem, on_delete=models.CASCADE, related_name="blocks")
     start = models.DateTimeField(db_index=True)
     end = models.DateTimeField()
+    revision = models.PositiveIntegerField(default=1)
 
     class Meta:
         constraints = [
@@ -228,3 +229,8 @@ class WIPException(Record):
     expires_at = models.DateTimeField()
     active_limit = models.PositiveSmallIntegerField(default=2)
     major_limit = models.PositiveSmallIntegerField(default=1)
+
+
+# Register extension models in this Django app while keeping their interfaces separate.
+from .document_models import TaskDocumentLink  # noqa: E402,F401
+from .field_models import FieldDefinition, IssueFieldValue, ProjectField  # noqa: E402,F401

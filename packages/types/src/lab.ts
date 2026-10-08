@@ -55,6 +55,9 @@ export type LabEvent = {
   start: string;
   end: string;
   editable: boolean;
+  revision?: number;
+  kind?: string;
+  status?: LabStatus;
   item_id?: string;
   issue_id?: string;
   project_id?: string;

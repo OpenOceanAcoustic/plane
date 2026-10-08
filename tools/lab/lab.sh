@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 export RAYON_NUM_THREADS=1
+export ROLLDOWN_WORKER_THREADS=4
+export ROLLDOWN_MAX_BLOCKING_THREADS=4
 export TURBO_TELEMETRY_DISABLED=1
 lab_root=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)
 cd "$lab_root"
@@ -34,6 +36,8 @@ case "${1:-help}" in
   access) shift; "${compose[@]}" exec -T api python manage.py lab_access "$@" ;;
   check)
     node tools/lab/test-calendar.mjs
+    node tools/lab/test-fields-gantt.mjs
+    node tools/lab/test-workflow.mjs
     pnpm turbo run check:types check:lint --filter=web --filter=admin --filter=space --filter=@plane/ui --filter=@plane/shared-state --filter=@plane/types --concurrency=1
     "${compose[@]}" exec -T api python manage.py check
     "${compose[@]}" exec -T api python manage.py makemigrations --check --dry-run lab

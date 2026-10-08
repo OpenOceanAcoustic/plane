@@ -1,0 +1,29 @@
+# Dedicated browser-test overlay. Use only with -p ooa-plane-e2e and its private --env-file.
+services:
+  plane-db:
+    env_file: !override ["${LAB_E2E_DIRECTORY:?Prepare an isolated E2E directory}/root.env"]
+  plane-minio:
+    ports: !override ["127.0.0.1:9110:9000", "127.0.0.1:9191:9090"]
+  api:
+    env_file: !override ["${LAB_E2E_DIRECTORY:?}/api.env"]
+    ports: !override ["127.0.0.1:8011:8000"]
+  worker:
+    env_file: !override ["${LAB_E2E_DIRECTORY:?}/api.env"]
+  beat-worker:
+    env_file: !override ["${LAB_E2E_DIRECTORY:?}/api.env"]
+  live:
+    env_file: !override ["${LAB_E2E_DIRECTORY:?}/live.env"]
+    volumes:
+      - "${LAB_E2E_DIRECTORY:?}/live-dist:/app/apps/live/dist:ro"
+  space:
+    volumes:
+      - "${LAB_E2E_DIRECTORY:?}/space-build:/app/apps/space/build:ro"
+  proxy:
+    ports: !override ["127.0.0.1:8081:80"]
+    volumes: !override
+      - ./tools/lab/Caddyfile:/etc/caddy/Caddyfile:ro
+      - "${LAB_E2E_DIRECTORY:?}/web-client:/srv/web:ro"
+      - "${LAB_E2E_DIRECTORY:?}/admin-client:/srv/admin:ro"
+secrets:
+  lab_totp_key:
+    file: "${LAB_E2E_DIRECTORY:?}/lab-totp.key"

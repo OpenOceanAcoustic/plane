@@ -54,23 +54,17 @@ export const PageVersionsMainContent = observer(function PageVersionsMainContent
   );
 
   const handleRestoreVersion = async () => {
-    if (!restoreEnabled) return;
+    if (!restoreEnabled || !versionDetails) return;
     setIsRestoring(true);
-    await handleRestore(versionDetails?.description_html ?? "<p></p>")
-      .then(() => {
-        setToast({
-          type: TOAST_TYPE.SUCCESS,
-          title: "Page version restored.",
-        });
-        handleClose();
-      })
-      .catch(() =>
-        setToast({
-          type: TOAST_TYPE.ERROR,
-          title: "Failed to restore page version.",
-        })
-      )
-      .finally(() => setIsRestoring(false));
+    try {
+      await handleRestore(versionDetails.description_html ?? "<p></p>");
+      setToast({ type: TOAST_TYPE.SUCCESS, title: "文档版本已恢复" });
+      handleClose();
+    } catch {
+      setToast({ type: TOAST_TYPE.ERROR, title: "文档版本恢复失败" });
+    } finally {
+      setIsRestoring(false);
+    }
   };
 
   const handleRetry = async () => {
@@ -90,11 +84,11 @@ export const PageVersionsMainContent = observer(function PageVersionsMainContent
               <TriangleAlert className="size-10" />
             </span>
             <div>
-              <h6 className="text-16 font-semibold">Something went wrong!</h6>
-              <p className="text-13 text-tertiary">The version could not be loaded, please try again.</p>
+              <h6 className="text-16 font-semibold">版本加载失败</h6>
+              <p className="text-13 text-tertiary">请重新加载历史版本。</p>
             </div>
             <Button variant="link" onClick={handleRetry} loading={isRetrying}>
-              Try again
+              重新加载
             </Button>
           </div>
         </div>
@@ -105,16 +99,22 @@ export const PageVersionsMainContent = observer(function PageVersionsMainContent
               <h6 className="text-14 font-medium">
                 {versionDetails
                   ? `${renderFormattedDate(versionDetails.last_saved_at)} ${renderFormattedTime(versionDetails.last_saved_at)}`
-                  : "Loading version details"}
+                  : "正在加载历史版本"}
               </h6>
               <span className="flex flex-shrink-0 items-center gap-1 rounded-sm bg-accent-primary/20 px-1.5 py-1 text-11 font-medium text-accent-primary">
                 <EyeIcon className="size-3 flex-shrink-0" />
-                View only
+                只读
               </span>
             </div>
             {restoreEnabled && (
-              <Button variant="primary" className="flex-shrink-0" onClick={handleRestoreVersion} loading={isRestoring}>
-                {isRestoring ? "Restoring" : "Restore"}
+              <Button
+                variant="primary"
+                className="flex-shrink-0"
+                onClick={handleRestoreVersion}
+                loading={isRestoring}
+                disabled={!versionDetails}
+              >
+                {isRestoring ? "正在恢复" : "恢复此版本"}
               </Button>
             )}
           </div>

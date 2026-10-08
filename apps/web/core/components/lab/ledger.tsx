@@ -6,7 +6,7 @@
 import { useState } from "react";
 import { observer } from "mobx-react";
 import type { LabStore } from "@plane/shared-state";
-import { Button } from "@plane/ui";
+import { Button, LabDialog, LabField, labInputClass } from "@plane/ui";
 
 type Entry = {
   id: string;
@@ -22,17 +22,10 @@ type Entry = {
 
 export const LabLedger = observer(function LabLedger({ store, projectId }: { store: LabStore; projectId: string }) {
   const [entries, setEntries] = useState<Entry[]>();
+  const [chosen, setChosen] = useState<Entry>();
+  const [requestKey, setRequestKey] = useState("");
   async function load() {
     setEntries(await store.request<Entry[]>(`ledger/${projectId ? `?project_id=${projectId}` : ""}`));
-  }
-  async function reverse(entry: Entry) {
-    const reason = window.prompt("冲正会追加相反金额的记录，保留原记录。请填写更正原因。");
-    if (!reason) return;
-    await store.execute(async () => {
-      await store.request(`ledger/${entry.id}/reverse/`, "POST", { request_key: crypto.randomUUID(), reason });
-      await store.loadMarket();
-      await load();
-    });
   }
   return (
     <section className="rounded-lg border border-subtle p-4">
@@ -77,7 +70,14 @@ export const LabLedger = observer(function LabLedger({ store, projectId }: { sto
                     {Number(entry.delta) > 0 &&
                       !entries.some((row) => row.reverses === entry.id) &&
                       store.bounties.find((row) => row.id === entry.bounty_id)?.is_lead && (
-                        <Button size="sm" variant="neutral-primary" onClick={() => void reverse(entry)}>
+                        <Button
+                          size="sm"
+                          variant="neutral-primary"
+                          onClick={() => {
+                            setChosen(entry);
+                            setRequestKey(crypto.randomUUID());
+                          }}
+                        >
                           冲正
                         </Button>
                       )}
@@ -88,6 +88,36 @@ export const LabLedger = observer(function LabLedger({ store, projectId }: { sto
           </table>
           {entries.length === 0 && <p className="p-4 text-tertiary">尚无验收贡献记录。</p>}
         </div>
+      )}
+      {chosen && (
+        <LabDialog
+          title="贡献冲正"
+          busy={store.busy}
+          onClose={() => setChosen(undefined)}
+          onSubmit={(form) =>
+            store.execute(async () => {
+              await store.request(`ledger/${chosen.id}/reverse/`, "POST", {
+                request_key: requestKey,
+                reason: form.get("reason"),
+              });
+              await store.loadMarket();
+              await load();
+              setChosen(undefined);
+            })
+          }
+        >
+          <p className="text-13">
+            为 {chosen.participant.name} 追加 −{chosen.delta} VC 的更正记录，并保留原记录。
+          </p>
+          <LabField label="更正原因">
+            <textarea name="reason" className={labInputClass} rows={4} required />
+          </LabField>
+          {store.error && (
+            <p role="alert" className="text-12 text-danger-primary">
+              {store.error}
+            </p>
+          )}
+        </LabDialog>
       )}
     </section>
   );

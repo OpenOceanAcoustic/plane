@@ -20,11 +20,22 @@ from rest_framework.exceptions import PermissionDenied, ValidationError
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from plane.db.models import Project, ProjectMember, State, WorkspaceMember
-from .auth import digest, lock
+from plane.db.models import Project, ProjectMember, State
+from .auth import audit, lock
 from .models import Folder, PersonalItem, ProjectFlow, TimeBlock, WorkspacePolicy
 from .permissions import can_view_team, issue_access, project_ids, readable_issues, workspace_member
-from .planning import STATUSES, block_times, configure_flow, default_folders, item_data, overlaps, own_item, set_status
+from .planning import (
+    STATUSES,
+    block_times,
+    calendar_events,
+    check_block_revision,
+    configure_flow,
+    default_folders,
+    item_data,
+    overlaps,
+    own_item,
+    set_status,
+)
 
 
 class LabContentNegotiation(DefaultContentNegotiation):
@@ -153,10 +164,17 @@ class FolderDetailView(LabView):
 
 class TaskSearchView(LabView):
     def get(self, request, slug):
+        rows = readable_issues(request.user, self.workspace).filter(is_draft=False, archived_at__isnull=True)
+        if request.query_params.get("project_id"):
+            project = get_object_or_404(
+                Project,
+                id=request.query_params["project_id"],
+                workspace=self.workspace,
+                id__in=project_ids(request.user, self.workspace),
+            )
+            rows = rows.filter(project=project)
         rows = (
-            readable_issues(request.user, self.workspace)
-            .filter(is_draft=False, archived_at__isnull=True)
-            .filter(name__icontains=str(request.query_params.get("q", ""))[:100])
+            rows.filter(name__icontains=str(request.query_params.get("q", ""))[:100])
             .select_related("project")
             .order_by("-created_at")[:50]
         )
@@ -264,49 +282,20 @@ class CalendarView(LabView):
                 start -= timedelta(days=start.weekday())
             if not end:
                 end = start + timedelta(days=7)
-            if timezone.is_naive(start) or timezone.is_naive(end) or end <= start or end - start > timedelta(days=31):
+            if timezone.is_naive(start) or timezone.is_naive(end) or end <= start or end - start > timedelta(days=62):
                 raise ValueError()
         except (TypeError, ValueError):
-            raise ValidationError("日期范围须带时区且不超过 31 天")
-        allowed = set(project_ids(request.user, self.workspace))
-        rows = TimeBlock.objects.filter(
-            item__workspace=self.workspace, start__lt=end, end__gt=start, item__user__is_active=True
-        ).select_related("item__user", "item__issue__project", "item__issue__state")
-        if not team:
-            rows = rows.filter(item__user=request.user)
-        members = WorkspaceMember.objects.filter(
-            workspace=self.workspace, is_active=True, member__is_active=True
-        ).select_related("member")
-        active_members = {row.member_id for row in members}
-        events = []
-        for block in rows:
-            item = block.item
-            if item.user_id not in active_members:
-                continue
-            own = item.user_id == request.user.id
-            visible = own or item.public or bool(item.issue_id)
-            details = item_data(item, request.user, allowed) if visible else None
-            event = {
-                "id": str(block.id) if own else digest(f"{block.id}:{request.user.id}"),
-                "user_id": str(item.user_id),
-                "start": block.start.isoformat(),
-                "end": block.end.isoformat(),
-                "title": details["title"] if details else "忙碌",
-                "editable": own,
-            }
-            if details:
-                event["item_id"] = str(item.id)
-                if details.get("issue_id"):
-                    event["issue_id"] = details["issue_id"]
-                    event["project_id"] = details["project_id"]
-            events.append(event)
+            raise ValidationError("日期范围须带时区且不超过 62 天")
         return Response(
-            {
-                "events": events,
-                "members": [{"id": str(row.member_id), "name": row.member.display_name} for row in members]
-                if team
-                else [{"id": str(request.user.id), "name": request.user.display_name}],
-            }
+            calendar_events(
+                request.user,
+                self.workspace,
+                start,
+                end,
+                team=team,
+                user_id=request.query_params.get("user_id"),
+                project_id=request.query_params.get("project_id"),
+            )
         )
 
     def post(self, request, slug):
@@ -315,7 +304,7 @@ class CalendarView(LabView):
             issue_access(request.user, self.workspace, item.issue_id)
         start, end = block_times(request.data)
         block = TimeBlock.objects.create(item=item, start=start, end=end)
-        return Response({"id": str(block.id), "overlap": overlaps(block)}, status=201)
+        return Response({"id": str(block.id), "revision": block.revision, "overlap": overlaps(block)}, status=201)
 
 
 class BlockDetailView(LabView):
@@ -324,6 +313,7 @@ class BlockDetailView(LabView):
         block = get_object_or_404(
             TimeBlock.objects.select_for_update(), id=pk, item__user=request.user, item__workspace=self.workspace
         )
+        check_block_revision(block, request.data)
         if block.item.issue_id:
             issue_access(request.user, self.workspace, block.item.issue_id)
         if "split_at" in request.data:
@@ -336,14 +326,38 @@ class BlockDetailView(LabView):
                 raise ValidationError("拆分点须位于时间块内且按十五分钟对齐")
             following = TimeBlock.objects.create(item=block.item, start=split, end=block.end)
             block.end = split
-            block.save(update_fields=["end"])
-            return Response({"id": str(block.id), "following_id": str(following.id)})
+            block.revision += 1
+            block.save(update_fields=["end", "revision"])
+            audit(
+                "planning.block_split",
+                obj=block,
+                actor=request.user,
+                workspace=self.workspace,
+                following_id=str(following.id),
+            )
+            return Response(
+                {
+                    "id": str(block.id),
+                    "revision": block.revision,
+                    "following_id": str(following.id),
+                    "following_revision": following.revision,
+                    "overlap": overlaps(block) or overlaps(following),
+                }
+            )
         block.start, block.end = block_times(request.data)
-        block.save(update_fields=["start", "end"])
-        return Response({"id": str(block.id), "overlap": overlaps(block)})
+        block.revision += 1
+        block.save(update_fields=["start", "end", "revision"])
+        audit("planning.block_update", obj=block, actor=request.user, workspace=self.workspace)
+        return Response({"id": str(block.id), "revision": block.revision, "overlap": overlaps(block)})
 
+    @transaction.atomic
     def delete(self, request, slug, pk):
-        get_object_or_404(TimeBlock, id=pk, item__user=request.user, item__workspace=self.workspace).delete()
+        block = get_object_or_404(
+            TimeBlock.objects.select_for_update(), id=pk, item__user=request.user, item__workspace=self.workspace
+        )
+        check_block_revision(block, request.data)
+        audit("planning.block_delete", obj=block, actor=request.user, workspace=self.workspace)
+        block.delete()
         return Response(status=204)
 
 

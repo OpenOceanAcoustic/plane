@@ -2,6 +2,11 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 
 from django.urls import path
+from .analytics import AnalyticsDrilldownView, AnalyticsView
+from .document_urls import document_patterns
+from .field_urls import field_patterns
+from .gantt_urls import gantt_patterns
+from .workflow_urls import workflow_patterns
 from .auth_views import LabAuthView
 from .planning_views import (
     BlockDetailView,
@@ -33,6 +38,12 @@ auth_patterns = [
 ]
 
 business_patterns = [
+    path("analytics/", AnalyticsView.as_view()),
+    path("analytics/drilldown/", AnalyticsDrilldownView.as_view()),
+    *workflow_patterns,
+    *document_patterns,
+    *field_patterns,
+    *gantt_patterns,
     path("stages/", StageView.as_view()),
     path("bounties/", BountyView.as_view()),
     path("bounties/<uuid:pk>/<str:action>/", BountyActionView.as_view()),

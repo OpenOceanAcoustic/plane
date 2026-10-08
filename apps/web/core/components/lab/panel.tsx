@@ -11,14 +11,17 @@ import { LabStore } from "@plane/shared-state";
 import type { LabItem } from "@plane/types";
 import { Button } from "@plane/ui";
 import { LabCalendar } from "./calendar";
+import { LabAnalyticsPanel } from "./analytics";
 import { LabMarket } from "./market";
 import { LabPlannerBoard } from "./planner";
+import { LabTaskTable } from "./task-table";
 
 export const LabPanel = observer(function LabPanel() {
   const { workspaceSlug = "", section = "planner" } = useParams();
   const store = useMemo(() => new LabStore(API_BASE_URL, workspaceSlug), [workspaceSlug]);
   const [tab, setTab] = useState<"board" | "calendar">("board");
   const [scheduled, setScheduled] = useState<LabItem>();
+  const [refreshKey, setRefreshKey] = useState(0);
   useEffect(() => {
     void store.execute(store.loadPlanner);
     const refresh = () => {
@@ -31,7 +34,16 @@ export const LabPanel = observer(function LabPanel() {
       window.clearInterval(timer);
     };
   }, [store]);
-  const title = section === "team" ? "团队排期" : section === "bounties" ? "悬赏大厅" : "个人规划";
+  const title =
+    (
+      {
+        planner: "个人规划",
+        team: "团队排期",
+        bounties: "悬赏大厅",
+        tasks: "任务表格",
+        analytics: "数据总览",
+      } as Record<string, string>
+    )[section] ?? "个人规划";
   return (
     <main className="flex h-full w-full flex-col overflow-auto bg-surface-1 text-primary">
       <header className="flex flex-wrap items-center gap-3 border-b border-subtle px-6 py-4">
@@ -44,6 +56,7 @@ export const LabPanel = observer(function LabPanel() {
             void store.execute(async () => {
               await store.loadPlanner();
               if (section === "bounties") await store.loadMarket();
+              setRefreshKey((value) => value + 1);
             })
           }
         >
@@ -117,6 +130,8 @@ export const LabPanel = observer(function LabPanel() {
             </p>
           ))}
         {store.planner && section === "bounties" && <LabMarket store={store} />}
+        {store.planner && section === "tasks" && <LabTaskTable store={store} refreshKey={refreshKey} />}
+        {store.planner && section === "analytics" && <LabAnalyticsPanel store={store} refreshKey={refreshKey} />}
       </div>
     </main>
   );

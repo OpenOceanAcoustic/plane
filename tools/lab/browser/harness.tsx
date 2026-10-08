@@ -9,6 +9,7 @@ import { LabAuth } from "../../../packages/ui/src/lab-auth";
 import { LabStore } from "../../../packages/shared-state/src/lab.store";
 import { LabPlannerBoard } from "../../../apps/web/core/components/lab/planner";
 import { LabCalendar } from "../../../apps/web/core/components/lab/calendar";
+import { LabAnalyticsPanel } from "../../../apps/web/core/components/lab/analytics";
 import type { LabItem } from "@plane/types";
 
 const Planning = observer(function Planning() {
@@ -27,9 +28,15 @@ const Planning = observer(function Planning() {
   );
 });
 const path = window.location.pathname;
+function Analytics() {
+  const store = useMemo(() => new LabStore("", "lab"), []);
+  return <LabAnalyticsPanel store={store} />;
+}
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
-    {path === "/planner" ? (
+    {path === "/analytics" ? (
+      <Analytics />
+    ) : path === "/planner" ? (
       <Planning />
     ) : (
       <LabAuth

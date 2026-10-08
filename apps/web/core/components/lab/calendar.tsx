@@ -2,20 +2,82 @@
  * Copyright (c) 2026 OpenOceanAcoustic and contributors
  * SPDX-License-Identifier: AGPL-3.0-only
  */
-
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { observer } from "mobx-react";
-import { CalendarDays, ChevronLeft, ChevronRight, Plus } from "lucide-react";
-import { Button } from "@plane/ui";
-import type { LabEvent, LabItem } from "@plane/types";
+import FullCalendar from "@fullcalendar/react";
+import type {
+  CalendarRef,
+  DatesSetInfo,
+  EventDropInfo,
+  EventResizeDoneInfo,
+  DateSelectInfo,
+  EventInput,
+} from "@fullcalendar/react";
+import dayGridPlugin from "@fullcalendar/react/daygrid";
+import timeGridPlugin from "@fullcalendar/react/timegrid";
+import interactionPlugin from "@fullcalendar/react/interaction";
+import themePlugin from "@fullcalendar/react/themes/monarch";
+import zhCN from "@fullcalendar/react/locales/zh-cn";
+import resourceTimelinePlugin from "@fullcalendar/react-scheduler/resource-timeline";
+import resourceTimeGridPlugin from "@fullcalendar/react-scheduler/resource-timegrid";
+import { CalendarDays, ChevronLeft, ChevronRight, Download, Plus } from "lucide-react";
+import { Button, LabDialog, LabField, LabSelect, labInputClass } from "@plane/ui";
+import type { LabEvent, LabItem, LabMember } from "@plane/types";
 import type { LabStore } from "@plane/shared-state";
-import { LabDialog, LabField, labInputClass } from "@plane/ui";
-import { calendarInstant, dayLayout, dropInstant, eventSegment, localInput, SLOT_MS, weekDays } from "./calendar-time";
+import { calendarInstant, localInput, SLOT_MS, weekDays } from "./calendar-time";
+// oxlint-disable-next-line import/no-unassigned-import -- bundled FullCalendar layout styles
+import "@fullcalendar/react/skeleton.css";
+// oxlint-disable-next-line import/no-unassigned-import -- local theme, no CDN
+import "@fullcalendar/react/themes/monarch/theme.css";
+// oxlint-disable-next-line import/no-unassigned-import -- Plane theme token adaptation
+import "./calendar.css";
 
-const displayDay = (day: Date) =>
-  day.toLocaleDateString("zh-CN", { timeZone: "Asia/Shanghai", month: "numeric", day: "numeric", weekday: "short" });
+const plugins = [
+  themePlugin,
+  dayGridPlugin,
+  timeGridPlugin,
+  interactionPlugin,
+  resourceTimelinePlugin,
+  resourceTimeGridPlugin,
+];
+const personalViews = [
+  { value: "timeGridDay", label: "日" },
+  { value: "timeGridWeek", label: "周" },
+  { value: "dayGridMonth", label: "月" },
+];
+const teamViews = [
+  { value: "resourceTimelineWeek", label: "人员时间轴" },
+  { value: "resourceTimeGridWeek", label: "人员分列" },
+];
 const clock = (instant: string) =>
   new Date(instant).toLocaleTimeString("zh-CN", { timeZone: "Asia/Shanghai", hour: "2-digit", minute: "2-digit" });
+const roundedNow = () => new Date(Math.ceil(Date.now() / SLOT_MS) * SLOT_MS);
+const csvCell = (value: string) => `"${(/^[=+@\-\t\r]/.test(value) ? "'" + value : value).replaceAll('"', '""')}"`;
+function exportEvents(events: LabEvent[], members: LabMember[], format: "csv" | "json") {
+  const names = new Map(members.map((member) => [member.id, member.name]));
+  const rows = events.map((event) => ({
+    member: names.get(event.user_id) ?? "",
+    title: event.title,
+    start: event.start,
+    end: event.end,
+    timezone: "Asia/Shanghai",
+  }));
+  const content =
+    format === "json"
+      ? JSON.stringify(rows, null, 2)
+      : "\ufeff" +
+        [["成员", "事项", "开始", "结束", "时区"], ...rows.map((row) => Object.values(row))]
+          .map((row) => row.map(csvCell).join(","))
+          .join("\r\n");
+  const url = URL.createObjectURL(
+    new Blob([content], { type: format === "json" ? "application/json;charset=utf-8" : "text/csv;charset=utf-8" })
+  );
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = `laboratory-schedule.${format}`;
+  link.click();
+  URL.revokeObjectURL(url);
+}
 
 export const LabCalendar = observer(function LabCalendar({
   store,
@@ -28,220 +90,299 @@ export const LabCalendar = observer(function LabCalendar({
   scheduled?: LabItem;
   clearScheduled: () => void;
 }) {
-  const [offset, setOffset] = useState(0);
+  const calendar = useRef<CalendarRef>(null);
+  const days = weekDays(0);
+  const [range, setRange] = useState({
+    start: days[0]!.toISOString(),
+    end: new Date(days[6]!.getTime() + 86400000).toISOString(),
+  });
+  const [title, setTitle] = useState("");
+  const [view, setView] = useState(team ? "resourceTimelineWeek" : "timeGridWeek");
+  const [userId, setUserId] = useState("all"),
+    [projectId, setProjectId] = useState("all");
+  const [allMembers, setAllMembers] = useState<LabMember[]>([]);
   const [editing, setEditing] = useState<LabEvent | "new">();
-  const [initialStart, setInitialStart] = useState(new Date(Math.ceil(Date.now() / SLOT_MS) * SLOT_MS));
-  const [split, setSplit] = useState(false);
-  const days = weekDays(offset);
-  const start = days[0]!.toISOString(),
-    end = new Date(days[6]!.getTime() + 86400000).toISOString();
-  const reload = useCallback(() => store.loadCalendar(start, end, team), [store, start, end, team]);
+  const [initialStart, setInitialStart] = useState(roundedNow),
+    [initialEnd, setInitialEnd] = useState(() => new Date(roundedNow().getTime() + 3600000));
+  const [split, setSplit] = useState(false),
+    [confirmDelete, setConfirmDelete] = useState(false);
+  const editingEvent = editing && editing !== "new" ? editing : undefined;
+  const reload = useCallback(async () => {
+    await store.loadCalendar(range.start, range.end, team, {
+      userId: userId === "all" ? undefined : userId,
+      projectId: projectId === "all" ? undefined : projectId,
+    });
+    if (userId === "all") setAllMembers(store.members);
+  }, [store, range.start, range.end, team, userId, projectId]);
   useEffect(() => {
     void store.execute(reload);
-  }, [store, reload]);
-  useEffect(() => {
-    if (scheduled) {
+  }, [reload, store]);
+  const openNew = useCallback(
+    (start = roundedNow(), end = new Date(start.getTime() + 3600000)) => {
+      setInitialStart(start);
+      setInitialEnd(end);
       setEditing("new");
-      setInitialStart(new Date(Math.ceil(Date.now() / SLOT_MS) * SLOT_MS));
-    }
-  }, [scheduled]);
+      setSplit(false);
+      setConfirmDelete(false);
+      store.error = "";
+    },
+    [store]
+  );
+  useEffect(() => {
+    if (scheduled) openNew();
+  }, [scheduled, openNew]);
   const close = () => {
     setEditing(undefined);
     setSplit(false);
+    setConfirmDelete(false);
     clearScheduled();
   };
-  const editingEvent = editing && editing !== "new" ? editing : undefined;
+  const datesSet = useCallback((info: DatesSetInfo) => {
+    const start = info.start.toISOString(),
+      end = info.end.toISOString();
+    setRange((previous) => (previous.start === start && previous.end === end ? previous : { start, end }));
+    setTitle(info.view.title);
+    setView(info.view.type);
+  }, []);
+  const select = useCallback(
+    (info: DateSelectInfo) => {
+      if (team && info.resource?.id !== store.planner?.user_id) {
+        calendar.current?.getApi().unselect();
+        return;
+      }
+      // Month selections describe whole days. Start at 09:00 for a useful first block.
+      const start = info.allDay ? new Date(info.start.getTime() + 9 * 3600000) : info.start;
+      openNew(start, info.allDay ? new Date(start.getTime() + 3600000) : info.end);
+      calendar.current?.getApi().unselect();
+    },
+    [team, store, openNew]
+  );
+  const change = useCallback(
+    (info: EventDropInfo | EventResizeDoneInfo) => {
+      const block = store.events.find((event) => event.id === info.event.id);
+      if (!block?.editable || !info.event.start || !info.event.end) {
+        info.revert();
+        return;
+      }
+      const start = info.event.start.toISOString(),
+        end = info.event.end.toISOString();
+      void store.execute(async () => {
+        try {
+          const saved = await store.request<{ overlap: boolean }>(`calendar/${block.id}/`, "PATCH", {
+            expected_revision: block.revision,
+            start,
+            end,
+          });
+          store.notice = saved.overlap ? "已保存；与已有排期重叠，请确认投入安排。" : "排期已保存";
+          await reload();
+        } catch (failure) {
+          info.revert();
+          await reload();
+          throw failure;
+        }
+      });
+    },
+    [store, reload]
+  );
+  const events = useMemo<EventInput[]>(
+    () =>
+      store.events.map((event) => ({
+        id: event.id,
+        title: event.title,
+        start: event.start,
+        end: event.end,
+        resourceId: event.user_id,
+        editable: event.editable && !store.busy,
+        interactive: event.editable,
+        resourceEditable: false,
+        extendedProps: { block: event },
+        className: event.kind ? "" : "lab-busy-event",
+      })),
+    [store.events, store.busy]
+  );
+  const resources = useMemo(
+    () => store.members.map((member) => ({ id: member.id, title: member.name })),
+    [store.members]
+  );
   async function save(data: FormData) {
     await store.execute(async () => {
       const path = editingEvent ? `calendar/${editingEvent.id}/` : "calendar/";
       const body = split
-        ? { split_at: calendarInstant(String(data.get("split_at"))) }
+        ? { expected_revision: editingEvent!.revision, split_at: calendarInstant(String(data.get("split_at"))) }
         : {
-            item_id: data.get("item_id"),
+            ...(editingEvent ? { expected_revision: editingEvent.revision } : { item_id: data.get("item_id") }),
             start: calendarInstant(String(data.get("start"))),
             end: calendarInstant(String(data.get("end"))),
           };
-      const result = await store.request<{ overlap?: boolean }>(path, editingEvent ? "PATCH" : "POST", body);
+      const result = await store
+        .request<{ overlap?: boolean }>(path, editingEvent ? "PATCH" : "POST", body)
+        .catch(async (failure: unknown) => {
+          // Keep the form open, but refetch the authoritative version for reopening.
+          await reload().catch(() => undefined);
+          throw failure;
+        });
       store.notice = result.overlap ? "已保存；与已有排期重叠，请确认投入安排。" : "排期已保存";
       await reload();
       close();
     });
-  }
-  async function dropped(day: Date, event: React.DragEvent<HTMLDivElement>) {
-    event.preventDefault();
-    const rect = event.currentTarget.getBoundingClientRect();
-    const when = dropInstant(day, (event.clientY - rect.top) / rect.height);
-    const block = store.events.find((row) => row.id === event.dataTransfer.getData("lab-block"));
-    if (block?.editable) {
-      await store.execute(async () => {
-        const duration = new Date(block.end).getTime() - new Date(block.start).getTime();
-        const resize = event.dataTransfer.getData("lab-resize") === "end";
-        const result = await store.request<{ overlap: boolean }>(`calendar/${block.id}/`, "PATCH", {
-          start: resize ? block.start : when.toISOString(),
-          end: new Date(when.getTime() + (resize ? SLOT_MS : duration)).toISOString(),
-        });
-        store.notice = result.overlap ? "已移动，存在排期重叠。" : "已移动";
-        await reload();
-      });
-    }
   }
   return (
     <div className="flex flex-col gap-4">
       <div className="flex flex-wrap items-center gap-2">
         <CalendarDays size={18} />
         <h2 className="mr-auto text-16 font-medium">{team ? "团队排期" : "个人周历"}</h2>
-        <Button size="sm" variant="neutral-primary" onClick={() => setOffset(offset - 1)} aria-label="上一周">
-          <ChevronLeft size={16} />
+        <Button
+          size="sm"
+          variant="neutral-primary"
+          aria-label="上一时段"
+          onClick={() => calendar.current?.getApi().prev()}
+        >
+          <ChevronLeft size={15} />
         </Button>
-        <Button size="sm" variant="neutral-primary" onClick={() => setOffset(0)}>
-          本周
+        <Button size="sm" variant="neutral-primary" onClick={() => calendar.current?.getApi().today()}>
+          今天
         </Button>
-        <Button size="sm" variant="neutral-primary" onClick={() => setOffset(offset + 1)} aria-label="下一周">
-          <ChevronRight size={16} />
+        <Button
+          size="sm"
+          variant="neutral-primary"
+          aria-label="下一时段"
+          onClick={() => calendar.current?.getApi().next()}
+        >
+          <ChevronRight size={15} />
         </Button>
-        {!team && (
+        <span className="min-w-40 text-center text-13 font-medium">{title}</span>
+        {(team ? teamViews : personalViews).map((option) => (
           <Button
+            key={option.value}
             size="sm"
-            onClick={() => {
-              setEditing("new");
-              setInitialStart(new Date(Math.ceil(Date.now() / SLOT_MS) * SLOT_MS));
-            }}
-            prependIcon={<Plus size={14} />}
+            aria-pressed={view === option.value}
+            variant={view === option.value ? "primary" : "neutral-primary"}
+            onClick={() => calendar.current?.getApi().changeView(option.value)}
           >
+            {option.label}
+          </Button>
+        ))}
+        {!team && (
+          <Button size="sm" prependIcon={<Plus size={14} />} onClick={() => openNew()}>
             安排时间
           </Button>
         )}
       </div>
-      <p className="text-12 text-tertiary">
-        {displayDay(days[0]!)} — {displayDay(days[6]!)} · 上海时间 ·{" "}
-        {team
-          ? "私人或无权限内容仅显示忙碌；成员维护本人安排。"
-          : "十五分钟步长，拖动时间块可移动，拖动底边可调整时长，点击可拆分。"}
-      </p>
-      {team ? (
-        <div className="overflow-x-auto rounded-md border border-subtle">
-          <table className="w-full min-w-[980px] text-13">
-            <thead>
-              <tr className="bg-layer-1">
-                <th className="p-3 text-left">成员</th>
-                {days.map((day) => (
-                  <th key={day.toISOString()} className="p-3 text-left">
-                    {displayDay(day)}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {store.members.map((member) => (
-                <tr key={member.id} className="border-t border-subtle">
-                  <th className="p-3 text-left font-medium">{member.name}</th>
-                  {days.map((day) => (
-                    <td key={day.toISOString()} className="min-w-36 p-2 align-top">
-                      {store.events
-                        .filter((event) => event.user_id === member.id && eventSegment(event.start, event.end, day))
-                        .map((event) => (
-                          <div key={event.id} className="mb-2 rounded bg-layer-1 p-2">
-                            <span className="text-12 text-secondary">
-                              {clock(event.start)}–{clock(event.end)}
-                            </span>
-                            <p>{event.title}</p>
-                          </div>
-                        ))}
-                    </td>
-                  ))}
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      ) : (
-        <div className="max-h-[650px] overflow-auto rounded-md border border-subtle">
-          <div className="min-w-[920px]">
-            <div className="sticky top-0 z-20 grid grid-cols-[48px_repeat(7,1fr)] border-b border-subtle bg-surface-1">
-              <div />
-              {days.map((day) => (
-                <div key={day.toISOString()} className="border-l border-subtle p-2 text-center text-13">
-                  {displayDay(day)}
-                </div>
-              ))}
-            </div>
-            <div className="grid grid-cols-[48px_repeat(7,1fr)]">
-              <div className="relative h-[960px]">
-                {Array.from({ length: 24 }, (_, hour) => (
-                  <span key={hour} className="absolute right-2 text-11 text-tertiary" style={{ top: hour * 40 }}>
-                    {String(hour).padStart(2, "0")}:00
-                  </span>
-                ))}
+      <div className="flex flex-wrap items-center gap-2">
+        <input
+          type="date"
+          aria-label="跳转日期"
+          className="rounded-md border border-subtle bg-surface-1 px-3 py-2 text-13"
+          onChange={(event) => {
+            if (event.target.value) calendar.current?.getApi().gotoDate(event.target.value);
+          }}
+        />
+        {team && (
+          <LabSelect
+            label="筛选成员"
+            value={userId}
+            options={[
+              { value: "all", label: "全部成员" },
+              ...allMembers.map((member) => ({ value: member.id, label: member.name })),
+            ]}
+            onValueChange={setUserId}
+          />
+        )}
+        <LabSelect
+          label="筛选项目"
+          value={projectId}
+          options={[
+            { value: "all", label: "全部项目及个人事项" },
+            ...(store.planner?.projects ?? []).map((project) => ({ value: project.id, label: project.name })),
+          ]}
+          onValueChange={setProjectId}
+        />
+        <p className="mr-auto text-12 text-tertiary">
+          上海时间 · 十五分钟步长{team ? " · 私人内容仅显示忙碌" : " · 排期与项目日期独立"}
+        </p>
+        <Button
+          size="sm"
+          variant="neutral-primary"
+          prependIcon={<Download size={13} />}
+          disabled={store.busy}
+          onClick={() => exportEvents(store.events, store.members, "csv")}
+        >
+          CSV
+        </Button>
+        <Button
+          size="sm"
+          variant="neutral-primary"
+          disabled={store.busy}
+          onClick={() => exportEvents(store.events, store.members, "json")}
+        >
+          JSON
+        </Button>
+      </div>
+      <div className="lab-calendar min-w-0 overflow-hidden rounded-xl border border-subtle bg-surface-1">
+        <FullCalendar
+          ref={calendar}
+          plugins={plugins}
+          schedulerLicenseKey="AGPL-My-Frontend-And-Backend-Are-Open-Source"
+          locale={zhCN}
+          timeZone="Asia/Shanghai"
+          firstDay={1}
+          initialView={team ? "resourceTimelineWeek" : "timeGridWeek"}
+          headerToolbar={false}
+          height={650}
+          events={events}
+          resources={resources}
+          resourceColumns={[{ field: "title", headerContent: "成员" }]}
+          resourceColumnsWidth={150}
+          editable={!store.busy}
+          selectable={!store.busy}
+          eventResourceEditable={false}
+          selectMirror
+          eventOverlap
+          selectOverlap
+          slotDuration={team && view === "resourceTimelineWeek" ? "01:00:00" : "00:15:00"}
+          snapDuration="00:15:00"
+          slotHeaderInterval="01:00:00"
+          scrollTime="08:00:00"
+          allDaySlot={false}
+          nowIndicator
+          datesSet={datesSet}
+          select={select}
+          eventDidMount={(info) => {
+            info.el.dataset.labCalendarEvent = info.event.id;
+          }}
+          eventDrop={change}
+          eventResize={change}
+          eventClick={(info) => {
+            const block = info.event.extendedProps.block as LabEvent;
+            if (block.editable) {
+              store.error = "";
+              setEditing(block);
+              setSplit(false);
+            }
+          }}
+          eventContent={(info) => {
+            const block = info.event.extendedProps.block as LabEvent;
+            const content = (
+              <>
+                <strong className="block truncate font-medium">{block.title}</strong>
+                <span className="text-11 opacity-80">
+                  {clock(block.start)}–{clock(block.end)}
+                </span>
+              </>
+            );
+            return (
+              <div className="h-full w-full overflow-hidden px-1 text-left" title={block.title}>
+                {content}
               </div>
-              {days.map((day) => (
-                <div
-                  key={day.toISOString()}
-                  className="relative h-[960px] border-l border-subtle"
-                  style={{
-                    backgroundImage:
-                      "repeating-linear-gradient(to bottom, transparent 0, transparent 39px, var(--border-subtle) 39px, var(--border-subtle) 40px)",
-                  }}
-                  onDragOver={(event) => event.preventDefault()}
-                  onDrop={(event) => void dropped(day, event)}
-                  onDoubleClick={(event) => {
-                    if (event.target !== event.currentTarget) return;
-                    const rect = event.currentTarget.getBoundingClientRect();
-                    setInitialStart(dropInstant(day, (event.clientY - rect.top) / rect.height));
-                    setEditing("new");
-                  }}
-                >
-                  {dayLayout(store.events, day).map(({ event, top, height, lane, lanes }) => (
-                    <div
-                      key={event.id}
-                      className="absolute min-h-5 overflow-hidden rounded border border-accent-strong/30 bg-accent-primary/10 text-12 text-primary"
-                      style={{
-                        top: `${top}%`,
-                        height: `${height}%`,
-                        left: `calc(${(lane * 100) / lanes}% + 3px)`,
-                        width: `calc(${100 / lanes}% - 6px)`,
-                      }}
-                    >
-                      <button
-                        draggable={event.editable}
-                        onDragStart={(drag) => drag.dataTransfer.setData("lab-block", event.id)}
-                        onClick={() => {
-                          if (event.editable) {
-                            setEditing(event);
-                            setSplit(false);
-                          }
-                        }}
-                        className="h-full w-full px-1.5 pb-2 text-left"
-                        title={`${event.title} ${clock(event.start)}–${clock(event.end)}`}
-                      >
-                        <strong className="block truncate">{event.title}</strong>
-                        <span>
-                          {clock(event.start)}–{clock(event.end)}
-                        </span>
-                      </button>
-                      {event.editable && new Date(event.end).getTime() <= day.getTime() + 86400000 && (
-                        <button
-                          aria-label={`调整 ${event.title} 的结束时间`}
-                          draggable
-                          onDragStart={(drag) => {
-                            drag.stopPropagation();
-                            drag.dataTransfer.setData("lab-block", event.id);
-                            drag.dataTransfer.setData("lab-resize", "end");
-                          }}
-                          className="absolute inset-x-0 bottom-0 h-2 cursor-ns-resize bg-accent-primary/30"
-                        />
-                      )}
-                    </div>
-                  ))}
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-      )}
-      {editing && (
+            );
+          }}
+        />
+      </div>
+      {editing && !confirmDelete && (
         <LabDialog
           title={split ? "拆分时间块" : editingEvent ? "调整时间块" : "安排个人时间"}
           busy={store.busy}
+          error={store.error}
           onClose={close}
           onSubmit={save}
         >
@@ -287,31 +428,52 @@ export const LabCalendar = observer(function LabCalendar({
                   step={900}
                   className={labInputClass}
                   required
-                  defaultValue={localInput(editingEvent?.end ?? new Date(initialStart.getTime() + 3600000))}
+                  defaultValue={localInput(editingEvent?.end ?? initialEnd)}
                 />
               </LabField>
             </>
           )}
           {editingEvent && (
             <div className="flex gap-2">
-              <Button size="sm" variant="neutral-primary" onClick={() => setSplit(!split)}>
-                {split ? "调整起止" : "拆分时间块"}
-              </Button>
               <Button
                 size="sm"
                 variant="neutral-primary"
-                onClick={() =>
-                  void store.execute(async () => {
-                    await store.request(`calendar/${editingEvent.id}/`, "DELETE");
-                    await reload();
-                    close();
-                  })
-                }
+                disabled={new Date(editingEvent.end).getTime() - new Date(editingEvent.start).getTime() <= SLOT_MS}
+                onClick={() => setSplit(!split)}
               >
+                {split ? "调整起止" : "拆分时间块"}
+              </Button>
+              <Button size="sm" variant="neutral-primary" onClick={() => setConfirmDelete(true)}>
                 删除时间块
               </Button>
             </div>
           )}
+        </LabDialog>
+      )}
+      {confirmDelete && editingEvent && (
+        <LabDialog
+          title="删除时间块"
+          busy={store.busy}
+          error={store.error}
+          destructive
+          submitLabel="删除"
+          onClose={() => setConfirmDelete(false)}
+          onSubmit={() =>
+            store.execute(async () => {
+              await store
+                .request(`calendar/${editingEvent.id}/`, "DELETE", {
+                  expected_revision: editingEvent.revision,
+                })
+                .catch(async (failure: unknown) => {
+                  await reload().catch(() => undefined);
+                  throw failure;
+                });
+              await reload();
+              close();
+            })
+          }
+        >
+          <p className="text-13 text-secondary">删除此段排期，事项和项目任务会保留。</p>
         </LabDialog>
       )}
     </div>

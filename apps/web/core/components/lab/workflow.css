@@ -1,0 +1,29 @@
+/* Copyright (c) 2026 OpenOceanAcoustic and contributors. SPDX-License-Identifier: AGPL-3.0-only */
+@import "@xyflow/react/dist/style.css";
+
+.lab-bounty-flow {
+  --xy-background-color: var(--background-color-surface-1);
+  --xy-background-pattern-dots-color: var(--border-color-strong);
+  --xy-edge-stroke: var(--text-color-tertiary);
+  --xy-edge-stroke-selected: var(--text-color-accent-primary);
+  --xy-controls-button-background-color: var(--background-color-surface-1);
+  --xy-controls-button-background-color-hover: var(--background-color-layer-1);
+  --xy-controls-button-color: var(--text-color-primary);
+  --xy-controls-button-color-hover: var(--text-color-primary);
+  --xy-controls-button-border-color: var(--border-color-subtle);
+  --xy-minimap-background-color: var(--background-color-layer-1);
+  --xy-minimap-mask-background-color: color-mix(in srgb, var(--background-color-surface-1) 65%, transparent);
+  --xy-minimap-mask-stroke-color: var(--border-color-subtle);
+  --xy-handle-background-color: var(--text-color-tertiary);
+  --xy-handle-border-color: var(--background-color-surface-1);
+  font-family: inherit;
+}
+
+.lab-bounty-flow .react-flow__attribution {
+  background: var(--background-color-surface-1);
+  color: var(--text-color-tertiary);
+}
+
+.lab-bounty-flow .react-flow__attribution a {
+  color: inherit;
+}

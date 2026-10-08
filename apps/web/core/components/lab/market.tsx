@@ -11,6 +11,7 @@ import type { LabStore } from "@plane/shared-state";
 import { LabDialog, LabField, labInputClass } from "@plane/ui";
 import { calendarInstant } from "./calendar-time";
 import { LabLedger } from "./ledger";
+import { LabBountyWorkflow } from "./workflow";
 
 const labels: Record<string, string> = {
   publication_review: "发布待复核",
@@ -32,6 +33,13 @@ export const LabMarket = observer(function LabMarket({ store }: { store: LabStor
   const [tasks, setTasks] = useState<LabTask[]>([]);
   const [projectFilter, setProjectFilter] = useState("");
   const [result, setResult] = useState("pass");
+  const [acceptanceKey, setAcceptanceKey] = useState("");
+  const [workflowIds, setWorkflowIds] = useState<Set<string>>(new Set());
+  const [reasonAction, setReasonAction] = useState<{
+    bounty: LabBounty;
+    action: string;
+    extra: Record<string, string>;
+  }>();
   useEffect(() => {
     void store.execute(store.loadMarket);
   }, [store]);
@@ -60,8 +68,7 @@ export const LabMarket = observer(function LabMarket({ store }: { store: LabStor
     new Map(planner.projects.flatMap((project) => project.members).map((member) => [member.id, member])).values()
   );
   const actionReason = (bounty: LabBounty, action: string, extra: Record<string, string> = {}) => {
-    const reason = window.prompt("请填写审批/复核意见");
-    if (reason) void act(bounty, action, { ...extra, reason });
+    setReasonAction({ bounty, action, extra });
   };
   return (
     <div className="flex flex-col gap-5">
@@ -158,7 +165,7 @@ export const LabMarket = observer(function LabMarket({ store }: { store: LabStor
               <article
                 key={bounty.id}
                 id={`bounty-${bounty.id}`}
-                className="scroll-mt-4 rounded-lg border border-subtle bg-surface-1 p-5"
+                className={`scroll-mt-4 rounded-lg border border-subtle bg-surface-1 p-5 ${workflowIds.has(bounty.id) ? "xl:col-span-2" : ""}`}
               >
                 <div className="flex items-start justify-between gap-3">
                   <div>
@@ -226,6 +233,20 @@ export const LabMarket = observer(function LabMarket({ store }: { store: LabStor
                   ))}
                 </div>
                 <div className="flex flex-wrap gap-2">
+                  <Button
+                    size="sm"
+                    variant="neutral-primary"
+                    onClick={() =>
+                      setWorkflowIds((previous) => {
+                        const next = new Set(previous);
+                        if (next.has(bounty.id)) next.delete(bounty.id);
+                        else next.add(bounty.id);
+                        return next;
+                      })
+                    }
+                  >
+                    {workflowIds.has(bounty.id) ? "收起流程" : "查看流程图"}
+                  </Button>
                   {bounty.status === "open" && !mine && !bounty.is_reviewer && !bounty.is_independent_reviewer && (
                     <Button
                       size="sm"
@@ -264,6 +285,7 @@ export const LabMarket = observer(function LabMarket({ store }: { store: LabStor
                       onClick={() => {
                         setChosen(bounty);
                         setResult("pass");
+                        setAcceptanceKey(crypto.randomUUID());
                         setMode("accept");
                       }}
                     >
@@ -311,6 +333,7 @@ export const LabMarket = observer(function LabMarket({ store }: { store: LabStor
                     ))}
                   </details>
                 )}
+                {workflowIds.has(bounty.id) && <LabBountyWorkflow store={store} bounty={bounty} />}
               </article>
             );
           })}
@@ -320,6 +343,32 @@ export const LabMarket = observer(function LabMarket({ store }: { store: LabStor
         <p className="rounded border border-dashed border-subtle p-10 text-center text-13 text-tertiary">
           负责人冻结阶段预算并发布悬赏后，成员可以认领分工。
         </p>
+      )}
+      {reasonAction && (
+        <LabDialog
+          title="审批与复核意见"
+          busy={store.busy}
+          onClose={() => setReasonAction(undefined)}
+          onSubmit={(form) =>
+            store.execute(async () => {
+              await store.request(`bounties/${reasonAction.bounty.id}/${reasonAction.action}/`, "POST", {
+                ...reasonAction.extra,
+                reason: form.get("reason"),
+              });
+              await store.loadMarket();
+              setReasonAction(undefined);
+            })
+          }
+        >
+          <LabField label="处理意见">
+            <textarea name="reason" className={labInputClass} required rows={4} />
+          </LabField>
+          {store.error && (
+            <p role="alert" className="text-12 text-danger-primary">
+              {store.error}
+            </p>
+          )}
+        </LabDialog>
       )}
       {mode === "stage" && (
         <LabDialog
@@ -519,7 +568,7 @@ export const LabMarket = observer(function LabMarket({ store }: { store: LabStor
           onSubmit={(data) =>
             finish(() =>
               store.request(`bounties/${chosen.id}/accept/`, "POST", {
-                request_key: crypto.randomUUID(),
+                request_key: acceptanceKey,
                 result,
                 reason: data.get("reason"),
                 targets: ["rework", "reject"].includes(result)

@@ -46,7 +46,44 @@ def checksum(path):
     return result.hexdigest()
 
 
-def backup(directory, key_directory):
+def restore_environment(saved, password):
+    """Route maintenance processes to the restored DB and local-only dependencies."""
+    return {
+        **saved,
+        "DATABASE_URL": f"postgresql://restore:{password}@database:5432/restore",
+        "POSTGRES_HOST": "database",
+        "POSTGRES_USER": "restore",
+        "POSTGRES_PASSWORD": password,
+        "POSTGRES_DB": "restore",
+        "REDIS_URL": "redis://127.0.0.1:6379/0",
+        "REDIS_HOST": "127.0.0.1",
+        "AMQP_URL": "memory://",
+        "RABBITMQ_HOST": "127.0.0.1",
+        "AWS_S3_ENDPOINT_URL": "http://127.0.0.1:9000",
+        "MINIO_ENDPOINT_URL": "",
+        "LAB_TOTP_KEY_FILE": "/run/secrets/lab_totp_key",
+        "POSTHOG_API_KEY": "",
+        "POSTHOG_HOST": "",
+        "ANALYTICS_BASE_API": "",
+        "ANALYTICS_SECRET_KEY": "",
+        "WEB_URL": "http://127.0.0.1",
+        "APP_BASE_URL": "http://127.0.0.1",
+        "ADMIN_BASE_URL": "http://127.0.0.1",
+        "SPACE_BASE_URL": "http://127.0.0.1",
+        "LIVE_BASE_URL": "http://127.0.0.1",
+    }
+
+
+def restore_api_command(project, docker_env, key_path):
+    return [
+        "docker", "run", "--rm", "--network", project + "_default",
+        "--env-file", str(docker_env),
+        "-v", f"{key_path}:/run/secrets/lab_totp_key:ro",
+        "ooa-plane-api:lab", "python", "manage.py",
+    ]
+
+
+def backup(directory, key_directory, *, resume=True):
     directory.mkdir(parents=True, exist_ok=False, mode=0o700)
     key_directory.mkdir(parents=True, exist_ok=True, mode=0o700)
     configuration = config()
@@ -154,7 +191,7 @@ def backup(directory, key_directory):
         key_path.chmod(0o600)
         print(f"备份已保存：{directory}；认证密钥单独保存：{key_path}")
     finally:
-        if paused:
+        if paused and resume:
             run(COMPOSE + ["start", *paused])
 
 
@@ -207,7 +244,7 @@ def restore_verify(directory, key_path):
     docker_env.write_text(
         "".join(
             f"{name}={value}\n"
-            for name, value in read_env(directory / "api.env").items()
+            for name, value in restore_environment(read_env(directory / "api.env"), password).items()
         )
     )
     docker_env.chmod(0o600)
@@ -251,6 +288,10 @@ def restore_verify(directory, key_path):
         ).stdout.strip()
         if json.loads(raw) != manifest["counts"]:
             raise SystemExit("数据库记录数与备份不一致")
+        maintenance = restore_api_command(project, docker_env, key_path)
+        # The restored pre-upgrade row counts were checked above. Apply the new
+        # image's additive migrations only on this project's isolated database.
+        run(maintenance + ["migrate", "--noinput"])
         run(
             [
                 "docker",
@@ -291,30 +332,8 @@ def restore_verify(directory, key_path):
             "[key.decrypt(row.encrypted_secret.encode()) for row in rows if row.encrypted_secret]; "
             "print('Restored encrypted credentials verified:', len(rows))"
         )
-        run(
-            [
-                "docker",
-                "run",
-                "--rm",
-                "--network",
-                project + "_default",
-                "--env-file",
-                str(docker_env),
-                "-e",
-                f"DATABASE_URL=postgresql://restore:{password}@database:5432/restore",
-                "-e",
-                "LAB_TOTP_KEY_FILE=/run/secrets/lab_totp_key",
-                "-v",
-                f"{key_path}:/run/secrets/lab_totp_key:ro",
-                "ooa-plane-api:lab",
-                "python",
-                "manage.py",
-                "shell",
-                "-c",
-                verify_code,
-            ]
-        )
-        print("隔离恢复验证通过：数据库、附件归档、加密凭据；未覆盖运行中的数据。")
+        run(maintenance + ["shell", "-c", verify_code])
+        print("隔离恢复验证通过：数据库、增量迁移、附件归档、加密凭据；未覆盖运行中的数据。")
     finally:
         try:
             run(restore + ["down", "-v"])
@@ -340,11 +359,12 @@ def main():
         type=Path,
         help="Separate key-backup directory, or the matching key file for verification",
     )
+    parser.add_argument("--keep-stopped", action="store_true", help="备份后保持写入服务停止，用于紧接着执行升级")
     args = parser.parse_args()
     directory = args.directory.resolve()
     key = args.key_location.resolve()
     if args.action == "backup":
-        backup(directory, key)
+        backup(directory, key, resume=not args.keep_stopped)
     else:
         restore_verify(directory, key)
 

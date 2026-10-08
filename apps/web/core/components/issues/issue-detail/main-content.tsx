@@ -15,6 +15,8 @@ import { EFileAssetType, EIssueServiceType } from "@plane/types";
 import { DescriptionVersionsRoot } from "@/components/core/description-versions";
 import { DescriptionInput } from "@/components/editor/rich-text/description-input";
 import { IssueTypeSwitcher } from "@/components/issues/issue-type-switcher";
+import { LabTaskDocuments } from "@/components/lab/documents";
+import { LabIssueFields } from "@/components/lab/field-manager";
 // hooks
 import { useIssueDetail } from "@/hooks/store/use-issue-detail";
 import { useMember } from "@/hooks/store/use-member";
@@ -170,6 +172,14 @@ export const IssueMainContent = observer(function IssueMainContent(props: Props)
         renderWidgetModals={!isPeekModeActive}
         issueServiceType={EIssueServiceType.ISSUES}
       />
+
+      <LabIssueFields
+        workspaceSlug={workspaceSlug}
+        projectId={projectId}
+        issueId={issueId}
+        editable={isEditable && !isArchived}
+      />
+      <LabTaskDocuments workspaceSlug={workspaceSlug} projectId={projectId} issueId={issueId} />
 
       {windowSize[0] < 768 && (
         <PeekOverviewProperties

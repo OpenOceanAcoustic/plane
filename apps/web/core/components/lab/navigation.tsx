@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: AGPL-3.0-only
  */
 
-import { CalendarDays, FolderKanban, Target } from "lucide-react";
+import { BarChart3, CalendarDays, FolderKanban, TableProperties, Target } from "lucide-react";
 import { Link, useParams, useLocation } from "react-router";
 import { SidebarNavItem } from "@/components/sidebar/sidebar-navigation";
 
@@ -16,7 +16,9 @@ export function LabNavigation() {
       {[
         { key: "planner", name: "个人规划", Icon: FolderKanban },
         { key: "team", name: "团队排期", Icon: CalendarDays },
+        { key: "tasks", name: "任务表格", Icon: TableProperties },
         { key: "bounties", name: "悬赏大厅", Icon: Target },
+        { key: "analytics", name: "数据总览", Icon: BarChart3 },
       ].map(({ key, name, Icon }) => {
         const href = `/${workspaceSlug}/lab/${key}`;
         return (
@@ -30,6 +32,14 @@ export function LabNavigation() {
           </Link>
         );
       })}
+      <a
+        href="https://github.com/OpenOceanAcoustic/plane/tree/feat/lab-planning-bounty-auth"
+        target="_blank"
+        rel="noreferrer"
+        className="mt-2 px-3 text-12 text-tertiary hover:text-secondary"
+      >
+        源代码与许可证
+      </a>
     </div>
   );
 }

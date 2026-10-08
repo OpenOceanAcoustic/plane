@@ -5,6 +5,7 @@
 # Third party imports
 from rest_framework import status
 from rest_framework.response import Response
+from django.shortcuts import get_object_or_404
 
 # Module imports
 from plane.db.models import PageVersion
@@ -26,7 +27,7 @@ class PageVersionEndpoint(BaseAPIView):
             # join to a single row; distinct() is a defensive guard so the
             # page__project_pages join can never make get() raise
             # MultipleObjectsReturned (a 500).
-            page_version = (
+            page_version = get_object_or_404(
                 PageVersion.objects.filter(
                     workspace__slug=slug,
                     page__project_pages__project_id=project_id,
@@ -35,7 +36,6 @@ class PageVersionEndpoint(BaseAPIView):
                     pk=pk,
                 )
                 .distinct()
-                .get()
             )
             # Serialize the page version
             serializer = PageVersionDetailSerializer(page_version)
