@@ -32,6 +32,8 @@ tools/lab/lab.sh status
 
 主应用 `http://localhost:8080`，管理后台 `http://localhost:8080/god-mode/`，Space `http://localhost:8080/spaces/`。Space 保留上游服务端渲染，运行独立 Node 服务；前端服务不会挂载后台认证密钥。API 回环端口 8010，MinIO 9100、控制台 9190。数据库、Valkey、RabbitMQ 不向宿主机暴露端口；8080/8010/9100/9190 都只监听 127.0.0.1。数据位于独立 Compose 项目的持久卷。停止用 `tools/lab/lab.sh stop`，再次运行用 `start`，停止不会删除数据。
 
+本机首次构建已使用 DaoCloud 缓存拉取上游镜像，Alpine/PyPI 下载使用阿里云，Go 模块使用 goproxy.cn。容器下载较慢的依赖经宿主机缓存供构建使用，系统包保留签名校验，宿主机通过 HTTPS 验证远端下载。运行镜像已保存在 Docker 中，日常 `start`/`stop` 无需重新下载或依赖临时构建缓存。备份同样复用已有 Alpine 镜像，仅在本地缺失时拉取。
+
 前端开发可使用同一后台容器：把 web/admin 的 `VITE_API_BASE_URL` 改为 `http://localhost:8010`，对应 base URL 改为 localhost:3000/3001，执行 `pnpm --filter web dev` 和 `pnpm --filter admin dev`。完成后重新 `setup` 与串行构建，恢复最终 8080 的配置。不要同时启动第二套数据库来占用有限内存。推荐通过 localhost 访问，确保 cookie 来源一致。
 
 ## SSH 身份管理
@@ -39,13 +41,16 @@ tools/lab/lab.sh status
 网页不能自建管理员或发放邀请。第一次部署后在服务器终端执行：
 
 ```bash
-tools/lab/lab.sh access bootstrap --workspace openoceanacoustic
+umask 077
+tools/lab/lab.sh access bootstrap --workspace openoceanacoustic > .secrets/admin-bootstrap.txt
 tools/lab/lab.sh access invite --workspace openoceanacoustic --role 15
 tools/lab/lab.sh access list
 tools/lab/lab.sh access revoke --id INVITATION_UUID
 tools/lab/lab.sh access reset --username MEMBER_USERNAME
 tools/lab/lab.sh access purge
 ```
+
+首次管理员链接保存在本机 `.secrets/admin-bootstrap.txt`，打开文件并复制其中的 URL 到浏览器。该文件只允许当前用户读取，不进入 Git。已生成的链接可直接使用；到期后通过上述 SSH 命令生成新链接。
 
 输出的 URL 默认 24 小时有效。token 位于 URL 的 fragment（`#` 后），避免进入反向代理日志、Referer 和链接预览；浏览器只将它发送到认证 POST 接口。GET 不消耗邀请。`list` 输出 ID 和状态，不能重新取回原 token。请直接、安全地交给已确认身份的成员。
 

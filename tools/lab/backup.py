@@ -55,7 +55,14 @@ def backup(directory, key_directory):
     key_path = key_directory / (directory.name + ".totp.key")
     if key_path.exists():
         raise SystemExit("拒绝覆盖已有密钥备份")
-    run(["docker", "pull", "alpine:3.20"])
+    image = subprocess.run(
+        ["docker", "image", "inspect", "alpine:3.20"],
+        cwd=ROOT,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+    if image.returncode:
+        run(["docker", "pull", "alpine:3.20"])
     running = set(
         run(
             COMPOSE + ["ps", "--status", "running", "--services"],
@@ -112,7 +119,9 @@ def backup(directory, key_directory):
                 "plane-db",
                 "sh",
                 "-c",
-                "psql -U \"$POSTGRES_USER\" -d \"$POSTGRES_DB\" -Atc \"SELECT json_build_object('users',(SELECT count(*) FROM users),'issues',(SELECT count(*) FROM issues),'credentials',(SELECT count(*) FROM lab_credential),'ledger',(SELECT count(*) FROM lab_ledger));\"",
+                'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Atc "SELECT json_build_object('
+                "'users',(SELECT count(*) FROM users),'issues',(SELECT count(*) FROM issues),"
+                "'credentials',(SELECT count(*) FROM lab_credential),'ledger',(SELECT count(*) FROM lab_ledger));\"",
             ],
             capture_output=True,
             text=True,
@@ -233,7 +242,9 @@ def restore_verify(directory, key_path):
                 "-d",
                 "restore",
                 "-Atc",
-                "SELECT json_build_object('users',(SELECT count(*) FROM users),'issues',(SELECT count(*) FROM issues),'credentials',(SELECT count(*) FROM lab_credential),'ledger',(SELECT count(*) FROM lab_ledger));",
+                "SELECT json_build_object('users',(SELECT count(*) FROM users),"
+                "'issues',(SELECT count(*) FROM issues),'credentials',(SELECT count(*) FROM lab_credential),"
+                "'ledger',(SELECT count(*) FROM lab_ledger));",
             ],
             capture_output=True,
             text=True,
@@ -273,7 +284,13 @@ def restore_verify(directory, key_path):
                 "/verify.py",
             ]
         )
-        verify_code = "from cryptography.fernet import Fernet; from plane.lab.models import Credential; from django.conf import settings; key=Fernet(settings.LAB_TOTP_KEY.encode()); rows=list(Credential.objects.all()); assert all(row.encrypted_secret or not row.enabled for row in rows); [key.decrypt(row.encrypted_secret.encode()) for row in rows if row.encrypted_secret]; print('Restored encrypted credentials verified:', len(rows))"
+        verify_code = (
+            "from cryptography.fernet import Fernet; from plane.lab.models import Credential; "
+            "from django.conf import settings; key=Fernet(settings.LAB_TOTP_KEY.encode()); "
+            "rows=list(Credential.objects.all()); assert all(row.encrypted_secret or not row.enabled for row in rows); "
+            "[key.decrypt(row.encrypted_secret.encode()) for row in rows if row.encrypted_secret]; "
+            "print('Restored encrypted credentials verified:', len(rows))"
+        )
         run(
             [
                 "docker",

@@ -120,5 +120,6 @@ packages/i18n/src/types/keys.generated.ts
 /backups/
 /backup-keys/
 /apps/api/lab*test-results.xml
+/apps/api/plane/static-assets/
 /test-results/
 /playwright-report/
