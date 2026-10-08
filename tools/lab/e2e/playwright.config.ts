@@ -14,7 +14,7 @@ export default defineConfig({
   reporter: "list",
   timeout: 180000,
   use: {
-    baseURL: "http://localhost:8080",
+    baseURL: process.env.LAB_E2E_BASE_URL ?? "http://localhost:8080",
     viewport: { width: 1920, height: 1080 },
     browserName: "chromium",
     trace: "off",

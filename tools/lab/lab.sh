@@ -6,7 +6,7 @@ lab_root=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)
 cd "$lab_root"
 compose=(docker compose -p "${LAB_COMPOSE_PROJECT:-ooa-plane-lab}" -f compose.lab.yml)
 case "${1:-help}" in
-  setup) python3 tools/lab/setup.py ;;
+  setup) shift; python3 tools/lab/setup.py "$@" ;;
   build)
     pnpm turbo run build --filter='web^...' --filter='admin^...' --filter='space^...' --filter='live^...' --concurrency=1
     pnpm --filter web build
@@ -24,7 +24,11 @@ case "${1:-help}" in
     "${compose[@]}" run --rm api python manage.py create_bucket
     "${compose[@]}" run --rm api python manage.py collectstatic --noinput
     ;;
-  start) "${compose[@]}" up -d --no-build ;;
+  start)
+    "${compose[@]}" up -d --no-build
+    # Reattach rebuilt client directories and reload Space's server bundle.
+    "${compose[@]}" up -d --no-build --no-deps --force-recreate proxy space
+    ;;
   stop) "${compose[@]}" stop ;;
   status) "${compose[@]}" ps ;;
   access) shift; "${compose[@]}" exec -T api python manage.py lab_access "$@" ;;

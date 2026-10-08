@@ -96,11 +96,6 @@ export function LabAuth({
         <h1 className="text-20 font-semibold">
           {register ? "加入 OpenOceanAcoustic" : admin ? "实验室管理后台" : "登录 OpenOceanAcoustic"}
         </h1>
-        <p className="mt-2 text-13 text-secondary">
-          {register
-            ? "请使用管理员发放的邀请，绑定 Authenticator 后完成注册。恢复链接会重新绑定原账号。"
-            : "输入用户名与 Authenticator 中的六位动态码。"}
-        </p>
       </div>
       {message && (
         <p role="status" className="rounded-md bg-layer-1 p-3 text-13">
@@ -143,7 +138,6 @@ export function LabAuth({
                   autoComplete="email"
                 />
               </label>
-              <p className="text-12 text-secondary">邮箱用于联系。恢复账号时无需重新填写上述资料。</p>
             </>
           )}
           {enrollment && (
@@ -182,12 +176,10 @@ export function LabAuth({
           </Button>
         </form>
       )}
-      {register ? (
+      {register && (
         <a href="/" className="text-13 text-accent-primary">
           返回登录
         </a>
-      ) : (
-        <p className="text-12 text-secondary">仅限内部成员。邀请或账号恢复请联系管理员。</p>
       )}
     </section>
   );

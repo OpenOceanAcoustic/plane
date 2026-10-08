@@ -26,6 +26,8 @@ jobs:
     timeout-minutes: 50
     steps:
       - uses: actions/checkout@v6
+      - name: Verify access configuration preserves credentials
+        run: python3 tools/lab/test_setup.py
       - name: Prepare isolated configuration
         run: python3 tools/lab/setup.py
       - uses: docker/setup-buildx-action@v4

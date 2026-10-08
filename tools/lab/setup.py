@@ -4,10 +4,12 @@
 
 """Prepare ignored local configuration without printing or overwriting secrets."""
 
+import argparse
 import base64
 import os
 from pathlib import Path
 import secrets
+from urllib.parse import urlsplit
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -30,9 +32,52 @@ def write_env(path, values):
     path.chmod(0o600)
 
 
-def main():
+def public_url(value):
+    try:
+        parsed = urlsplit(value)
+        parsed.port
+    except ValueError:
+        raise ValueError("访问地址格式无效") from None
+    if (
+        parsed.scheme not in ("http", "https")
+        or not parsed.hostname
+        or parsed.hostname in ("0.0.0.0", "::")
+        or parsed.username is not None
+        or parsed.password is not None
+        or parsed.path not in ("", "/")
+        or parsed.query
+        or parsed.fragment
+    ):
+        raise ValueError(
+            "访问地址须为不含凭据、路径或 token 的 HTTP/HTTPS 内网 IP 或域名，不能使用 0.0.0.0"
+        )
+    return value.rstrip("/")
+
+
+def main(argv=None):
+    parser = argparse.ArgumentParser(
+        description="配置本机或内网访问地址，保留现有数据和认证密钥"
+    )
+    parser.add_argument("--public-url", help="例如 http://192.168.137.90:8080")
+    options = parser.parse_args(argv)
     os.umask(0o077)
     root = read_env(ROOT / ".env")
+    try:
+        base_url = public_url(
+            options.public_url
+            if options.public_url is not None
+            else root.get("LAB_PUBLIC_URL", "http://localhost:8080")
+        )
+    except ValueError as error:
+        parser.error(str(error))
+    root["LAB_PUBLIC_URL"] = base_url
+    if options.public_url is not None:
+        root["LAB_BIND_ADDRESS"] = (
+            "127.0.0.1"
+            if urlsplit(base_url).hostname in ("localhost", "127.0.0.1", "::1")
+            else "0.0.0.0"
+        )
+    root.setdefault("LAB_BIND_ADDRESS", "127.0.0.1")
     defaults = {
         "POSTGRES_USER": "plane",
         "POSTGRES_DB": "plane",
@@ -72,15 +117,19 @@ def main():
             "RABBITMQ_PORT": "5672",
             "AWS_S3_ENDPOINT_URL": "http://plane-minio:9000",
             "USE_MINIO": "1",
-            "WEB_URL": "http://localhost:8080",
-            "APP_BASE_URL": "http://localhost:8080",
-            "ADMIN_BASE_URL": "http://localhost:8080",
+            "WEB_URL": base_url,
+            "APP_BASE_URL": base_url,
+            "ADMIN_BASE_URL": base_url,
             "ADMIN_BASE_PATH": "/god-mode",
-            "SPACE_BASE_URL": "http://localhost:8080",
+            "SPACE_BASE_URL": base_url,
             "SPACE_BASE_PATH": "/spaces",
-            "LIVE_BASE_URL": "http://localhost:8080",
+            "LIVE_BASE_URL": base_url,
             "LIVE_BASE_PATH": "/live",
-            "CORS_ALLOWED_ORIGINS": "http://localhost:3000,http://localhost:3001,http://localhost:8080,http://127.0.0.1:3000,http://127.0.0.1:3001,http://127.0.0.1:8080",
+            "CORS_ALLOWED_ORIGINS": (
+                base_url
+                + ",http://localhost:3000,http://localhost:3001,http://localhost:8080"
+                + ",http://127.0.0.1:3000,http://127.0.0.1:3001,http://127.0.0.1:8080"
+            ),
             "LAB_AUTH_ENABLED": "1",
             "LAB_TOTP_KEY_FILE": "/run/secrets/lab_totp_key",
             "POSTHOG_API_KEY": "",
@@ -100,12 +149,12 @@ def main():
     for app in ("web", "admin", "space"):
         values = {
             "VITE_API_BASE_URL": "",
-            "VITE_WEB_BASE_URL": "http://localhost:8080",
-            "VITE_ADMIN_BASE_URL": "http://localhost:8080",
+            "VITE_WEB_BASE_URL": base_url,
+            "VITE_ADMIN_BASE_URL": base_url,
             "VITE_ADMIN_BASE_PATH": "/god-mode",
-            "VITE_SPACE_BASE_URL": "http://localhost:8080",
+            "VITE_SPACE_BASE_URL": base_url,
             "VITE_SPACE_BASE_PATH": "/spaces",
-            "VITE_LIVE_BASE_URL": "http://localhost:8080",
+            "VITE_LIVE_BASE_URL": base_url,
             "VITE_LIVE_BASE_PATH": "/live",
             "VITE_ENABLE_SESSION_RECORDER": "0",
         }
@@ -115,14 +164,14 @@ def main():
         {
             "PORT": "3000",
             "API_BASE_URL": "http://api:8000",
-            "WEB_BASE_URL": "http://localhost:8080",
-            "LIVE_BASE_URL": "http://localhost:8080",
+            "WEB_BASE_URL": base_url,
+            "LIVE_BASE_URL": base_url,
             "LIVE_BASE_PATH": "/live",
             "LIVE_SERVER_SECRET_KEY": root["LIVE_SERVER_SECRET_KEY"],
             "REDIS_URL": "redis://plane-redis:6379/",
         },
     )
-    print("本机配置已生成；认证密钥位于 .secrets/lab-totp.key。秘密未写入输出。")
+    print(f"访问地址已配置：{base_url}；认证密钥保留在 .secrets/lab-totp.key。")
 
 
 if __name__ == "__main__":

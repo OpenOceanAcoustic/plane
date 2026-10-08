@@ -5,6 +5,8 @@
 import { createHmac } from "node:crypto";
 import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { resolve } from "node:path";
 import { expect, test } from "@playwright/test";
 
 const project = process.env.LAB_E2E_PROJECT;
@@ -36,9 +38,18 @@ function dynamicCode(uri: string): string {
 
 test("SSH bootstrap, real TOTP login, original task layouts and personal schedule", async ({ page }) => {
   // Keep bearer tokens and provisioning secrets in memory; no traces, screenshots or CLI output.
-  const output = ssh(["lab_access", "bootstrap", "--workspace", "browser-lab"]);
+  if (project !== "ooa-plane-e2e") throw new Error("SSH bootstrap requires an isolated ooa-plane-e2e project");
+  const output = execFileSync("sh", [resolve("backend.sh"), "bootstrap", "--workspace", "browser-lab"], {
+    cwd: tmpdir(),
+    env: { ...process.env, LAB_COMPOSE_PROJECT: project },
+    encoding: "utf8",
+  });
   const invitation = output.trim().split("\n").at(-1)!;
-  await page.goto(invitation);
+  try {
+    await page.goto(invitation);
+  } catch {
+    throw new Error("Could not open the registration page; check the isolated test service address");
+  }
   await page.getByLabel("用户名", { exact: true }).fill("e2e-admin");
   await page.getByLabel("显示姓名").fill("浏览器验收管理员");
   await page.getByLabel("联系邮箱").fill("e2e@example.org");
