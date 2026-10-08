@@ -22,7 +22,8 @@ from rest_framework.views import APIView
 
 from plane.db.models import Project, ProjectMember, State
 from .auth import audit, lock
-from .models import Folder, PersonalItem, ProjectFlow, TimeBlock, WorkspacePolicy
+from .models import Folder, PersonalCategory, PersonalItem, ProjectFlow, TimeBlock, WorkspacePolicy
+from .categories import category_data, category_name, default_categories, hex_color, item_category
 from .permissions import can_view_team, issue_access, project_ids, readable_issues, workspace_member
 from .planning import (
     STATUSES,
@@ -69,9 +70,11 @@ class PlannerView(LabView):
     def get(self, request, slug):
         allowed = set(project_ids(request.user, self.workspace))
         folders = default_folders(request.user, self.workspace)
+        categories = list(default_categories(request.user, self.workspace))
+        defaults = {row.legacy_key: str(row.id) for row in categories if row.legacy_key}
         rows = list(
             PersonalItem.objects.filter(user=request.user, workspace=self.workspace).select_related(
-                "issue__project", "issue__state"
+                "issue__project", "issue__state", "category"
             )
         )
         readable_issue_ids = set(
@@ -120,6 +123,10 @@ class PlannerView(LabView):
                 "user_id": str(request.user.id),
                 "team_access": can_view_team(request.user, self.membership),
                 "folders": [{"id": str(f.id), "name": f.name, "position": f.position} for f in folders],
+                "categories": [category_data(row) for row in categories],
+                "default_category_id": defaults.get("research") or (str(categories[0].id) if categories else None),
+                "default_project_category_id": defaults.get("project")
+                or (str(categories[0].id) if categories else None),
                 "items": items,
                 "projects": projects,
                 "timezone": "Asia/Shanghai",
@@ -180,6 +187,55 @@ class FolderDetailView(LabView):
         return Response(status=204)
 
 
+class CategoryView(LabView):
+    def get(self, request, slug):
+        return Response([category_data(row) for row in default_categories(request.user, self.workspace)])
+
+    @transaction.atomic
+    def post(self, request, slug):
+        rows = default_categories(request.user, self.workspace)
+        name, color = category_name(request.data.get("name")), hex_color(request.data.get("color"))
+        if rows.filter(name=name).exists():
+            raise ValidationError("同名类别已存在")
+        position = rows.aggregate(value=Max("position"))["value"]
+        row = PersonalCategory.objects.create(
+            user=request.user,
+            workspace=self.workspace,
+            name=name,
+            color=color,
+            position=(position + 1 if position is not None else 0),
+        )
+        audit("planning.category_created", obj=row, actor=request.user, workspace=self.workspace)
+        return Response(category_data(row), status=201)
+
+
+class CategoryDetailView(LabView):
+    @transaction.atomic
+    def patch(self, request, slug, pk):
+        lock(f"lab-categories:{self.workspace.id}:{request.user.id}")
+        row = get_object_or_404(PersonalCategory, id=pk, user=request.user, workspace=self.workspace)
+        name = category_name(request.data.get("name", row.name))
+        color = hex_color(request.data.get("color", row.color))
+        if (
+            PersonalCategory.objects.filter(user=request.user, workspace=self.workspace, name=name)
+            .exclude(id=row.id)
+            .exists()
+        ):
+            raise ValidationError("同名类别已存在")
+        row.name, row.color = name, color
+        row.save(update_fields=["name", "color"])
+        audit("planning.category_updated", obj=row, actor=request.user, workspace=self.workspace)
+        return Response(category_data(row))
+
+    @transaction.atomic
+    def delete(self, request, slug, pk):
+        lock(f"lab-categories:{self.workspace.id}:{request.user.id}")
+        row = get_object_or_404(PersonalCategory, id=pk, user=request.user, workspace=self.workspace)
+        audit("planning.category_deleted", obj=row, actor=request.user, workspace=self.workspace)
+        row.delete()
+        return Response(status=204)
+
+
 class TaskSearchView(LabView):
     def get(self, request, slug):
         rows = readable_issues(request.user, self.workspace).filter(is_draft=False, archived_at__isnull=True)
@@ -220,10 +276,15 @@ class ItemView(LabView):
         )
         issue = issue_access(request.user, self.workspace, data["issue_id"]) if data.get("issue_id") else None
         title = str(data.get("title", "")).strip()
-        kind = data.get("kind", "research")
-        if not issue and (not title or len(title) > 255 or kind not in ("research", "study", "mentoring")):
+        kind = "research" if "category_id" in data else data.get("kind", "research")
+        if not issue and (
+            not title
+            or len(title) > 255
+            or ("category_id" not in data and kind not in ("research", "study", "mentoring"))
+        ):
             raise ValidationError("请填写事项名称和类型")
         with transaction.atomic():
+            lock(f"lab-categories:{self.workspace.id}:{request.user.id}")
             lock(f"lab-planner:{self.workspace.id}:{request.user.id}")
             if issue and PersonalItem.objects.filter(user=request.user, workspace=self.workspace, issue=issue).exists():
                 raise ValidationError("任务已在本人规划中，请移动到需要的文件夹")
@@ -235,6 +296,7 @@ class ItemView(LabView):
                 title=title,
                 description=str(data.get("description", "")),
                 kind="project" if issue else kind,
+                category=item_category(request.user, self.workspace, data, "project" if issue else kind),
                 public=data.get("public") is True,
             )
         return Response({"id": str(item.id)}, status=201)
@@ -243,8 +305,11 @@ class ItemView(LabView):
 class ItemDetailView(LabView):
     @transaction.atomic
     def patch(self, request, slug, pk):
+        lock(f"lab-categories:{self.workspace.id}:{request.user.id}")
         item = own_item(request.user, self.workspace, pk)
         data = request.data
+        if "category_id" in data:
+            item.category = item_category(request.user, self.workspace, data, item.kind)
         if "folder_id" in data:
             item.folder = (
                 get_object_or_404(Folder, id=data["folder_id"], user=request.user, workspace=self.workspace)
@@ -256,6 +321,8 @@ class ItemDetailView(LabView):
                 if data["kind"] not in ("research", "study", "mentoring"):
                     raise ValidationError("个人事项类型无效")
                 item.kind = data["kind"]
+                if "category_id" not in data:
+                    item.category = item_category(request.user, self.workspace, data, item.kind)
             if "title" in data:
                 title = str(data["title"]).strip()
                 if not title or len(title) > 255:
@@ -386,7 +453,7 @@ class PlanningExportView(LabView):
         items = []
         for row in (
             PersonalItem.objects.filter(user=request.user, workspace=self.workspace)
-            .select_related("issue__project", "issue__state")
+            .select_related("issue__project", "issue__state", "category")
             .prefetch_related("blocks")
         ):
             data = item_data(row, request.user, allowed)

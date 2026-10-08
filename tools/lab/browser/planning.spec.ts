@@ -10,6 +10,14 @@ async function planningServer(page: Page) {
   const planner: LabPlanner = {
     user_id: "member",
     team_access: false,
+    categories: [
+      { id: "project", name: "项目任务", color: "#1d4ed8", position: 0 },
+      { id: "research", name: "科研", color: "#7c3aed", position: 1 },
+      { id: "study", name: "学习", color: "#15803d", position: 2 },
+      { id: "mentoring", name: "带教", color: "#c2410c", position: 3 },
+    ],
+    default_category_id: "research",
+    default_project_category_id: "project",
     folders: ["A", "B", "C", "D"].map((name, position) => ({ id: name, name, position })),
     items: [],
     projects: [],
@@ -25,14 +33,20 @@ async function planningServer(page: Page) {
     const method = route.request().method();
     const body = method === "GET" ? undefined : route.request().postDataJSON();
     let result: unknown = {};
-    if (path === "planner/") result = planner;
-    else if (path === "folders/" && method === "PUT") {
+    if (path === "planner/") {
+      for (const item of planner.items) {
+        const category = planner.categories?.find((row) => row.id === item.category_id);
+        item.category_name = category?.name ?? null;
+        item.category_color = category?.color ?? null;
+      }
+      result = planner;
+    } else if (path === "folders/" && method === "PUT") {
       planner.folders = body.ids.map((id: string, position: number) => ({
         ...planner.folders.find((folder) => folder.id === id),
         position,
       }));
     } else if (path === "items/" && method === "POST") {
-      planner.items.push({ id: "personal", ...body, issue_id: null, status: "todo" } as LabItem);
+      planner.items.push({ id: "personal", ...body, issue_id: null, status: "todo", kind: "research" } as LabItem);
       result = { id: "personal" };
     } else if (path?.startsWith("folders/")) {
       const id = path.split("/")[1];
@@ -42,8 +56,19 @@ async function planningServer(page: Page) {
         for (const item of planner.items) if (item.folder_id === id) item.folder_id = null;
       }
     } else if (path === "items/personal/") Object.assign(planner.items[0]!, body);
-    else if (path === "calendar/" && method === "GET") result = { events, members: [{ id: "member", name: "成员" }] };
-    else if (path === "calendar/" && method === "POST") {
+    else if (path === "calendar/" && method === "GET") {
+      for (const event of events) {
+        const category = planner.categories?.find(
+          (row) => row.id === (planner.items.find((item) => item.id === event.item_id)?.category_id ?? event.kind)
+        );
+        if (event.kind) {
+          event.category_id = category?.id;
+          event.category_name = category?.name;
+          event.category_color = category?.color;
+        }
+      }
+      result = { events, members: [{ id: "member", name: "成员" }] };
+    } else if (path === "calendar/" && method === "POST") {
       expect(body.item_id).toBe("personal");
       events.push({
         id: "block",
@@ -116,16 +141,16 @@ test("schedule colors default by category and manual overrides survive saving, s
   await expect(block).toHaveCSS("--fc-event-color", "#7c3aed");
   await block.click();
   const dialog = page.getByRole("dialog");
-  await dialog.getByLabel("排期颜色", { exact: true }).selectOption("orange");
+  await dialog.getByRole("button", { name: "取色 #c2410c", exact: true }).click();
   await dialog.getByRole("button", { name: "保存", exact: true }).click();
   await expect(block).toHaveCSS("--fc-event-color", "#c2410c");
-  expect(events[0]!.color).toBe("orange");
+  expect(events[0]!.color).toBe("#c2410c");
   await page.getByRole("button", { name: "事项时间轴", exact: true }).click();
   await block.click();
-  await expect(dialog.getByLabel("排期颜色", { exact: true })).toHaveCount(0);
+  await expect(dialog.getByLabel("自定义排期颜色", { exact: true })).toHaveValue("#c2410c");
   await dialog.getByLabel("结束（上海）").fill("2026-10-08T11:15");
   await dialog.getByRole("button", { name: "保存", exact: true }).click();
-  expect(events[0]!.color).toBe("orange");
+  expect(events[0]!.color).toBe("#c2410c");
   await page.getByRole("button", { name: "日历", exact: true }).click();
   await expect(block).toHaveCSS("--fc-event-color", "#c2410c");
   await page.reload();
@@ -136,7 +161,7 @@ test("schedule colors default by category and manual overrides survive saving, s
   await dialog.getByRole("button", { name: "保存", exact: true }).click();
   await expect(page.locator('[data-lab-calendar-event="following"]')).toHaveCSS("--fc-event-color", "#c2410c");
   await block.click();
-  await dialog.getByLabel("排期颜色", { exact: true }).selectOption("");
+  await dialog.getByRole("checkbox", { name: "跟随事项类别", exact: true }).check();
   await dialog.getByRole("button", { name: "保存", exact: true }).click();
   await expect(block).toHaveCSS("--fc-event-color", "#7c3aed");
 });
@@ -306,7 +331,7 @@ test("native planning fields have exact labels independent of their select optio
   const dialog = page.getByRole("dialog");
   await dialog.getByRole("textbox", { name: "事项名称", exact: true }).fill("学习命名验证");
   await dialog.getByRole("textbox", { name: "说明", exact: true }).fill("原始事项说明");
-  const kind = dialog.getByRole("combobox", { name: "类型", exact: true });
+  const kind = dialog.getByRole("combobox", { name: "事项类别", exact: true });
   await expect(kind).toBeVisible();
   await kind.selectOption("study");
   await expect(kind).toHaveValue("study");
@@ -314,7 +339,7 @@ test("native planning fields have exact labels independent of their select optio
   await expect(folder.locator("option")).toHaveCount(5);
   await folder.selectOption("B");
   await dialog.getByRole("button", { name: "保存", exact: true }).click();
-  await expect.poll(() => planner.items[0]?.kind).toBe("study");
+  await expect.poll(() => planner.items[0]?.category_id).toBe("study");
   expect(planner.items[0]!.folder_id).toBe("B");
 });
 

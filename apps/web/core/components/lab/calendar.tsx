@@ -22,13 +22,13 @@ import resourceTimelinePlugin from "@fullcalendar/react-scheduler/resource-timel
 import resourceTimeGridPlugin from "@fullcalendar/react-scheduler/resource-timegrid";
 import type { ResourceInput } from "@fullcalendar/react-scheduler";
 import { CalendarDays, ChevronLeft, ChevronRight, Download, Folder, Plus } from "lucide-react";
-import { Button, LabDialog, LabField, LabSelect, labInputClass } from "@plane/ui";
+import { Button, LabColorPicker, LabDialog, LabField, LabSelect, labInputClass } from "@plane/ui";
 import type { LabEvent, LabItem, LabMember } from "@plane/types";
 import type { LabStore } from "@plane/shared-state";
 import { calendarInstant, localInput, SLOT_MS, weekDays } from "./calendar-time";
 import { CalendarHeightControl, CalendarResizeHandle, useCalendarHeight } from "./calendar-size";
 import { calendarFolderColors, useCalendarFolders } from "./calendar-folders";
-import { calendarCategories, calendarColor, calendarColors } from "./calendar-colors";
+import { calendarColor, calendarContrast } from "./calendar-colors";
 // oxlint-disable-next-line import/no-unassigned-import -- bundled FullCalendar layout styles
 import "@fullcalendar/react/skeleton.css";
 // oxlint-disable-next-line import/no-unassigned-import -- local theme, no CDN
@@ -257,10 +257,27 @@ export const LabCalendar = observer(function LabCalendar({
         resourceEditable: false,
         extendedProps: { block: event },
         className: event.kind ? "" : "lab-busy-event",
-        ...(!team && timeline ? {} : { color: calendarColor(event), contrastColor: "#ffffff" }),
+        color: calendarColor(event),
+        contrastColor: calendarContrast(calendarColor(event)),
       })),
-    [visibleEvents, store.busy, team, timeline, itemFolders]
+    [visibleEvents, store.busy, team, itemFolders]
   );
+  const categories = team
+    ? [
+        ...new Map(
+          visibleEvents
+            .filter((event) => event.kind && event.category_id)
+            .map((event) => [
+              event.category_id,
+              {
+                id: event.category_id!,
+                name: event.category_name ?? "未分类",
+                color: event.category_color ?? "#64748b",
+              },
+            ])
+        ).values(),
+      ]
+    : (planner?.categories ?? []);
   const resources = useMemo<ResourceInput[]>(() => {
     if (team) return store.members.map((member) => ({ id: member.id, title: member.name }));
     if (!planner) return [];
@@ -278,8 +295,6 @@ export const LabCalendar = observer(function LabCalendar({
             id: `item:${item.id}`,
             title: item.title,
             order: itemOrder,
-            eventColor: calendarFolderColors(folderColors[folder.id]).background,
-            eventContrastColor: calendarFolderColors(folderColors[folder.id]).foreground,
             extendedProps: { itemId: item.id, issueKey: item.issue_key, color: folderColors[folder.id] ?? "grey" },
           })),
       }));
@@ -578,20 +593,16 @@ export const LabCalendar = observer(function LabCalendar({
       </div>
       <div className="flex flex-wrap items-center justify-between gap-3">
         <CalendarHeightControl height={height} setHeight={setHeight} />
-        {(team || !timeline) && (
+        {
           <ul aria-label="排期类别颜色" className="flex flex-wrap items-center gap-3 text-12 text-secondary">
-            {calendarCategories.map((category) => (
-              <li key={category.kind} className="flex items-center gap-1">
-                <span
-                  aria-hidden
-                  className="h-2.5 w-2.5 rounded-full"
-                  style={{ backgroundColor: calendarColor({ kind: category.kind }) }}
-                />
+            {categories.map((category) => (
+              <li key={category.id} className="flex items-center gap-1">
+                <span aria-hidden className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: category.color }} />
                 {category.name}
               </li>
             ))}
           </ul>
-        )}
+        }
       </div>
       {choosingFolders && (
         <LabDialog
@@ -635,7 +646,13 @@ export const LabCalendar = observer(function LabCalendar({
         >
           {!editingEvent && (
             <LabField label="事项">
-              <select name="item_id" className={labInputClass} defaultValue={initialItemId} required>
+              <select
+                name="item_id"
+                className={labInputClass}
+                value={initialItemId}
+                onChange={(event) => setInitialItemId(event.target.value)}
+                required
+              >
                 <option value="">请选择本人事项</option>
                 {store.planner?.items.map((item) => (
                   <option key={item.id} value={item.id}>
@@ -678,18 +695,16 @@ export const LabCalendar = observer(function LabCalendar({
                   defaultValue={localInput(editingEvent?.end ?? initialEnd)}
                 />
               </LabField>
-              {(team || !timeline) && (
-                <LabField label="排期颜色">
-                  <select name="color" className={labInputClass} defaultValue={editingEvent?.color ?? ""}>
-                    <option value="">按事项类别</option>
-                    {calendarColors.map((color) => (
-                      <option key={color.value} value={color.value}>
-                        {color.name}
-                      </option>
-                    ))}
-                  </select>
-                </LabField>
-              )}
+              <LabColorPicker
+                label="排期颜色"
+                automatic
+                initialValue={editingEvent?.color ?? ""}
+                defaultColor={
+                  editingEvent?.category_color ??
+                  planner?.items.find((item) => item.id === initialItemId)?.category_color ??
+                  "#64748b"
+                }
+              />
             </>
           )}
           {editingEvent && (

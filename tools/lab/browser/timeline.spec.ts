@@ -146,6 +146,13 @@ async function fixture(page: Page, section: "team" | "workbench") {
       const members = [{ id: "member", name: "本人" }, ...(team ? [{ id: "other", name: "团队成员" }] : [])].filter(
         (member) => !url.searchParams.get("user_id") || member.id === url.searchParams.get("user_id")
       );
+      for (const event of events) {
+        if (event.kind) {
+          event.category_id = event.kind;
+          event.category_name = event.kind;
+          event.category_color = event.kind === "project" ? "#1d4ed8" : event.kind === "study" ? "#15803d" : "#7c3aed";
+        }
+      }
       result = { events, members };
     } else if (path === "calendar/" && method === "POST") {
       const source = planner.items.find((row) => row.id === body!.item_id)!;
@@ -218,22 +225,6 @@ async function createFolder(page: Page, name: string) {
   await dialog.getByLabel("名称", { exact: true }).fill(name);
   await dialog.getByRole("button", { name: "保存", exact: true }).click();
   await expect(dialog).toHaveCount(0);
-}
-
-async function folderEventColors(locator: Locator) {
-  return locator.evaluate((element) => {
-    const marker = element as HTMLElement;
-    const background = marker.style.backgroundColor.replace("-bg-strong", "-bg");
-    const foreground = marker.style.backgroundColor.replace("-bg-strong", "-text");
-    const probe = document.createElement("span");
-    probe.style.backgroundColor = background;
-    probe.style.color = foreground;
-    marker.append(probe);
-    const style = getComputedStyle(probe);
-    const result = { background: style.backgroundColor, foreground: style.color };
-    probe.remove();
-    return result;
-  });
 }
 
 test("team timeline day week and month request matching ranges and filters", async ({ page }) => {
@@ -340,7 +331,7 @@ test("personal timeline keeps unscheduled item rows and selection prefills the o
   await expect(pane.locator('[data-lab-calendar-event="created-1"]')).toBeVisible();
 });
 
-test("personal folder groups collapse natively and use distinct consistent folder colors", async ({ page }) => {
+test("personal folder groups retain their markers while timeline blocks use category colors", async ({ page }) => {
   await page.setViewportSize({ width: 1920, height: 1080 });
   const { planner, ownEvents } = await fixture(page, "workbench");
   const pane = page.getByRole("region", { name: "个人周历区域", exact: true });
@@ -371,23 +362,8 @@ test("personal folder groups collapse natively and use distinct consistent folde
   expect(aColor).not.toBe(bColor);
   const itemMarker = pane.locator('[role="rowheader"][data-resource-id="item:project-item"] .lab-folder-marker');
   await expect(itemMarker).toHaveCSS("background-color", aColor);
-  const aEventColors = await folderEventColors(folderA.locator(".lab-folder-marker"));
-  const bEventColors = await folderEventColors(folderB.locator(".lab-folder-marker"));
-  expect(aEventColors.background).not.toBe(bEventColors.background);
-  await Promise.all(
-    (
-      [
-        ["own-block", aEventColors],
-        ["private-block", bEventColors],
-      ] as const
-    ).map(([id, colors]) => {
-      const bar = pane.locator(`[data-lab-calendar-event="${id}"]`);
-      return Promise.all([
-        expect(bar).toHaveCSS("background-color", colors.background),
-        expect(bar.locator("strong")).toHaveCSS("color", colors.foreground),
-      ]);
-    })
-  );
+  await expect(pane.locator('[data-lab-calendar-event="own-block"]')).toHaveCSS("--fc-event-color", "#1d4ed8");
+  await expect(pane.locator('[data-lab-calendar-event="private-block"]')).toHaveCSS("--fc-event-color", "#15803d");
   const projectLane = pane.locator('[data-lab-item="project-item"]');
   await expect(projectLane).toBeVisible();
   await folderA.locator('span[aria-hidden="true"]').first().click();
@@ -436,14 +412,8 @@ test("personal folder groups collapse natively and use distinct consistent folde
     expect(folderA.locator(".lab-folder-marker")).toHaveCSS("background-color", aColor),
     expect(folderB.locator(".lab-folder-marker")).toHaveCSS("background-color", bColor),
     expect(folderE.locator(".lab-folder-marker")).toHaveCSS("background-color", eColor),
-    expect(pane.locator('[data-lab-calendar-event="own-block"]')).toHaveCSS(
-      "background-color",
-      aEventColors.background
-    ),
-    expect(pane.locator('[data-lab-calendar-event="private-block"]')).toHaveCSS(
-      "background-color",
-      bEventColors.background
-    ),
+    expect(pane.locator('[data-lab-calendar-event="own-block"]')).toHaveCSS("--fc-event-color", "#1d4ed8"),
+    expect(pane.locator('[data-lab-calendar-event="private-block"]')).toHaveCSS("--fc-event-color", "#15803d"),
   ]);
 });
 

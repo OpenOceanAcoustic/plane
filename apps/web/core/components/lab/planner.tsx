@@ -8,21 +8,7 @@ import { DndContext, KeyboardSensor, PointerSensor, useSensor, useSensors } from
 import type { DragEndEvent } from "@dnd-kit/core";
 import { SortableContext, arrayMove, horizontalListSortingStrategy } from "@dnd-kit/sortable";
 import { observer } from "mobx-react";
-import {
-  Folder,
-  Plus,
-  CalendarDays,
-  Trash2,
-  Pencil,
-  LockKeyhole,
-  Globe2,
-  Flag,
-  Clock3,
-  BookOpen,
-  FlaskConical,
-  GraduationCap,
-  Layers3,
-} from "lucide-react";
+import { Folder, Plus, CalendarDays, Trash2, Pencil, LockKeyhole, Globe2, Flag, Clock3, Layers3 } from "lucide-react";
 import { Button } from "@plane/ui";
 import type { LabFolder, LabItem, LabStatus, LabTask } from "@plane/types";
 import type { LabStore } from "@plane/shared-state";
@@ -50,7 +36,6 @@ const priorityNames: Record<string, string> = {
   medium: "中优先级",
   low: "低优先级",
 };
-const kindNames: Record<string, string> = { research: "科研", study: "学习", mentoring: "带教", project: "项目任务" };
 function shortDate(value: string) {
   return new Intl.DateTimeFormat("zh-CN", { timeZone: "Asia/Shanghai", month: "long", day: "numeric" }).format(
     new Date(`${value}T12:00:00+08:00`)
@@ -117,7 +102,7 @@ export const LabPlannerBoard = observer(function LabPlannerBoard({
   const matched = planner.items.filter((item) => {
     const project = item.project_name ?? planner.projects.find((row) => row.id === item.project_id)?.name ?? "";
     const text =
-      `${item.title} ${item.description ?? ""} ${item.issue_key ?? ""} ${project} ${kindNames[item.kind] ?? ""}`.toLocaleLowerCase();
+      `${item.title} ${item.description ?? ""} ${item.issue_key ?? ""} ${project} ${item.category_name ?? "未分类"}`.toLocaleLowerCase();
     return (
       (!search.trim() || text.includes(search.trim().toLocaleLowerCase())) &&
       (projectFilter === "all" ||
@@ -337,18 +322,15 @@ export const LabPlannerBoard = observer(function LabPlannerBoard({
                             planner.projects.find((row) => row.id === item.project_id)?.name ??
                             "项目任务"}
                         </span>
-                      ) : (
-                        <span className="flex items-center gap-1">
-                          {item.kind === "study" ? (
-                            <BookOpen size={11} />
-                          ) : item.kind === "mentoring" ? (
-                            <GraduationCap size={11} />
-                          ) : (
-                            <FlaskConical size={11} />
-                          )}
-                          {kindNames[item.kind] ?? "个人事项"}
-                        </span>
-                      )}
+                      ) : null}
+                      <span className="flex items-center gap-1">
+                        <span
+                          aria-hidden
+                          className="h-2.5 w-2.5 shrink-0 rounded-full"
+                          style={{ backgroundColor: item.category_color ?? "#64748b" }}
+                        />
+                        {item.category_name ?? "未分类"}
+                      </span>
                       {item.issue_key && <span>{item.issue_key}</span>}
                     </div>
                     <p className="lab-planner-card-title mb-2 line-clamp-2 pr-6 text-14 font-medium">
@@ -528,7 +510,7 @@ export const LabPlannerBoard = observer(function LabPlannerBoard({
               store.request(editing ? `items/${editing.id}/` : "items/", editing ? "PATCH" : "POST", {
                 title: data.get("title"),
                 description: data.get("description"),
-                kind: data.get("kind"),
+                category_id: data.get("category_id") || null,
                 folder_id: data.get("folder_id") || null,
                 public: data.get("public") === "on",
               })
@@ -540,13 +522,6 @@ export const LabPlannerBoard = observer(function LabPlannerBoard({
               <LabField label="事项名称">
                 <input className={labInputClass} name="title" defaultValue={editing?.title} required maxLength={255} />
               </LabField>
-              <LabField label="类型">
-                <select className={labInputClass} name="kind" defaultValue={editing?.kind ?? "research"}>
-                  <option value="research">科研</option>
-                  <option value="study">学习</option>
-                  <option value="mentoring">带教</option>
-                </select>
-              </LabField>
               <LabField label="说明">
                 <textarea className={labInputClass} name="description" defaultValue={editing?.description} />
               </LabField>
@@ -555,6 +530,20 @@ export const LabPlannerBoard = observer(function LabPlannerBoard({
               </label>
             </>
           )}
+          <LabField label="事项类别">
+            <select
+              className={labInputClass}
+              name="category_id"
+              defaultValue={editing ? (editing.category_id ?? "") : (planner.default_category_id ?? "")}
+            >
+              <option value="">未分类</option>
+              {(planner.categories ?? []).map((category) => (
+                <option key={category.id} value={category.id}>
+                  {category.name}
+                </option>
+              ))}
+            </select>
+          </LabField>
           <LabField label="文件夹">
             <select
               className={labInputClass}
@@ -581,6 +570,7 @@ export const LabPlannerBoard = observer(function LabPlannerBoard({
             finish(() =>
               store.request("items/", "POST", {
                 issue_id: data.get("issue_id"),
+                category_id: data.get("category_id") || null,
                 folder_id: data.get("folder_id") || null,
               })
             )
@@ -600,6 +590,20 @@ export const LabPlannerBoard = observer(function LabPlannerBoard({
               {tasks.map((task) => (
                 <option key={task.id} value={task.id}>
                   {task.key} · {task.title}
+                </option>
+              ))}
+            </select>
+          </LabField>
+          <LabField label="事项类别">
+            <select
+              className={labInputClass}
+              name="category_id"
+              defaultValue={planner.default_project_category_id ?? ""}
+            >
+              <option value="">未分类</option>
+              {(planner.categories ?? []).map((category) => (
+                <option key={category.id} value={category.id}>
+                  {category.name}
                 </option>
               ))}
             </select>

@@ -11,6 +11,8 @@ from .auth_views import LabAuthView
 from .planning_views import (
     BlockDetailView,
     CalendarView,
+    CategoryView,
+    CategoryDetailView,
     FlowView,
     FolderDetailView,
     FolderView,
@@ -55,6 +57,8 @@ business_patterns = [
     path("planning-export/", PlanningExportView.as_view()),
     path("folders/", FolderView.as_view()),
     path("folders/<uuid:pk>/", FolderDetailView.as_view()),
+    path("categories/", CategoryView.as_view()),
+    path("categories/<uuid:pk>/", CategoryDetailView.as_view()),
     path("items/", ItemView.as_view()),
     path("items/<uuid:pk>/", ItemDetailView.as_view()),
     path("tasks/", TaskSearchView.as_view()),

@@ -18,6 +18,7 @@ export type LabBountyStatus =
   | "done"
   | "cancelled";
 export type LabFolder = { id: string; name: string; position: number };
+export type LabCategory = { id: string; name: string; color: string; position: number };
 export type LabItemSchedule = {
   future_count: number;
   next_start: string | null;
@@ -31,6 +32,9 @@ export type LabItem = {
   description?: string;
   status: LabStatus;
   kind: string;
+  category_id?: string | null;
+  category_name?: string | null;
+  category_color?: string | null;
   public: boolean;
   folder_id: string | null;
   issue_id: string | null;
@@ -54,13 +58,16 @@ export type LabPlanner = {
   user_id: string;
   team_access: boolean;
   folders: LabFolder[];
+  categories?: LabCategory[];
+  default_category_id?: string | null;
+  default_project_category_id?: string | null;
   items: LabItem[];
   projects: LabProject[];
   timezone: string;
   week_start: number;
   step_minutes: number;
 };
-export type LabCalendarColor = "" | "blue" | "purple" | "green" | "orange" | "pink" | "cyan";
+export type LabCalendarColor = string;
 export type LabEvent = {
   id: string;
   title: string;
@@ -70,6 +77,9 @@ export type LabEvent = {
   editable: boolean;
   revision?: number;
   color?: LabCalendarColor;
+  category_id?: string | null;
+  category_name?: string | null;
+  category_color?: string | null;
   kind?: string;
   status?: LabStatus;
   item_id?: string;

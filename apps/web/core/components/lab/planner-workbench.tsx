@@ -8,6 +8,7 @@ import type { LabStore } from "@plane/shared-state";
 import { Button } from "@plane/ui";
 import { LabCalendar } from "./calendar";
 import { LabPlannerBoard } from "./planner";
+import { LabCategoryManager } from "./categories";
 // oxlint-disable-next-line import/no-unassigned-import -- responsive workbench layout
 import "./planner-workbench.css";
 
@@ -43,6 +44,7 @@ export const LabPlanningWorkbench = observer(function LabPlanningWorkbench({ sto
           ))}
         </nav>
         <div className="flex items-center gap-3">
+          <LabCategoryManager store={store} />
           {planner.team_access && (
             <a href={`/${store.slug}/lab/team`} className="flex items-center gap-1 text-13 text-accent-primary">
               查看团队排期 <ArrowUpRight size={14} />

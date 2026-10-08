@@ -13,15 +13,14 @@ from plane.db.models import State
 from .auth import audit, lock
 from .models import Folder, PersonalItem, ProjectFlow, TimeBlock
 from .permissions import can_read_issue, issue_access, require_lead
+from .categories import hex_color, item_category_data
 
 STATUSES = ("todo", "active", "review", "done")
 
 
 def block_color(data, current=""):
     value = data.get("color", current)
-    if not isinstance(value, str) or value not in dict(TimeBlock.COLOR_CHOICES):
-        raise ValidationError("排期颜色须为按类别或可选颜色")
-    return value
+    return hex_color(value, automatic=True)
 
 
 @transaction.atomic
@@ -68,6 +67,7 @@ def item_data(item, user, allowed_projects, *, readable_issue_ids=None, flows=No
             else "todo"
         )
         return {
+            **item_category_data(item),
             "id": str(item.id),
             "issue_id": str(issue.id),
             "project_id": str(issue.project_id),
@@ -83,6 +83,7 @@ def item_data(item, user, allowed_projects, *, readable_issue_ids=None, flows=No
             "archived": bool(issue.archived_at),
         }
     return {
+        **item_category_data(item),
         "id": str(item.id),
         "title": item.title,
         "description": item.description,
@@ -257,7 +258,7 @@ def calendar_events(user, workspace, start, end, *, team=False, user_id=None, pr
     active_members = {row.member_id for row in member_rows}
     blocks = TimeBlock.objects.filter(
         item__workspace=workspace, item__user_id__in=active_members, start__lt=end, end__gt=start
-    ).select_related("item__user", "item__issue__project", "item__issue__state")
+    ).select_related("item__user", "item__category", "item__issue__project", "item__issue__state")
     events = []
     for block in blocks:
         item = block.item
@@ -275,7 +276,13 @@ def calendar_events(user, workspace, start, end, *, team=False, user_id=None, pr
         }
         if details:
             event.update(
-                {"item_id": str(item.id), "kind": details["kind"], "status": details["status"], "color": block.color}
+                {
+                    "item_id": str(item.id),
+                    "kind": details["kind"],
+                    "status": details["status"],
+                    "color": block.color,
+                    **item_category_data(item),
+                }
             )
             if details.get("issue_id"):
                 event.update({"issue_id": details["issue_id"], "project_id": details["project_id"]})

@@ -10,6 +10,7 @@ import { LabAuth } from "../../../packages/ui/src/lab-auth";
 import { LabStore } from "../../../packages/shared-state/src/lab.store";
 import { LabPlannerBoard } from "../../../apps/web/core/components/lab/planner";
 import { LabCalendar } from "../../../apps/web/core/components/lab/calendar";
+import { LabCategoryManager } from "../../../apps/web/core/components/lab/categories";
 import { LabPanel } from "../../../apps/web/core/components/lab/panel";
 import { LabAnalyticsPanel } from "../../../apps/web/core/components/lab/analytics";
 import type { LabItem } from "@plane/types";
@@ -24,6 +25,7 @@ const Planning = observer(function Planning() {
     <>
       {store.error && <p role="alert">{store.error}</p>}
       {store.notice && <p role="status">{store.notice}</p>}
+      <LabCategoryManager store={store} />
       <LabPlannerBoard store={store} schedule={setScheduled} />
       <LabCalendar store={store} scheduled={scheduled} clearScheduled={() => setScheduled(undefined)} />
     </>

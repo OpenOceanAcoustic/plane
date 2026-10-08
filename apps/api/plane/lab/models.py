@@ -83,10 +83,27 @@ class Folder(Record):
         ordering = ["position", "created_at"]
 
 
+class PersonalCategory(Record):
+    workspace = models.ForeignKey("db.Workspace", on_delete=models.CASCADE)
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
+    name = models.CharField(max_length=40)
+    color = models.CharField(max_length=7)
+    position = models.PositiveIntegerField(default=0)
+    legacy_key = models.CharField(max_length=16, blank=True, default="")
+
+    class Meta:
+        ordering = ["position", "created_at", "id"]
+        constraints = [
+            models.UniqueConstraint(fields=["workspace", "user", "name"], name="lab_category_name_unique"),
+            models.CheckConstraint(condition=models.Q(color__regex=r"^#[0-9a-f]{6}$"), name="lab_category_valid_color"),
+        ]
+
+
 class PersonalItem(Record):
     workspace = models.ForeignKey("db.Workspace", on_delete=models.CASCADE)
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
     folder = models.ForeignKey(Folder, on_delete=models.SET_NULL, null=True)
+    category = models.ForeignKey(PersonalCategory, on_delete=models.SET_NULL, null=True, blank=True)
     issue = models.ForeignKey("db.Issue", on_delete=models.SET_NULL, null=True)
     title = models.CharField(max_length=255, blank=True)
     description = models.TextField(blank=True)
@@ -105,26 +122,17 @@ class PersonalItem(Record):
 
 
 class TimeBlock(Record):
-    COLOR_CHOICES = [
-        ("", "按类别"),
-        ("blue", "蓝色"),
-        ("purple", "紫色"),
-        ("green", "绿色"),
-        ("orange", "橙色"),
-        ("pink", "粉色"),
-        ("cyan", "青色"),
-    ]
     item = models.ForeignKey(PersonalItem, on_delete=models.CASCADE, related_name="blocks")
     start = models.DateTimeField(db_index=True)
     end = models.DateTimeField()
     revision = models.PositiveIntegerField(default=1)
-    color = models.CharField(max_length=8, choices=COLOR_CHOICES, default="", blank=True)
+    color = models.CharField(max_length=7, default="", blank=True)
 
     class Meta:
         constraints = [
             models.CheckConstraint(condition=models.Q(end__gt=models.F("start")), name="lab_positive_time_block"),
             models.CheckConstraint(
-                condition=models.Q(color__in=["", "blue", "purple", "green", "orange", "pink", "cyan"]),
+                condition=models.Q(color="") | models.Q(color__regex=r"^#[0-9a-f]{6}$"),
                 name="lab_valid_block_color",
             ),
         ]
