@@ -14,9 +14,11 @@ from django.utils import timezone
 from rest_framework.exceptions import PermissionDenied, ValidationError
 
 from plane.db.models import IssueAssignee, ProjectMember, WorkspaceMember
-from .auth import audit
-from .models import Acceptance, Allocation, Bounty, Ledger, ProjectFlow, Stage, WorkspacePolicy
-from .permissions import issue_access, require_lead
+from .auth import audit, lock
+from .models import Acceptance, Allocation, Bounty, Ledger, PersonalItem, ProjectFlow, Stage, WorkspacePolicy
+from .permissions import issue_access, require_lead, workspace_member
+from .bounty_models import BountyPublication
+from .bounty_access import access_level, grant_allocation, planning_issue_access
 
 
 def amount(value):
@@ -148,6 +150,12 @@ def publish(user, stage_id, data):
         status="publication_review" if reasons else "open",
         published_at=None if reasons else timezone.now(),
     )
+    BountyPublication.objects.create(
+        bounty=bounty,
+        summary=str(data.get("public_summary", "")).strip()[:4000],
+        deliverable=str(data.get("public_deliverable", deliverable)).strip()[:4000],
+        criteria=str(data.get("public_criteria", criteria)).strip()[:4000],
+    )
     WorkspacePolicy.objects.get_or_create(workspace=stage.workspace)
     audit("bounty.published", bounty, user, stage.workspace, major=reasons, budget=str(budget))
     return bounty
@@ -166,11 +174,48 @@ def publication_review(user, bounty_id, reason):
 
 
 @transaction.atomic
+def update_public_summary(user, bounty_id, data):
+    bounty = locked_bounty(bounty_id)
+    require_lead(user, bounty.stage.project)
+    reason = str(data.get("reason", "")).strip()
+    if not reason:
+        raise ValidationError("修改公开摘要须填写原因")
+    existing = BountyPublication.objects.filter(bounty=bounty).first()
+    summary = str(data.get("public_summary", existing.summary if existing else "")).strip()
+    deliverable = str(data.get("public_deliverable", existing.deliverable if existing else "")).strip()
+    criteria = str(data.get("public_criteria", existing.criteria if existing else "")).strip()
+    enabled = data.get("enabled", existing.enabled if existing else True)
+    if not isinstance(enabled, bool) or max(len(summary), len(deliverable), len(criteria)) > 4000:
+        raise ValidationError("公开摘要每项最多 4000 字，公开开关须为布尔值")
+    if enabled and (not deliverable or not criteria):
+        raise ValidationError("公开到全员大厅须显式填写公开交付物和验收条件")
+    publication, _ = BountyPublication.objects.update_or_create(
+        bounty=bounty,
+        defaults={"summary": summary, "deliverable": deliverable, "criteria": criteria, "enabled": enabled},
+    )
+    audit(
+        "bounty.public_summary",
+        publication,
+        user,
+        bounty.stage.workspace,
+        bounty_id=str(bounty.id),
+        reason=reason,
+        enabled=enabled,
+        summary=summary,
+        deliverable=deliverable,
+        criteria=criteria,
+    )
+    return publication
+
+
+@transaction.atomic
 def claim(user, bounty_id, data):
     bounty = locked_bounty(bounty_id)
     if bounty.status != "open" or user.id in (bounty.reviewer_id, bounty.independent_reviewer_id):
         raise ValidationError("当前不能认领；验收及复核人员不能参与团队分工")
-    issue_access(user, bounty.stage.workspace, bounty.issue_id, edit=True)
+    access_level(user, bounty)
+    if not bounty.issue_id or bounty.issue.archived_at or bounty.issue.deleted_at or bounty.issue.is_draft:
+        raise ValidationError("原任务不可执行")
     planned = amount(data.get("planned"))
     deliverable = str(data.get("deliverable", "")).strip()
     if planned <= 0 or planned > bounty.budget or not deliverable:
@@ -196,12 +241,15 @@ def approve_claim(user, bounty_id, allocation_id):
     allocation = get_object_or_404(Allocation.objects.select_for_update(), id=allocation_id, bounty=bounty)
     if bounty.status != "open" or not allocation.user or not allocation.user.is_active:
         raise ValidationError("当前不能批准")
+    workspace_member(allocation.user, bounty.stage.workspace.slug)
     if allocation.approved:
+        grant_allocation(allocation, user)
         return
     if total(Allocation.objects.filter(bounty=bounty, approved=True), "planned") + allocation.planned > bounty.budget:
         raise ValidationError("成员分工超出团队预算 T")
     allocation.approved = True
     allocation.save(update_fields=["approved"])
+    grant_allocation(allocation, user)
     audit("bounty.claim_approved", allocation, user, bounty.stage.workspace)
 
 
@@ -209,11 +257,26 @@ def approve_claim(user, bounty_id, allocation_id):
 def confirm_claim(user, bounty_id):
     bounty = locked_bounty(bounty_id)
     allocation = get_object_or_404(Allocation, bounty=bounty, user=user, approved=True)
-    if bounty.status != "open":
+    planning_issue_access(user, bounty.stage.workspace, bounty.issue_id)
+    if bounty.status != "open" and not allocation.confirmed:
         raise ValidationError("当前不在开工确认阶段")
-    allocation.confirmed = True
-    allocation.save(update_fields=["confirmed"])
-    audit("bounty.claim_confirmed", allocation, user, bounty.stage.workspace)
+    # Same personal reference, preserving any existing folder and category.
+    from .categories import item_category
+
+    lock(f"lab-categories:{bounty.stage.workspace_id}:{user.id}")
+    lock(f"lab-planner:{bounty.stage.workspace_id}:{user.id}")
+    item, created = PersonalItem.objects.get_or_create(
+        workspace=bounty.stage.workspace,
+        user=user,
+        issue=bounty.issue,
+        defaults={"kind": "project", "category": item_category(user, bounty.stage.workspace, {}, "project")},
+    )
+    if not allocation.confirmed:
+        allocation.confirmed = True
+        allocation.save(update_fields=["confirmed"])
+        audit("bounty.claim_confirmed", allocation, user, bounty.stage.workspace, personal_item_id=str(item.id))
+    if created:
+        audit("planning.bounty_added", item, user, bounty.stage.workspace, bounty_id=str(bounty.id))
 
 
 @transaction.atomic
@@ -232,7 +295,8 @@ def start(user, bounty_id):
             workspace=bounty.stage.workspace, member=allocation.user, is_active=True
         ).exists():
             raise ValidationError("开工前参与者须仍是工作区成员")
-        issue_access(allocation.user, bounty.stage.workspace, bounty.issue_id, edit=True)
+        planning_issue_access(allocation.user, bounty.stage.workspace, bounty.issue_id)
+    issue_access(user, bounty.stage.workspace, bounty.issue_id, edit=True)
     # DB triggers serialize all native/bulk assignment and state paths too.
     for allocation in participants:
         IssueAssignee.objects.get_or_create(
@@ -248,8 +312,11 @@ def start(user, bounty_id):
 @transaction.atomic
 def submit(user, bounty_id, evidence):
     bounty = locked_bounty(bounty_id)
-    if not Allocation.objects.filter(bounty=bounty, user=user, approved=True, closed=False).exists():
+    planning_issue_access(user, bounty.stage.workspace, bounty.issue_id)
+    if not Allocation.objects.filter(bounty=bounty, user=user, approved=True, confirmed=True, closed=False).exists():
         raise PermissionDenied("仅未完成分工的参与者可以提交验收")
+    if not bounty.issue_id or bounty.issue.archived_at or bounty.issue.deleted_at or bounty.issue.is_draft:
+        raise ValidationError("原任务不可执行")
     if bounty.status not in ("active", "rework", "partial") or not str(evidence).strip():
         raise ValidationError("请填写成果或探索证据，任务须处于进行、返工或部分通过状态")
     bounty.status = "review"

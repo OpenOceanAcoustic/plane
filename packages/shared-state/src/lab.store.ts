@@ -79,14 +79,26 @@ export class LabStore {
   }
 
   async loadMarket() {
-    const stages = await this.request<LabStage[]>("stages/");
-    const bounties = await this.request<LabBounty[]>("bounties/");
-    const todos = await this.request<LabTodo[]>("inbox/");
+    const [stages, bounties, todos] = await Promise.all([
+      this.request<LabStage[]>("stages/"),
+      this.request<LabBounty[]>("bounties/"),
+      this.request<LabTodo[]>("inbox/"),
+    ]);
     runInAction(() => {
       this.stages = stages;
       this.bounties = bounties;
       this.todos = todos;
     });
+  }
+
+  async loadBountyDetail(id: string) {
+    const bounty = await this.request<LabBounty>(`bounties/${encodeURIComponent(id)}/detail/`);
+    runInAction(() => {
+      const index = this.bounties.findIndex((row) => row.id === id);
+      if (index >= 0) this.bounties[index] = bounty;
+      else this.bounties.push(bounty);
+    });
+    return bounty;
   }
 
   async execute(action: () => Promise<void>) {

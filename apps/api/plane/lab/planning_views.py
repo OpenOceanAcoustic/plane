@@ -24,7 +24,7 @@ from plane.db.models import Project, ProjectMember, State
 from .auth import audit, lock
 from .models import Folder, PersonalCategory, PersonalItem, ProjectFlow, TimeBlock, WorkspacePolicy
 from .categories import category_data, category_name, default_categories, hex_color, item_category
-from .permissions import can_view_team, issue_access, project_ids, readable_issues, workspace_member
+from .permissions import can_view_team, project_ids, readable_issues, workspace_member
 from .planning import (
     STATUSES,
     block_color,
@@ -34,11 +34,13 @@ from .planning import (
     configure_flow,
     default_folders,
     item_data,
+    planning_projection_context,
     item_schedules,
     overlaps,
     own_item,
     set_status,
 )
+from .bounty_access import planning_issue_access
 
 
 class LabContentNegotiation(DefaultContentNegotiation):
@@ -83,9 +85,8 @@ class PlannerView(LabView):
             .values_list("id", flat=True)
         )
         flows = {flow.project_id: flow for flow in ProjectFlow.objects.filter(project_id__in=allowed)}
-        items = [
-            item_data(row, request.user, allowed, readable_issue_ids=readable_issue_ids, flows=flows) for row in rows
-        ]
+        context = planning_projection_context(request.user, self.workspace, rows, readable_issue_ids=readable_issue_ids)
+        items = [item_data(row, request.user, allowed, **context) for row in rows]
         items = [item for item in items if item]
         schedules = item_schedules([item["id"] for item in items])
         for item in items:
@@ -274,7 +275,7 @@ class ItemView(LabView):
             if data.get("folder_id")
             else None
         )
-        issue = issue_access(request.user, self.workspace, data["issue_id"]) if data.get("issue_id") else None
+        issue = planning_issue_access(request.user, self.workspace, data["issue_id"]) if data.get("issue_id") else None
         title = str(data.get("title", "")).strip()
         kind = "research" if "category_id" in data else data.get("kind", "research")
         if not issue and (
@@ -308,6 +309,8 @@ class ItemDetailView(LabView):
         lock(f"lab-categories:{self.workspace.id}:{request.user.id}")
         item = own_item(request.user, self.workspace, pk)
         data = request.data
+        if item.issue_id:
+            planning_issue_access(request.user, self.workspace, item.issue_id)
         if "category_id" in data:
             item.category = item_category(request.user, self.workspace, data, item.kind)
         if "folder_id" in data:
@@ -386,7 +389,7 @@ class CalendarView(LabView):
     def post(self, request, slug):
         item = own_item(request.user, self.workspace, request.data.get("item_id"))
         if item.issue_id:
-            issue_access(request.user, self.workspace, item.issue_id)
+            planning_issue_access(request.user, self.workspace, item.issue_id)
         start, end = block_times(request.data)
         block = TimeBlock.objects.create(item=item, start=start, end=end, color=block_color(request.data))
         return Response({"id": str(block.id), "revision": block.revision, "overlap": overlaps(block)}, status=201)
@@ -400,7 +403,7 @@ class BlockDetailView(LabView):
         )
         check_block_revision(block, request.data)
         if block.item.issue_id:
-            issue_access(request.user, self.workspace, block.item.issue_id)
+            planning_issue_access(request.user, self.workspace, block.item.issue_id)
         if "split_at" in request.data:
             try:
                 split = parse_datetime(request.data["split_at"])
@@ -451,12 +454,14 @@ class PlanningExportView(LabView):
     def get(self, request, slug):
         allowed = set(project_ids(request.user, self.workspace))
         items = []
-        for row in (
+        rows = list(
             PersonalItem.objects.filter(user=request.user, workspace=self.workspace)
             .select_related("issue__project", "issue__state", "category")
             .prefetch_related("blocks")
-        ):
-            data = item_data(row, request.user, allowed)
+        )
+        context = planning_projection_context(request.user, self.workspace, rows)
+        for row in rows:
+            data = item_data(row, request.user, allowed, **context)
             if data:
                 data["blocks"] = [
                     {"start": b.start.isoformat(), "end": b.end.isoformat(), "color": b.color} for b in row.blocks.all()

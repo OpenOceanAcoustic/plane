@@ -9,6 +9,7 @@ import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { GripVertical } from "lucide-react";
 import type { LabFolder, LabItem, LabStatus } from "@plane/types";
+import { labBountyOutline } from "@plane/ui";
 
 export const plannerCollisionDetection: CollisionDetection = (args) => {
   if (args.active.data.current?.type === "folder")
@@ -184,7 +185,10 @@ export function DraggablePlanningCard({ item, children }: { item: LabItem; child
   return (
     <article
       ref={setNodeRef}
-      style={{ transform: CSS.Translate.toString(transform) }}
+      style={{
+        transform: CSS.Translate.toString(transform),
+        ...(item.bounty_id || item.is_bounty ? labBountyOutline(item.category_color) : {}),
+      }}
       className={`lab-planner-card shadow-sm relative rounded-lg border border-subtle bg-surface-1 p-3 ${isDragging ? "z-30 opacity-50" : ""}`}
     >
       <button

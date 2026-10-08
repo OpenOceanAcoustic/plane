@@ -6,3 +6,4 @@
 export { Button } from "../../../packages/ui/src/button";
 export { LabDialog, LabField, LabSelect, labInputClass } from "../../../packages/ui/src/lab-form";
 export { LabColorPicker } from "../../../packages/ui/src/lab-color-picker";
+export { LabBountyBadge, labBountyOutline } from "../../../packages/ui/src/lab-bounty-badge";

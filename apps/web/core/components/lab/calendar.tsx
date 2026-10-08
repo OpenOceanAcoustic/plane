@@ -22,7 +22,7 @@ import resourceTimelinePlugin from "@fullcalendar/react-scheduler/resource-timel
 import resourceTimeGridPlugin from "@fullcalendar/react-scheduler/resource-timegrid";
 import type { ResourceInput } from "@fullcalendar/react-scheduler";
 import { CalendarDays, ChevronLeft, ChevronRight, Clock3, Download, Folder, Plus, ZoomIn, ZoomOut } from "lucide-react";
-import { Button, LabColorPicker, LabDialog, LabField, LabSelect, labInputClass } from "@plane/ui";
+import { Button, LabBountyBadge, LabColorPicker, LabDialog, LabField, LabSelect, labInputClass } from "@plane/ui";
 import type { LabEvent, LabItem, LabMember } from "@plane/types";
 import type { LabStore } from "@plane/shared-state";
 import { calendarInstant, localInput, SLOT_MS, weekDays } from "./calendar-time";
@@ -183,15 +183,22 @@ export const LabCalendar = observer(function LabCalendar({
     clearScheduled();
   };
   const adjust = (block: LabEvent) => {
-    if (!block.editable) return;
+    if (store.busy) return;
+    // Details may have opened before a previous save finished reloading.
+    // Capture the current revision when editing starts; later changes still
+    // fail the existing expected_revision check when this form is saved.
+    const current = store.events.find((event) => event.id === block.id);
+    if (!current?.editable) return;
     setViewing(undefined);
     store.error = "";
-    setEditing(block);
+    setEditing(current);
     setSplit(false);
     setConfirmDelete(false);
   };
   const showItem = (item: LabItem, block?: LabEvent) => {
-    if (item.issue_id && item.project_id && openProjectIssue)
+    if (item.bounty_id && item.can_edit_issue === false)
+      window.location.assign(`/${store.slug}/lab/bounties?bounty_id=${encodeURIComponent(item.bounty_id)}`);
+    else if (item.issue_id && item.project_id && openProjectIssue)
       openProjectIssue({ issue_id: item.issue_id, project_id: item.project_id, archived: item.archived });
     else setViewing({ item, block });
   };
@@ -273,7 +280,7 @@ export const LabCalendar = observer(function LabCalendar({
         interactive: Boolean(event.issue_id || planner?.items.some((item) => item.id === event.item_id)),
         resourceEditable: false,
         extendedProps: { block: event },
-        className: event.kind ? "" : "lab-busy-event",
+        className: event.kind ? (event.bounty_id || event.is_bounty ? "lab-bounty-event" : "") : "lab-busy-event",
         color: calendarColor(event),
         contrastColor: calendarContrast(calendarColor(event)),
       })),
@@ -627,6 +634,8 @@ export const LabCalendar = observer(function LabCalendar({
             if (!block?.item_id) return;
             const item = planner?.items.find((row) => row.id === block.item_id);
             if (item) showItem(item, block);
+            else if (block.bounty_id && block.can_edit_issue === false)
+              window.location.assign(`/${store.slug}/lab/bounties?bounty_id=${encodeURIComponent(block.bounty_id)}`);
             else if (block.issue_id && block.project_id && openProjectIssue)
               openProjectIssue({ issue_id: block.issue_id, project_id: block.project_id });
           }}
@@ -639,7 +648,12 @@ export const LabCalendar = observer(function LabCalendar({
             const end = block?.end ?? info.event.end?.toISOString();
             return (
               <div className="group/lab-event relative h-full w-full overflow-hidden px-1 text-left" title={label}>
-                <strong className="block truncate font-medium">{label}</strong>
+                <strong className="flex items-center gap-1 truncate font-medium">
+                  {block?.kind && (block.bounty_id || block.is_bounty) && (
+                    <LabBountyBadge compact color={calendarContrast(calendarColor(block))} />
+                  )}
+                  {label}
+                </strong>
                 {start && end && (
                   <span className="text-11 opacity-80">
                     {clock(start)}–{clock(end)}
@@ -650,6 +664,7 @@ export const LabCalendar = observer(function LabCalendar({
                     type="button"
                     aria-label={`调整 ${label} 的排期`}
                     title="调整排期"
+                    disabled={store.busy}
                     className="absolute top-0 right-0 rounded bg-surface-1 p-0.5 text-primary opacity-0 group-hover/lab-event:opacity-100 hover:bg-layer-1 focus-visible:opacity-100"
                     onClick={(event) => {
                       event.stopPropagation();
@@ -691,6 +706,7 @@ export const LabCalendar = observer(function LabCalendar({
             openNew(undefined, undefined, viewing.item.id);
           }}
           onAdjust={viewing.block?.editable ? () => adjust(viewing.block!) : undefined}
+          busy={store.busy}
         />
       )}
       {choosingFolders && (

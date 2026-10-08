@@ -177,6 +177,7 @@ export const LabBountyWorkflow = observer(function LabBountyWorkflow({
                 body
               );
               await store.loadMarket();
+              await store.loadPlanner();
               await mutate();
               setChosen(undefined);
             })

@@ -5,13 +5,15 @@
 
 import { useEffect, useState } from "react";
 import { observer } from "mobx-react";
-import { Button } from "@plane/ui";
+import { useSearchParams } from "react-router";
+import { Button, LabBountyBadge, labBountyOutline } from "@plane/ui";
 import type { LabBounty, LabTask } from "@plane/types";
 import type { LabStore } from "@plane/shared-state";
 import { LabDialog, LabField, labInputClass } from "@plane/ui";
 import { calendarInstant } from "./calendar-time";
 import { LabLedger } from "./ledger";
 import { LabBountyWorkflow } from "./workflow";
+import { LabBountyMaterials } from "./bounty-materials";
 
 const labels: Record<string, string> = {
   publication_review: "发布待复核",
@@ -27,7 +29,12 @@ const labels: Record<string, string> = {
 };
 
 export const LabMarket = observer(function LabMarket({ store }: { store: LabStore }) {
-  const [mode, setMode] = useState<"stage" | "publish" | "claim" | "submit" | "accept" | "exception">();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const detailId = searchParams.get("bounty_id") ?? searchParams.get("bounty") ?? "";
+  const [view, setView] = useState<"open" | "mine" | "all">("open");
+  const [mode, setMode] = useState<
+    "stage" | "publish" | "claim" | "submit" | "accept" | "exception" | "public-summary"
+  >();
   const [chosen, setChosen] = useState<LabBounty>();
   const [stageId, setStageId] = useState("");
   const [tasks, setTasks] = useState<LabTask[]>([]);
@@ -43,6 +50,20 @@ export const LabMarket = observer(function LabMarket({ store }: { store: LabStor
   useEffect(() => {
     void store.execute(store.loadMarket);
   }, [store]);
+  useEffect(() => {
+    if (detailId)
+      void store.execute(async () => {
+        await store.loadBountyDetail(detailId);
+      });
+  }, [detailId, store]);
+  const openDetail = (id: string) => {
+    setSearchParams((current) => {
+      const next = new URLSearchParams(current);
+      next.set("bounty_id", id);
+      next.delete("bounty");
+      return next;
+    });
+  };
   const planner = store.planner;
   if (!planner) return null;
   const close = () => {
@@ -53,12 +74,14 @@ export const LabMarket = observer(function LabMarket({ store }: { store: LabStor
     await store.execute(async () => {
       await store.request(`bounties/${bounty.id}/${action}/`, "POST", body);
       await store.loadMarket();
+      await store.loadPlanner();
     });
   }
   async function finish(action: () => Promise<void>) {
     await store.execute(async () => {
       await action();
       await store.loadMarket();
+      await store.loadPlanner();
       close();
     });
   }
@@ -73,10 +96,15 @@ export const LabMarket = observer(function LabMarket({ store }: { store: LabStor
   return (
     <div className="flex flex-col gap-5">
       <div className="flex flex-wrap items-center gap-2">
-        <Button variant="neutral-primary" onClick={() => setMode("stage")}>
+        <Button
+          variant="neutral-primary"
+          disabled={!planner.projects.some((project) => project.lead)}
+          onClick={() => setMode("stage")}
+        >
           冻结阶段预算 B
         </Button>
         <Button
+          disabled={!planner.projects.some((project) => project.lead)}
           onClick={() => {
             setStageId(store.stages[0]?.id ?? "");
             setTasks([]);
@@ -96,8 +124,15 @@ export const LabMarket = observer(function LabMarket({ store }: { store: LabStor
           value={projectFilter}
           onChange={(event) => setProjectFilter(event.target.value)}
         >
-          <option value="">全部有权限项目</option>
-          {planner.projects.map((project) => (
+          <option value="">全实验室公开悬赏</option>
+          {Array.from(
+            new Map(
+              [
+                ...planner.projects,
+                ...store.bounties.map((bounty) => ({ id: bounty.project_id, name: bounty.project })),
+              ].map((project) => [project.id, project])
+            ).values()
+          ).map((project) => (
             <option key={project.id} value={project.id}>
               {project.name}
             </option>
@@ -109,14 +144,15 @@ export const LabMarket = observer(function LabMarket({ store }: { store: LabStor
           <h2 className="mb-2 text-14 font-semibold">我的待办</h2>
           <div className="flex flex-wrap gap-2">
             {store.todos.map((todo) => (
-              <a
+              <button
                 key={todo.id}
-                href={`#bounty-${todo.id}`}
+                type="button"
+                onClick={() => openDetail(todo.id)}
                 className="rounded border border-subtle bg-surface-1 px-3 py-2 text-12"
               >
                 {todo.action} · {todo.title}
                 {todo.overdue ? " · 已逾期" : ""}
-              </a>
+              </button>
             ))}
           </div>
         </section>
@@ -152,16 +188,94 @@ export const LabMarket = observer(function LabMarket({ store }: { store: LabStor
           查看 VC JSON 与冲正记录
         </a>
       </div>
-      <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+      <nav aria-label="悬赏筛选" className="flex gap-2">
+        {(
+          [
+            { id: "open", name: "开放认领" },
+            { id: "mine", name: "我的参与" },
+            { id: "all", name: "全部悬赏" },
+          ] as const
+        ).map((tab) => (
+          <Button
+            key={tab.id}
+            size="sm"
+            variant={view === tab.id ? "primary" : "neutral-primary"}
+            onClick={() => setView(tab.id)}
+          >
+            {tab.name}
+          </Button>
+        ))}
+      </nav>
+      <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3" aria-label="悬赏工作项卡片">
         {store.bounties
-          .filter((row) => !projectFilter || row.project_id === projectFilter)
+          .filter(
+            (row) =>
+              (!projectFilter || row.project_id === projectFilter) &&
+              (view === "all" ||
+                (view === "open" && row.status === "open") ||
+                (view === "mine" && row.allocations.some((allocation) => allocation.user_id === planner.user_id)))
+          )
+          .map((bounty) => (
+            <button
+              key={bounty.id}
+              type="button"
+              onClick={() => openDetail(bounty.id)}
+              style={labBountyOutline(bounty.category_color)}
+              className={`rounded-lg border bg-surface-1 p-4 text-left ${detailId === bounty.id ? "ring-accent-primary ring-2" : ""}`}
+              aria-label={`查看悬赏 ${bounty.title}`}
+            >
+              <div className="flex items-center gap-2 text-12">
+                <LabBountyBadge color={bounty.category_color} />
+                <span className="ml-auto text-secondary">{labels[bounty.status] ?? bounty.status}</span>
+              </div>
+              <p className="mt-2 text-12 text-secondary">
+                {bounty.project}
+                {bounty.issue_key ? ` · ${bounty.issue_key}` : ""}
+                {bounty.major ? " · 重大任务" : ""}
+              </p>
+              <h2 className="mt-1 line-clamp-2 text-14 font-semibold">{bounty.title}</h2>
+              <p className="mt-2 line-clamp-2 text-12 text-secondary">{bounty.public_summary || bounty.deliverable}</p>
+              <p className="mt-3 text-12">
+                预算 {bounty.budget} VC{bounty.stage_budget ? ` · VC/B ${bounty.budget}/${bounty.stage_budget}` : ""}
+              </p>
+              <p className="mt-1 text-12 text-accent-primary">
+                {(bounty.reward_estimate?.amount ?? bounty.estimated_reward)
+                  ? `预计 ¥${bounty.reward_estimate?.amount ?? bounty.estimated_reward} · 公式 v${bounty.reward_estimate?.formula_version ?? bounty.reward_formula_version ?? "—"}`
+                  : bounty.reward_estimate?.error || "预计奖励待负责人配置"}
+              </p>
+            </button>
+          ))}
+      </div>
+      {detailId && (
+        <div className="flex items-center justify-between">
+          <h2 className="text-16 font-semibold">悬赏任务详情</h2>
+          <Button
+            size="sm"
+            variant="neutral-primary"
+            onClick={() =>
+              setSearchParams((current) => {
+                const next = new URLSearchParams(current);
+                next.delete("bounty_id");
+                next.delete("bounty");
+                return next;
+              })
+            }
+          >
+            关闭任务详情
+          </Button>
+        </div>
+      )}
+      <div className="grid grid-cols-1 gap-4">
+        {store.bounties
+          .filter((row) => row.id === detailId)
           .map((bounty) => {
             const mine = bounty.allocations.find((row) => row.user_id === planner.user_id);
             return (
               <article
                 key={bounty.id}
                 id={`bounty-${bounty.id}`}
-                className={`scroll-mt-4 rounded-lg border border-subtle bg-surface-1 p-5 ${workflowIds.has(bounty.id) ? "xl:col-span-2" : ""}`}
+                className="scroll-mt-4 rounded-lg border bg-surface-1 p-5"
+                style={labBountyOutline(bounty.category_color)}
               >
                 <div className="flex items-start justify-between gap-3">
                   <div>
@@ -170,7 +284,7 @@ export const LabMarket = observer(function LabMarket({ store }: { store: LabStor
                       {bounty.major ? " · 重大任务" : ""}
                     </p>
                     <h2 className="text-16 font-semibold">
-                      {bounty.issue_id ? (
+                      {bounty.issue_id && bounty.access_level === "project" ? (
                         <a href={`/${store.slug}/projects/${bounty.project_id}/issues/${bounty.issue_id}`}>
                           {bounty.title}
                         </a>
@@ -179,11 +293,30 @@ export const LabMarket = observer(function LabMarket({ store }: { store: LabStor
                       )}
                     </h2>
                   </div>
+                  <LabBountyBadge color={bounty.category_color} />
                   <span className="rounded bg-layer-1 px-2 py-1 text-12">{labels[bounty.status] ?? bounty.status}</span>
                 </div>
                 <p className="mt-3 text-13">
-                  团队 T {bounty.budget} VC · 已授予 {bounty.awarded}
+                  团队 T {bounty.budget} VC{bounty.awarded !== null ? ` · 已授予 ${bounty.awarded}` : ""}
                 </p>
+                {bounty.reward_estimate && (
+                  <p className="mt-2 text-13">
+                    预算预计奖励{" "}
+                    {bounty.reward_estimate.amount === null
+                      ? bounty.reward_estimate.error || "待配置"
+                      : `¥${bounty.reward_estimate.amount}`}{" "}
+                    · 公式 v{bounty.reward_estimate.formula_version ?? "—"}（参考）
+                  </p>
+                )}
+                {bounty.received_estimate && (
+                  <p className="mt-1 text-13">
+                    到账奖励测算{" "}
+                    {bounty.received_estimate.amount === null
+                      ? bounty.received_estimate.error || "待计算"
+                      : `¥${bounty.received_estimate.amount}`}{" "}
+                    · 公式 v{bounty.received_estimate.formula_version ?? "—"}（参考）
+                  </p>
+                )}
                 <dl className="mt-3 grid grid-cols-[64px_1fr] gap-2 text-13">
                   <dt className="text-tertiary">交付物</dt>
                   <dd className="whitespace-pre-wrap">{bounty.deliverable}</dd>
@@ -229,6 +362,18 @@ export const LabMarket = observer(function LabMarket({ store }: { store: LabStor
                   ))}
                 </div>
                 <div className="flex flex-wrap gap-2">
+                  {bounty.is_lead && (
+                    <Button
+                      size="sm"
+                      variant="neutral-primary"
+                      onClick={() => {
+                        setChosen(bounty);
+                        setMode("public-summary");
+                      }}
+                    >
+                      公开摘要设置
+                    </Button>
+                  )}
                   <Button
                     size="sm"
                     variant="neutral-primary"
@@ -243,7 +388,8 @@ export const LabMarket = observer(function LabMarket({ store }: { store: LabStor
                   >
                     {workflowIds.has(bounty.id) ? "收起流程" : "查看流程图"}
                   </Button>
-                  {bounty.status === "open" && !mine && !bounty.is_reviewer && !bounty.is_independent_reviewer && (
+                  {(bounty.can_claim ??
+                    (bounty.status === "open" && !mine && !bounty.is_reviewer && !bounty.is_independent_reviewer)) && (
                     <Button
                       size="sm"
                       onClick={() => {
@@ -254,7 +400,7 @@ export const LabMarket = observer(function LabMarket({ store }: { store: LabStor
                       申请认领
                     </Button>
                   )}
-                  {bounty.status === "open" && mine?.approved && !mine.confirmed && (
+                  {(bounty.can_confirm ?? (bounty.status === "open" && mine?.approved && !mine.confirmed)) && (
                     <Button size="sm" onClick={() => void act(bounty, "confirm")}>
                       确认交付约定
                     </Button>
@@ -264,7 +410,8 @@ export const LabMarket = observer(function LabMarket({ store }: { store: LabStor
                       团队开工
                     </Button>
                   )}
-                  {mine?.approved && !mine.closed && ["active", "rework", "partial"].includes(bounty.status) && (
+                  {(bounty.can_submit ??
+                    (mine?.approved && !mine.closed && ["active", "rework", "partial"].includes(bounty.status))) && (
                     <Button
                       size="sm"
                       onClick={() => {
@@ -329,6 +476,7 @@ export const LabMarket = observer(function LabMarket({ store }: { store: LabStor
                     ))}
                   </details>
                 )}
+                {bounty.access_level !== "public" && <LabBountyMaterials store={store} bounty={bounty} />}
                 {workflowIds.has(bounty.id) && <LabBountyWorkflow store={store} bounty={bounty} />}
               </article>
             );
@@ -417,6 +565,9 @@ export const LabMarket = observer(function LabMarket({ store }: { store: LabStor
                 budget: data.get("budget"),
                 deliverable: data.get("deliverable"),
                 criteria: data.get("criteria"),
+                public_summary: data.get("public_summary"),
+                public_deliverable: data.get("public_deliverable"),
+                public_criteria: data.get("public_criteria"),
                 reviewer_id: data.get("reviewer_id"),
                 independent_reviewer_id: data.get("independent_reviewer_id") || null,
                 cash_commitment: data.get("cash_commitment") || 0,
@@ -471,6 +622,15 @@ export const LabMarket = observer(function LabMarket({ store }: { store: LabStor
           <LabField label="团队预算 T（VC）">
             <input name="budget" type="number" min="0.01" step="0.01" className={labInputClass} required />
           </LabField>
+          <LabField label="面向全实验室的公开任务摘要">
+            <textarea name="public_summary" className={labInputClass} required rows={3} />
+          </LabField>
+          <LabField label="面向全实验室的公开交付要求">
+            <textarea name="public_deliverable" required className={labInputClass} />
+          </LabField>
+          <LabField label="面向全实验室的公开验收条件">
+            <textarea name="public_criteria" required className={labInputClass} />
+          </LabField>
           <LabField label="交付物">
             <textarea name="deliverable" className={labInputClass} required />
           </LabField>
@@ -510,6 +670,43 @@ export const LabMarket = observer(function LabMarket({ store }: { store: LabStor
           <label className="text-13">
             <input type="checkbox" name="route_or_safety" /> 涉及重大路线或安全事项
           </label>
+        </LabDialog>
+      )}
+      {mode === "public-summary" && chosen && (
+        <LabDialog
+          title="公开任务摘要设置"
+          busy={store.busy}
+          error={store.error}
+          onClose={close}
+          description="全实验室仅能看到这里明确发布的摘要、交付要求和验收条件；下架摘要不会撤回已有参与授权。"
+          onSubmit={(form) =>
+            finish(() =>
+              store.request(`bounties/${chosen.id}/public-summary/`, "POST", {
+                public_summary: form.get("public_summary"),
+                public_deliverable: form.get("public_deliverable"),
+                public_criteria: form.get("public_criteria"),
+                enabled: form.get("enabled") === "on",
+                reason: form.get("reason"),
+              })
+            )
+          }
+        >
+          <LabField label="全实验室公开摘要">
+            <textarea name="public_summary" className={labInputClass} required defaultValue={chosen.public_summary} />
+          </LabField>
+          <LabField label="全实验室公开交付要求">
+            <textarea name="public_deliverable" className={labInputClass} required />
+          </LabField>
+          <LabField label="全实验室公开验收条件">
+            <textarea name="public_criteria" className={labInputClass} required />
+          </LabField>
+          <label className="flex items-center gap-2 text-13">
+            <input name="enabled" type="checkbox" defaultChecked />
+            公开展示在全实验室大厅
+          </label>
+          <LabField label="修改依据">
+            <textarea name="reason" className={labInputClass} required />
+          </LabField>
         </LabDialog>
       )}
       {mode === "claim" && chosen && (

@@ -5,11 +5,12 @@ from datetime import timedelta
 from zoneinfo import ZoneInfo
 
 from django.db import connection, transaction
+from django.db.models import Q
 from django.utils import timezone
 from django.utils.dateparse import parse_datetime
 from rest_framework.exceptions import APIException, PermissionDenied, ValidationError
 
-from plane.db.models import Issue, IssueActivity, State
+from plane.db.models import Issue, IssueActivity, ProjectMember, State
 from .auth import audit, lock
 from .models import Folder, PersonalItem, ProjectFlow, TimeBlock
 from .permissions import can_read_issue, issue_access, require_lead
@@ -37,7 +38,17 @@ def default_folders(user, workspace):
     return Folder.objects.filter(workspace=workspace, user=user)
 
 
-def item_data(item, user, allowed_projects, *, readable_issue_ids=None, flows=None):
+def item_data(
+    item,
+    user,
+    allowed_projects,
+    *,
+    readable_issue_ids=None,
+    flows=None,
+    bounties_by_issue=None,
+    granted_issue_ids=None,
+    editable_issue_ids=None,
+):
     if item.kind == "project" and not item.issue_id:
         return None
     if item.issue_id:
@@ -50,7 +61,20 @@ def item_data(item, user, allowed_projects, *, readable_issue_ids=None, flows=No
             if readable_issue_ids is not None
             else can_read_issue(user, issue, allowed_projects)
         )
-        if not readable:
+        from .bounty_access import issue_capabilities, task_granted
+        from .models import Bounty
+
+        bounty = (
+            bounties_by_issue.get(issue.id)
+            if bounties_by_issue is not None
+            else Bounty.objects.select_related("stage__workspace", "issue__project").filter(issue=issue).first()
+        )
+        granted = (
+            issue.id in granted_issue_ids
+            if granted_issue_ids is not None
+            else bool(bounty and task_granted(user, bounty))
+        )
+        if not readable and not granted:
             return None
         flow = (
             flows.get(issue.project_id)
@@ -68,6 +92,17 @@ def item_data(item, user, allowed_projects, *, readable_issue_ids=None, flows=No
         )
         return {
             **item_category_data(item),
+            **(
+                issue_capabilities(
+                    user, bounty, editable=issue.id in editable_issue_ids if editable_issue_ids is not None else None
+                )
+                if bounty
+                else {
+                    "can_edit_issue": issue.id in editable_issue_ids
+                    if editable_issue_ids is not None
+                    else _editable_issue(user, item.workspace, issue.id),
+                }
+            ),
             "id": str(item.id),
             "issue_id": str(issue.id),
             "project_id": str(issue.project_id),
@@ -96,6 +131,82 @@ def item_data(item, user, allowed_projects, *, readable_issue_ids=None, flows=No
         "issue_key": None,
         "priority": None,
         "target_date": None,
+        "can_edit_issue": True,
+    }
+
+
+def _editable_issue(user, workspace, issue_id):
+    try:
+        issue_access(user, workspace, issue_id, edit=True)
+        return True
+    except APIException:
+        return False
+
+
+def planning_projection_context(user, workspace, items, *, readable_issue_ids=None):
+    """Batch task grants and capabilities to keep planner/calendar queries bounded."""
+    from .bounty_models import BountyTaskAccess
+    from .models import Bounty
+    from .permissions import readable_issues
+
+    issues = {item.issue_id: item.issue for item in items if item.issue_id}
+    if readable_issue_ids is None:
+        readable_issue_ids = set(
+            readable_issues(user, workspace)
+            .filter(
+                id__in=issues,
+                is_draft=False,
+                deleted_at__isnull=True,
+            )
+            .values_list("id", flat=True)
+        )
+    editable_projects = set(
+        ProjectMember.objects.filter(
+            workspace=workspace,
+            member=user,
+            is_active=True,
+        )
+        .filter(Q(role__gte=15) | Q(project__guest_view_all_features=True))
+        .values_list("project_id", flat=True)
+    )
+    editable_ids = {
+        issue_id
+        for issue_id, issue in issues.items()
+        if issue_id in readable_issue_ids
+        and not issue.archived_at
+        and (issue.created_by_id == user.id or issue.project_id in editable_projects)
+    }
+    bounties_by_issue = {
+        row.issue_id: row
+        for row in Bounty.objects.filter(issue_id__in=issues).select_related(
+            "stage__workspace",
+            "issue__project",
+        )
+    }
+    granted_ids = set(
+        BountyTaskAccess.objects.filter(
+            allocation__user=user,
+            allocation__approved=True,
+            revoked_at__isnull=True,
+            allocation__bounty__issue_id__in=issues,
+            allocation__bounty__issue__deleted_at__isnull=True,
+            allocation__bounty__issue__is_draft=False,
+        )
+        .filter(Q(requires_project_membership=False) | Q(allocation__bounty__issue_id__in=readable_issue_ids))
+        .values_list("allocation__bounty__issue_id", flat=True)
+    )
+    flows = {
+        flow.project_id: flow
+        for flow in ProjectFlow.objects.filter(
+            project_id__in={issue.project_id for issue in issues.values()},
+        )
+    }
+    return {
+        "readable_issue_ids": readable_issue_ids,
+        "editable_issue_ids": editable_ids,
+        "bounties_by_issue": bounties_by_issue,
+        "granted_issue_ids": granted_ids,
+        "flows": flows,
     }
 
 
@@ -308,14 +419,17 @@ def calendar_events(user, workspace, start, end, *, team=False, user_id=None, pr
         members = members.filter(member_id=user_id)
     member_rows = list(members)
     active_members = {row.member_id for row in member_rows}
-    blocks = TimeBlock.objects.filter(
-        item__workspace=workspace, item__user_id__in=active_members, start__lt=end, end__gt=start
-    ).select_related("item__user", "item__category", "item__issue__project", "item__issue__state")
+    blocks = list(
+        TimeBlock.objects.filter(
+            item__workspace=workspace, item__user_id__in=active_members, start__lt=end, end__gt=start
+        ).select_related("item__user", "item__category", "item__issue__project", "item__issue__state")
+    )
+    context = planning_projection_context(user, workspace, [block.item for block in blocks])
     events = []
     for block in blocks:
         item = block.item
         own = item.user_id == user.id
-        details = item_data(item, user, allowed) if own or item.public or item.issue_id else None
+        details = item_data(item, user, allowed, **context) if own or item.public or item.issue_id else None
         if project_id and details and details.get("project_id") != str(project_id):
             continue
         event = {
@@ -338,6 +452,9 @@ def calendar_events(user, workspace, start, end, *, team=False, user_id=None, pr
             )
             if details.get("issue_id"):
                 event.update({"issue_id": details["issue_id"], "project_id": details["project_id"]})
+            for key in ("bounty_id", "bounty_status", "bounty_detail_url", "can_edit_issue", "issue_key"):
+                if key in details:
+                    event[key] = details[key]
         if event["editable"]:
             event["revision"] = block.revision
         events.append(event)

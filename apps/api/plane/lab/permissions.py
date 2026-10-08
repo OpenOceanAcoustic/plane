@@ -10,7 +10,7 @@ from plane.db.models import Issue, Project, ProjectMember, WorkspaceMember
 def workspace_member(user, slug):
     membership = (
         WorkspaceMember.objects.select_related("workspace")
-        .filter(workspace__slug=slug, member=user, is_active=True)
+        .filter(workspace__slug=slug, member=user, is_active=True, member__is_active=True)
         .first()
     )
     if not membership:

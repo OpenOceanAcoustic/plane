@@ -256,3 +256,21 @@ class WIPException(Record):
 # Register extension models in this Django app while keeping their interfaces separate.
 from .document_models import TaskDocumentLink  # noqa: E402,F401
 from .field_models import FieldDefinition, IssueFieldValue, ProjectField  # noqa: E402,F401
+from .bounty_models import BountyMaterial, BountyPublication, BountyTaskAccess  # noqa: E402,F401
+from .finance_models import (  # noqa: E402,F401
+    CashBatch,
+    CommitmentCancellation,
+    FinancialAccount,
+    FinancialEntry,
+    FinancialOperation,
+    FinancePolicy,
+    OfflinePayment,
+    PaymentCommitment,
+    PublicDutyAward,
+    PublicDutyCommitment,
+    PublicDutyPayment,
+    RewardForecast,
+    RewardFormula,
+    RewardSettlement,
+    StageBudget,
+)

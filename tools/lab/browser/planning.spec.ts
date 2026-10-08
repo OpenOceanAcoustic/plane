@@ -384,3 +384,59 @@ for (const insecureOrigin of [false, true]) {
     await expect(page.locator(".lab-calendar")).toBeVisible();
   });
 }
+
+test("reopening an event captured before its own save refresh uses the latest revision for splitting", async ({
+  page,
+}) => {
+  const { events } = await planningServer(page);
+  await createScheduledItem(page);
+  let releaseRefresh: (() => void) | undefined;
+  let refreshRequested: (() => void) | undefined;
+  const refreshGate = new Promise<void>((resolve) => {
+    releaseRefresh = resolve;
+  });
+  const requested = new Promise<void>((resolve) => {
+    refreshRequested = resolve;
+  });
+  let holdRefresh = true;
+  await page.route("**/lab/calendar/?*", async (route) => {
+    if (route.request().method() === "GET" && holdRefresh) {
+      refreshRequested?.();
+      await refreshGate;
+      holdRefresh = false;
+    }
+    await route.fallback();
+  });
+  await page.getByRole("button", { name: "调整 科研规划 的排期", exact: true }).click();
+  let dialog = page.getByRole("dialog", { name: "调整时间块", exact: true });
+  await dialog.getByLabel("结束（上海）", { exact: true }).fill("2026-10-08T12:00");
+  await dialog.getByRole("button", { name: "保存", exact: true }).click();
+  await requested;
+  await expect(dialog).toHaveCount(0);
+  expect(events[0]!.revision).toBe(2);
+  // The save succeeded, but its GET refresh is held. The visible event still
+  // carries revision 1, and opening its read-only details is allowed.
+  await page.locator('[data-lab-calendar-event="block"]').click();
+  const details = page.getByRole("dialog", { name: "事项详情", exact: true });
+  await expect(details).toBeVisible();
+  await expect(details.getByRole("button", { name: "调整时间块", exact: true })).toBeDisabled();
+  const refreshed = page.waitForResponse(
+    (response) => response.request().method() === "GET" && response.url().includes("/lab/calendar/?")
+  );
+  releaseRefresh?.();
+  await refreshed;
+  await expect(page.locator('[data-lab-calendar-event="block"]')).toContainText("09:00–12:00");
+  await expect(details.getByRole("button", { name: "调整时间块", exact: true })).toBeEnabled();
+  await details.getByRole("button", { name: "调整时间块", exact: true }).click();
+  dialog = page.getByRole("dialog", { name: "调整时间块", exact: true });
+  await expect(dialog.getByLabel("结束（上海）", { exact: true })).toHaveValue("2026-10-08T12:00");
+  await dialog.getByRole("button", { name: "拆分时间块", exact: true }).click();
+  dialog = page.getByRole("dialog", { name: "拆分时间块", exact: true });
+  await dialog.getByLabel("拆分时间（上海）", { exact: true }).fill("2026-10-08T10:00");
+  await dialog.getByRole("button", { name: "保存", exact: true }).click();
+  await expect(dialog).toHaveCount(0);
+  expect(events.map((event) => [event.id, event.revision])).toEqual([
+    ["block", 3],
+    ["following", 1],
+  ]);
+});

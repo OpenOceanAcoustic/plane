@@ -9,7 +9,7 @@ import type { DragEndEvent } from "@dnd-kit/core";
 import { SortableContext, arrayMove, horizontalListSortingStrategy } from "@dnd-kit/sortable";
 import { observer } from "mobx-react";
 import { Folder, Plus, CalendarDays, Trash2, Pencil, LockKeyhole, Globe2, Flag, Clock3, Layers3 } from "lucide-react";
-import { Button } from "@plane/ui";
+import { Button, LabBountyBadge } from "@plane/ui";
 import { TOAST_TYPE, setToast } from "@plane/propel/toast";
 import type { LabFolder, LabItem, LabStatus, LabTask } from "@plane/types";
 import type { LabStore } from "@plane/shared-state";
@@ -154,6 +154,10 @@ export const LabPlannerBoard = observer(function LabPlannerBoard({
       const item = source.item as LabItem;
       if (target.type === "folder" && target.folderId !== item.folder_id)
         await mutation(`items/${item.id}/`, "PATCH", { folder_id: target.folderId });
+      if (target.type === "status" && item.can_edit_issue === false) {
+        store.notice = "此悬赏通过任务详情办理，项目状态由负责人和验收流程更新。";
+        return;
+      }
       if (target.type === "status" && target.status !== item.status)
         await mutation(`items/${item.id}/`, "PATCH", { status: target.status });
     }
@@ -347,14 +351,25 @@ export const LabPlannerBoard = observer(function LabPlannerBoard({
                         {item.category_name ?? "未分类"}
                       </span>
                       {item.issue_key && <span>{item.issue_key}</span>}
+                      {(item.bounty_id || item.is_bounty) && <LabBountyBadge color={item.category_color} />}
                     </div>
                     <p className="lab-planner-card-title mb-2 line-clamp-2 pr-6 text-14 font-medium">
                       {item.issue_id ? (
                         <a
-                          href={`/${store.slug}/projects/${item.project_id}/issues/${item.issue_id}`}
+                          href={
+                            item.bounty_id && item.can_edit_issue === false
+                              ? `/${store.slug}/lab/bounties?bounty_id=${encodeURIComponent(item.bounty_id)}`
+                              : `/${store.slug}/projects/${item.project_id}/issues/${item.issue_id}`
+                          }
                           className="hover:text-accent-primary"
                           onClick={(event) => {
-                            if (openProjectIssue && item.project_id && !event.ctrlKey && !event.metaKey) {
+                            if (
+                              item.can_edit_issue !== false &&
+                              openProjectIssue &&
+                              item.project_id &&
+                              !event.ctrlKey &&
+                              !event.metaKey
+                            ) {
                               event.preventDefault();
                               openProjectIssue({
                                 issue_id: item.issue_id!,
@@ -429,7 +444,7 @@ export const LabPlannerBoard = observer(function LabPlannerBoard({
                         aria-label={`${item.title}状态`}
                         className="rounded border border-subtle bg-surface-1 p-1 text-12"
                         value={item.status}
-                        disabled={store.busy}
+                        disabled={store.busy || item.can_edit_issue === false}
                         onChange={(event) =>
                           void mutation(`items/${item.id}/`, "PATCH", { status: event.target.value })
                         }

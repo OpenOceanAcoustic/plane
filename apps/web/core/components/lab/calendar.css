@@ -51,3 +51,9 @@
   flex-shrink: 0;
   border-radius: 3px;
 }
+
+.lab-calendar .lab-bounty-event {
+  outline: 2px solid currentColor;
+  outline-offset: -2px;
+  box-shadow: 0 0 0 1px var(--border-color-accent-strong);
+}

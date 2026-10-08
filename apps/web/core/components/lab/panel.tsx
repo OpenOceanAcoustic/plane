@@ -12,6 +12,7 @@ import { Button } from "@plane/ui";
 import { LabCalendar } from "./calendar";
 import { LabAnalyticsPanel } from "./analytics";
 import { LabMarket } from "./market";
+import { LabFinance } from "./finance";
 import { LabPlanningWorkbench } from "./planner-workbench";
 import { LabTaskTable } from "./task-table";
 import type { LabOpenProjectIssue } from "./item-details";
@@ -51,6 +52,7 @@ export const LabPanel = observer(function LabPanel({
         bounties: "悬赏大厅",
         tasks: "任务表格",
         analytics: "数据总览",
+        finance: "资金与奖励",
       } as Record<string, string>
     )[section] ?? "个人规划";
   return (
@@ -108,6 +110,7 @@ export const LabPanel = observer(function LabPanel({
         {store.planner && section === "bounties" && <LabMarket store={store} />}
         {store.planner && section === "tasks" && <LabTaskTable store={store} refreshKey={refreshKey} />}
         {store.planner && section === "analytics" && <LabAnalyticsPanel store={store} refreshKey={refreshKey} />}
+        {store.planner && section === "finance" && <LabFinance store={store} refreshKey={refreshKey} />}
       </div>
     </main>
   );

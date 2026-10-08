@@ -2,7 +2,7 @@
 
 import { CalendarDays, Clock3, Globe2, LockKeyhole } from "lucide-react";
 import type { LabEvent, LabItem, LabStatus } from "@plane/types";
-import { Button, LabDialog } from "@plane/ui";
+import { Button, LabBountyBadge, LabDialog } from "@plane/ui";
 
 export type LabProjectIssueRef = { issue_id: string; project_id: string; archived?: boolean };
 export type LabOpenProjectIssue = (issue: LabProjectIssueRef) => void;
@@ -37,6 +37,7 @@ export function LabItemDetails({
   onClose,
   onSchedule,
   onAdjust,
+  busy = false,
 }: {
   item: LabItem;
   block?: LabEvent;
@@ -44,10 +45,12 @@ export function LabItemDetails({
   onClose: () => void;
   onSchedule: () => void;
   onAdjust?: () => void;
+  busy?: boolean;
 }) {
   return (
     <LabDialog title="事项详情" busy={false} onClose={onClose}>
       <h2 className="text-18 font-semibold break-words">{item.title}</h2>
+      {(item.bounty_id || item.is_bounty) && <LabBountyBadge color={item.category_color} />}
       <dl className="grid grid-cols-2 gap-x-4 gap-y-3 rounded-lg border border-subtle bg-layer-1 p-3 text-13">
         <div>
           <dt className="text-secondary">状态</dt>
@@ -134,6 +137,7 @@ export function LabItemDetails({
           variant="primary"
           prependIcon={<CalendarDays size={14} />}
           onClick={onAdjust ?? onSchedule}
+          disabled={busy}
         >
           {onAdjust ? "调整时间块" : "安排时间"}
         </Button>
