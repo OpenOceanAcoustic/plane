@@ -237,7 +237,6 @@ test("SSH bootstrap, TOTP login, project cover upload, original layouts and pers
   await dialog.getByLabel("类别名称", { exact: true }).fill("现场实验");
   await dialog.getByLabel("自定义类别颜色", { exact: true }).fill("#123abc");
   await dialog.getByRole("button", { name: "保存", exact: true }).click();
-  await expect(page.getByRole("list", { name: "排期类别颜色" })).toContainText("现场实验");
   const ownCategories = await (await page.request.get("/api/workspaces/browser-lab/lab/categories/")).json();
   const categoryId = ownCategories.find((row: { name: string }) => row.name === "现场实验").id;
   await page.getByRole("button", { name: "个人事项", exact: true }).click();
@@ -255,6 +254,7 @@ test("SSH bootstrap, TOTP login, project cover upload, original layouts and pers
   await expect(page.getByRole("button", { name: /^科研学习排期 / }).first()).toBeVisible();
   const firstBlock = page.getByRole("button", { name: /^科研学习排期 / }).first();
   await expect(firstBlock).toHaveCSS("--fc-event-color", "#123abc");
+  await expect(page.getByRole("list", { name: "排期类别颜色" })).toContainText("现场实验");
   await page.getByRole("button", { name: "管理类别", exact: true }).click();
   await page.getByRole("button", { name: "编辑类别现场实验", exact: true }).click();
   dialog = page.getByRole("dialog");

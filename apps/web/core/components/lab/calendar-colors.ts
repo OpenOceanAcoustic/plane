@@ -7,6 +7,26 @@ export function calendarColor(event: Pick<LabEvent, "kind" | "color" | "category
   if (!event.kind) return "#64748b";
   return validColor(event.color) ? event.color! : validColor(event.category_color) ? event.category_color! : "#64748b";
 }
+export function calendarLegend(events: LabEvent[]) {
+  const entries = new Map<string, { id: string; name: string; color: string }>();
+  for (const event of events) {
+    const color = calendarColor(event).toLowerCase();
+    // Use exactly the visible, permission-filtered projection, including opaque busy blocks.
+    const category = event.kind ? (event.category_name ?? "未分类") : "忙碌";
+    const manual = Boolean(event.kind && validColor(event.color));
+    const id = JSON.stringify([
+      event.kind ? (event.category_id ?? "uncategorized") : "busy",
+      color,
+      manual ? (event.item_id ?? event.title) : "",
+    ]);
+    entries.set(id, {
+      id,
+      name: manual ? `${category} · ${event.title}（单独配色）` : category,
+      color,
+    });
+  }
+  return [...entries.values()];
+}
 export function calendarContrast(color: string) {
   const components = [1, 3, 5].map((offset) => {
     const value = Number.parseInt(color.slice(offset, offset + 2), 16) / 255;

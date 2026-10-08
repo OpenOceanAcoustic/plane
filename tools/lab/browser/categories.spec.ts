@@ -100,12 +100,12 @@ test("members edit their category names and colors, and choose arbitrary schedul
   await dialog.getByLabel("类别名称", { exact: true }).fill("海试");
   await dialog.getByLabel("自定义类别颜色", { exact: true }).fill("#2468ac");
   await dialog.getByRole("button", { name: "保存", exact: true }).click();
-  await expect(page.getByRole("list", { name: "排期类别颜色" })).toContainText("海试");
   await page.getByRole("button", { name: "编辑海试计划", exact: true }).click();
   dialog = page.getByRole("dialog");
   await dialog.getByLabel("事项类别", { exact: true }).selectOption("sea");
   await dialog.getByRole("button", { name: "保存", exact: true }).click();
   await expect(block).toHaveCSS("--fc-event-color", "#2468ac");
+  await expect(page.getByRole("list", { name: "排期类别颜色" })).toContainText("海试");
   await page.getByRole("button", { name: "管理类别", exact: true }).click();
   await page.getByRole("button", { name: "编辑类别海试", exact: true }).click();
   dialog = page.getByRole("dialog");

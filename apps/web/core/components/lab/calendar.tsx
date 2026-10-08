@@ -28,7 +28,7 @@ import type { LabStore } from "@plane/shared-state";
 import { calendarInstant, localInput, SLOT_MS, weekDays } from "./calendar-time";
 import { CalendarHeightControl, CalendarResizeHandle, useCalendarHeight } from "./calendar-size";
 import { calendarFolderColors, useCalendarFolders } from "./calendar-folders";
-import { calendarColor, calendarContrast } from "./calendar-colors";
+import { calendarColor, calendarContrast, calendarLegend } from "./calendar-colors";
 // oxlint-disable-next-line import/no-unassigned-import -- bundled FullCalendar layout styles
 import "@fullcalendar/react/skeleton.css";
 // oxlint-disable-next-line import/no-unassigned-import -- local theme, no CDN
@@ -262,22 +262,7 @@ export const LabCalendar = observer(function LabCalendar({
       })),
     [visibleEvents, store.busy, team, itemFolders]
   );
-  const categories = team
-    ? [
-        ...new Map(
-          visibleEvents
-            .filter((event) => event.kind && event.category_id)
-            .map((event) => [
-              event.category_id,
-              {
-                id: event.category_id!,
-                name: event.category_name ?? "未分类",
-                color: event.category_color ?? "#64748b",
-              },
-            ])
-        ).values(),
-      ]
-    : (planner?.categories ?? []);
+  const legend = calendarLegend(visibleEvents);
   const resources = useMemo<ResourceInput[]>(() => {
     if (team) return store.members.map((member) => ({ id: member.id, title: member.name }));
     if (!planner) return [];
@@ -593,16 +578,20 @@ export const LabCalendar = observer(function LabCalendar({
       </div>
       <div className="flex flex-wrap items-center justify-between gap-3">
         <CalendarHeightControl height={height} setHeight={setHeight} />
-        {
+        {legend.length > 0 && (
           <ul aria-label="排期类别颜色" className="flex flex-wrap items-center gap-3 text-12 text-secondary">
-            {categories.map((category) => (
-              <li key={category.id} className="flex items-center gap-1">
-                <span aria-hidden className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: category.color }} />
-                {category.name}
+            {legend.map((entry) => (
+              <li key={entry.id} className="flex max-w-full min-w-0 items-center gap-1" title={entry.name}>
+                <span
+                  aria-hidden
+                  className="h-2.5 w-2.5 shrink-0 rounded-full"
+                  style={{ backgroundColor: entry.color }}
+                />
+                <span className="min-w-0 break-words">{entry.name}</span>
               </li>
             ))}
           </ul>
-        }
+        )}
       </div>
       {choosingFolders && (
         <LabDialog
