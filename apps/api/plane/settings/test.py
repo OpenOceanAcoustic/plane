@@ -7,6 +7,7 @@
 from .common import *  # noqa
 
 DEBUG = True
+LAB_AUTH_ENABLED = False  # Native tests retain upstream behavior; lab tests explicitly enable it.
 
 # Send it in a dummy outbox
 EMAIL_BACKEND = "django.core.mail.backends.locmem.EmailBackend"

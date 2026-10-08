@@ -10,6 +10,10 @@ import type { TPageNavigationTabs } from "@plane/types";
 // hooks
 import type { EPageStoreType } from "@/hooks/store";
 import { usePageStore } from "@/hooks/store";
+import { useUserPermissions } from "@/hooks/store/user";
+import { EUserPermissionsLevel } from "@plane/constants";
+import { EUserProjectRoles } from "@plane/types";
+import { LabExperimentTemplateButton } from "@/components/lab/documents";
 // local imports
 import { PagesListHeaderRoot } from "./header";
 import { PagesListMainContent } from "./pages-list-main-content";
@@ -26,6 +30,11 @@ export const PagesListView = observer(function PagesListView(props: TPageView) {
   const { children, pageType, projectId, storeType, workspaceSlug } = props;
   // store hooks
   const { isAnyPageAvailable, fetchPagesList } = usePageStore(storeType);
+  const { allowPermissions } = useUserPermissions();
+  const canCreate = allowPermissions(
+    [EUserProjectRoles.ADMIN, EUserProjectRoles.MEMBER],
+    EUserPermissionsLevel.PROJECT
+  );
   // fetching pages list
   useSWR(
     workspaceSlug && projectId && pageType ? `PROJECT_PAGES_${projectId}` : null,
@@ -35,6 +44,15 @@ export const PagesListView = observer(function PagesListView(props: TPageView) {
   // pages loader
   return (
     <div className="relative flex h-full w-full flex-col overflow-hidden">
+      {canCreate && pageType !== "archived" && (
+        <div className="flex shrink-0 justify-end border-b border-subtle px-4 py-2">
+          <LabExperimentTemplateButton
+            workspaceSlug={workspaceSlug}
+            projectId={projectId}
+            defaultAccess={pageType === "private" ? 1 : 0}
+          />
+        </div>
+      )}
       {/* tab header */}
       {isAnyPageAvailable && (
         <PagesListHeaderRoot

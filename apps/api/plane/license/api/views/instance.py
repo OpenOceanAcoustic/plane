@@ -135,6 +135,10 @@ class InstanceEndpoint(BaseAPIView):
         data["is_gitea_enabled"] = IS_GITEA_ENABLED == "1"
         data["is_magic_login_enabled"] = ENABLE_MAGIC_LINK_LOGIN == "1"
         data["is_email_password_enabled"] = ENABLE_EMAIL_PASSWORD == "1"
+        if settings.LAB_AUTH_ENABLED:
+            for key in ("enable_signup", "is_google_enabled", "is_github_enabled", "is_gitlab_enabled", "is_gitea_enabled", "is_magic_login_enabled", "is_email_password_enabled"):
+                data[key] = False
+            data["is_lab_totp_enabled"] = True
 
         # Github app name
         data["github_app_name"] = str(GITHUB_APP_NAME)
@@ -145,6 +149,9 @@ class InstanceEndpoint(BaseAPIView):
         # Posthog
         data["posthog_api_key"] = POSTHOG_API_KEY
         data["posthog_host"] = POSTHOG_HOST
+        if settings.LAB_AUTH_ENABLED:
+            data["posthog_api_key"] = None
+            data["posthog_host"] = None
 
         # Unsplash
         data["has_unsplash_configured"] = bool(UNSPLASH_ACCESS_KEY)

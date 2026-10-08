@@ -63,6 +63,7 @@ export enum CloseCode {
  */
 export enum AdminCommand {
   FORCE_CLOSE = "force_close",
+  REVOKE_USER = "revoke_user",
   HEALTH_CHECK = "health_check",
   RESTART_DOCUMENT = "restart_document",
 }
@@ -91,7 +92,14 @@ export interface HealthCheckCommandData {
 /**
  * Union type for all admin commands
  */
-export type AdminCommandData = ForceCloseCommandData | HealthCheckCommandData;
+export interface RevokeUserCommandData {
+  command: AdminCommand.REVOKE_USER;
+  userId: string;
+  originServer: string;
+  timestamp: string;
+}
+
+export type AdminCommandData = ForceCloseCommandData | HealthCheckCommandData | RevokeUserCommandData;
 
 /**
  * Client force close message structure (sent to clients via sendStateless)

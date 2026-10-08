@@ -1,0 +1,128 @@
+name: ooa-plane-lab
+
+x-api: &api
+  image: ooa-plane-api:lab
+  build:
+    context: ./apps/api
+    dockerfile: Dockerfile.dev
+  env_file: ./apps/api/.env
+  secrets: [lab_totp_key]
+  volumes: [./apps/api:/code]
+  init: true
+
+services:
+  plane-db:
+    image: postgres:15.7-alpine
+    env_file: .env
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    volumes: [pgdata:/var/lib/postgresql/data]
+    command: [postgres, -c, max_connections=100]
+    healthcheck:
+      test: [CMD-SHELL, 'pg_isready -U "$$POSTGRES_USER" -d "$$POSTGRES_DB"']
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+
+  plane-redis:
+    image: valkey/valkey:7.2.11-alpine
+    volumes: [redisdata:/data]
+    restart: unless-stopped
+
+  plane-mq:
+    image: rabbitmq:3.13.6-management-alpine
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD}
+      RABBITMQ_DEFAULT_VHOST: ${RABBITMQ_VHOST}
+    volumes: [rabbitmq_data:/var/lib/rabbitmq]
+    restart: unless-stopped
+
+  plane-minio:
+    image: ooa-plane-minio:source
+    build:
+      context: .
+      dockerfile: tools/lab/Dockerfile.minio
+    command: server /export --console-address ":9090"
+    environment:
+      MINIO_ROOT_USER: ${AWS_ACCESS_KEY_ID}
+      MINIO_ROOT_PASSWORD: ${AWS_SECRET_ACCESS_KEY}
+    volumes: [uploads:/export]
+    ports: ["127.0.0.1:9100:9000", "127.0.0.1:9190:9090"]
+    restart: unless-stopped
+
+  api:
+    <<: *api
+    command: [uvicorn, plane.asgi:application, --host, "0.0.0.0", --port, "8000"]
+    ports: ["127.0.0.1:8010:8000"]
+    depends_on:
+      plane-db: { condition: service_healthy }
+      plane-redis: { condition: service_started }
+      plane-mq: { condition: service_started }
+    restart: unless-stopped
+
+  worker:
+    <<: *api
+    command: [celery, -A, plane, worker, -l, warning, --concurrency=1]
+    depends_on: [api]
+    restart: unless-stopped
+
+  beat-worker:
+    <<: *api
+    command: [celery, -A, plane, beat, -l, warning]
+    depends_on: [api]
+    restart: unless-stopped
+
+  live:
+    image: node:22.22.1-bookworm-slim
+    working_dir: /app
+    volumes:
+      - ./apps/live:/app/apps/live:ro
+      - ./packages:/app/packages:ro
+      - ./node_modules:/app/node_modules:ro
+      - ./package.json:/app/package.json:ro
+    env_file: ./apps/live/.env
+    command: [node, apps/live/dist/start.mjs]
+    depends_on: [api, plane-redis]
+    init: true
+    restart: unless-stopped
+
+  space:
+    image: node:22.22.1-bookworm-slim
+    working_dir: /app/apps/space
+    volumes:
+      - ./apps/space:/app/apps/space:ro
+      - ./packages:/app/packages:ro
+      - ./node_modules:/app/node_modules:ro
+      - ./package.json:/app/package.json:ro
+    environment:
+      NODE_ENV: production
+      HOST: 0.0.0.0
+      PORT: "3000"
+    command: [node, node_modules/@react-router/serve/bin.js, ./build/server/index.js]
+    depends_on: [api]
+    init: true
+    restart: unless-stopped
+
+  proxy:
+    image: caddy:2.10.2-alpine
+    volumes:
+      - ./tools/lab/Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./apps/web/build/client:/srv/web:ro
+      - ./apps/admin/build/client:/srv/admin:ro
+    ports: ["${LAB_BIND_ADDRESS:-127.0.0.1}:8080:80"]
+    depends_on: [api, live, space, plane-minio]
+    restart: unless-stopped
+
+volumes:
+  pgdata:
+  uploads:
+  redisdata:
+  rabbitmq_data:
+
+secrets:
+  lab_totp_key:
+    file: ./.secrets/lab-totp.key

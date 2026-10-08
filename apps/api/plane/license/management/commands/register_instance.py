@@ -11,6 +11,7 @@ import requests
 # Django imports
 from django.core.management.base import BaseCommand, CommandError
 from django.utils import timezone
+from django.conf import settings
 
 
 # Module imports
@@ -55,7 +56,7 @@ class Command(BaseCommand):
         instance = Instance.objects.first()
 
         current_version = self.check_for_current_version()
-        latest_version = self.check_for_latest_version(current_version)
+        latest_version = current_version if settings.LAB_AUTH_ENABLED else self.check_for_latest_version(current_version)
 
         # If instance is None then register this instance
         if instance is None:
@@ -72,6 +73,8 @@ class Command(BaseCommand):
                 last_checked_at=timezone.now(),
                 is_test=os.environ.get("IS_TEST", "0") == "1",
                 edition=InstanceEdition.PLANE_COMMUNITY.value,
+                is_telemetry_enabled=not settings.LAB_AUTH_ENABLED,
+                is_support_required=not settings.LAB_AUTH_ENABLED,
             )
 
             self.stdout.write(self.style.SUCCESS("Instance registered"))
@@ -87,6 +90,7 @@ class Command(BaseCommand):
             instance.save()
 
         # Push instance metrics on registration
-        push_instance_metrics.delay()
+        if not settings.LAB_AUTH_ENABLED:
+            push_instance_metrics.delay()
 
         return

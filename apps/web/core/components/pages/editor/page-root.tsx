@@ -8,6 +8,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { observer } from "mobx-react";
 // plane imports
 import type { CollaborationState, EditorRefApi } from "@plane/editor";
+import { convertBinaryDataToBase64String } from "@plane/editor";
 import type { TDocumentPayload, TPage, TPageVersion, TWebhookConnectionQueryParams } from "@plane/types";
 // hooks
 import { usePageFallback } from "@/hooks/use-page-fallback";
@@ -16,6 +17,7 @@ import { usePagesPaneExtensions, useExtendedEditorProps } from "@/hooks/pages";
 import type { EPageStoreType } from "@/hooks/store";
 // store
 import type { TPageInstance } from "@/store/pages/base-page";
+import { LabPageTasks } from "@/components/lab/documents";
 // local imports
 import { PageNavigationPaneRoot } from "../navigation-pane";
 import { PageVersionsOverlay } from "../version";
@@ -136,10 +138,19 @@ export const PageRoot = observer(function PageRoot(props: TPageRootProps) {
 
   const handleRestoreVersion = useCallback(
     async (descriptionHTML: string) => {
-      editorRef.current?.clearEditor();
-      editorRef.current?.setEditorValue(descriptionHTML);
+      const editor = editorRef.current;
+      if (!editor || !isContentEditable) throw new Error("当前文档无法恢复版本");
+      editor.clearEditor();
+      editor.setEditorValue(descriptionHTML);
+      const { binary, html, json } = editor.getDocument();
+      if (!binary || !json) throw new Error("文档版本恢复失败，请重新加载文档");
+      await handlers.updateDescription({
+        description_binary: convertBinaryDataToBase64String(binary),
+        description_html: html,
+        description_json: json,
+      });
     },
-    [editorRef]
+    [editorRef, handlers, isContentEditable]
   );
 
   // reset editor ref on unmount
@@ -167,6 +178,9 @@ export const PageRoot = observer(function PageRoot(props: TPageRootProps) {
           page={page}
         />
         {showContentTooLargeBanner && <ContentLimitBanner className="px-page-x" />}
+        {projectId && page.id && (
+          <LabPageTasks key={page.id} workspaceSlug={workspaceSlug} projectId={projectId} pageId={page.id} />
+        )}
         <PageEditorBody
           config={config}
           customRealtimeEventHandlers={mergedCustomEventHandlers}

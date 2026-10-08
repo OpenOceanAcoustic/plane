@@ -1,0 +1,27 @@
+/* Copyright (c) 2026 OpenOceanAcoustic and contributors. SPDX-License-Identifier: AGPL-3.0-only */
+.lab-frappe-gantt {
+  --g-arrow-color: currentColor;
+  --g-bar-color: color-mix(in srgb, currentColor 10%, transparent);
+  --g-bar-border: color-mix(in srgb, currentColor 25%, transparent);
+  --g-tick-color-thick: color-mix(in srgb, currentColor 10%, transparent);
+  --g-tick-color: color-mix(in srgb, currentColor 5%, transparent);
+  --g-border-color: color-mix(in srgb, currentColor 15%, transparent);
+  --g-text-dark: currentColor;
+  --g-text-muted: color-mix(in srgb, currentColor 65%, transparent);
+  --g-header-background: transparent;
+  --g-row-color: transparent;
+  --g-row-border-color: color-mix(in srgb, currentColor 10%, transparent);
+  --g-progress-color: color-mix(in srgb, currentColor 35%, transparent);
+  --g-weekend-highlight-color: color-mix(in srgb, currentColor 3%, transparent);
+  --g-weekend-label-color: color-mix(in srgb, currentColor 40%, transparent);
+  --g-actions-background: transparent;
+  font: inherit;
+}
+.lab-frappe-gantt .gantt-container {
+  color: inherit;
+}
+.lab-frappe-gantt .gantt .bar-label {
+  fill: currentColor;
+  font-size: 12px;
+  font-family: inherit;
+}

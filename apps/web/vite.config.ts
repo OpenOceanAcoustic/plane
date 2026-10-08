@@ -20,6 +20,9 @@ export default defineConfig(() => ({
   },
   build: {
     assetsInlineLimit: 0,
+    // The pinned Vite 7 Rollup/esbuild pipeline avoids native Rolldown panics.
+    // Keep production assets minified.
+    minify: "esbuild" as const,
   },
   plugins: [reactRouter(), tsconfigPaths({ projects: [path.resolve(__dirname, "tsconfig.json")] })],
   resolve: {

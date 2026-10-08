@@ -31,6 +31,8 @@ class RequestLoggerMiddleware:
         """
         Determines whether a route should be logged based on the request and status code.
         """
+        if request.path.startswith("/auth/lab/"):
+            return False
         # Don't log health checks
         if request.path == "/" and request.method == "GET":
             return False
@@ -86,6 +88,8 @@ class APITokenLogMiddleware:
         self.get_response = get_response
 
     def __call__(self, request):
+        if request.path.startswith("/auth/lab/"):
+            return self.get_response(request)
         request_body = request.body
         response = self.get_response(request)
         self.process_request(request, response, request_body)

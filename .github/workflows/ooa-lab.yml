@@ -1,0 +1,169 @@
+name: OpenOceanAcoustic lab validation
+
+on:
+  push:
+    branches: [feat/lab-planning-bounty-auth]
+  pull_request:
+    branches: [ooa/main]
+  workflow_dispatch:
+    inputs:
+      full_suite:
+        description: Run the complete upstream Django suite after lab contracts
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ooa-lab-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    needs: frontend
+    runs-on: ubuntu-latest
+    timeout-minutes: 50
+    steps:
+      - uses: actions/checkout@v6
+      - name: Verify access configuration preserves credentials
+        run: |
+          python3 tools/lab/test_setup.py
+          python3 tools/lab/test_backup.py
+          python3 tools/lab/e2e/test_prepare.py
+      - name: Prepare isolated configuration
+        run: python3 tools/lab/setup.py
+      - uses: docker/setup-buildx-action@v4
+      - name: Build pinned official S3 source serially
+        uses: docker/build-push-action@v7.0.0
+        with:
+          context: .
+          file: tools/lab/Dockerfile.minio
+          load: true
+          tags: ooa-plane-minio:source
+          cache-from: type=gha,scope=lab-s3
+          cache-to: type=gha,mode=max,scope=lab-s3
+      - name: Build upstream Python container serially
+        uses: docker/build-push-action@v7.0.0
+        with:
+          context: apps/api
+          file: apps/api/Dockerfile.dev
+          load: true
+          tags: ooa-plane-api:lab
+          cache-from: type=gha,scope=lab-api
+          cache-to: type=gha,mode=max,scope=lab-api
+      - name: Run real PostgreSQL contracts
+        run: |
+          docker compose -f docker-compose-test.yml -f compose.lab-test.yml run --rm api-tests pytest --migrations plane/tests/contract/api/lab --junitxml=/code/lab-test-results.xml
+      - name: Complete upstream regression
+        if: (github.event_name == 'workflow_dispatch' && inputs.full_suite) || contains(github.event.head_commit.message, '[full-regression]')
+        run: docker compose -f docker-compose-test.yml -f compose.lab-test.yml run --rm api-tests pytest --migrations --junitxml=/code/lab-full-test-results.xml
+      - name: Check Django migration state
+        run: docker compose -f docker-compose-test.yml -f compose.lab-test.yml run --rm api-tests python manage.py makemigrations --check --dry-run lab
+      - name: API lint
+        run: docker compose -f docker-compose-test.yml -f compose.lab-test.yml run --rm api-tests ruff check plane/lab plane/tests/contract/api/lab
+      - uses: actions/setup-node@v6
+        if: contains(github.event.head_commit.message, '[full-regression]')
+        with:
+          node-version: 22.22.1
+      - name: Install runtime JavaScript dependencies
+        if: contains(github.event.head_commit.message, '[full-regression]')
+        run: |
+          corepack enable
+          corepack prepare pnpm@11.3.0 --activate
+          pnpm install --frozen-lockfile --network-concurrency 4 --child-concurrency 1
+          pnpm exec playwright install --with-deps chromium
+      - uses: actions/download-artifact@v8
+        if: contains(github.event.head_commit.message, '[full-regression]')
+        with:
+          name: lab-builds
+          path: .
+      - name: Start isolated complete deployment and validate Caddy
+        if: contains(github.event.head_commit.message, '[full-regression]')
+        env:
+          LAB_COMPOSE_PROJECT: ooa-plane-e2e
+        run: |
+          docker run --rm -v "$PWD/tools/lab/Caddyfile:/etc/caddy/Caddyfile:ro" caddy:2.10.2-alpine caddy validate --config /etc/caddy/Caddyfile
+          tools/lab/lab.sh init
+          tools/lab/lab.sh start
+          for attempt in $(seq 1 60); do
+            if curl --fail --silent http://localhost:8080/api/instances/ >/dev/null; then exit 0; fi
+            sleep 2
+          done
+          exit 1
+      - name: Real browser contracts and independent backup recovery
+        if: contains(github.event.head_commit.message, '[full-regression]')
+        env:
+          LAB_E2E_PROJECT: ooa-plane-e2e
+          LAB_COMPOSE_PROJECT: ooa-plane-e2e
+        run: |
+          docker compose -p ooa-plane-e2e -f compose.lab.yml exec -T api python - < tools/lab/test_upload.py
+          pnpm exec playwright test --config tools/lab/e2e/playwright.config.ts
+          docker compose -p ooa-plane-e2e -f compose.lab.yml exec -T plane-minio sh -c 'mc alias set lab http://localhost:9000 "$MINIO_ROOT_USER" "$MINIO_ROOT_PASSWORD" >/dev/null && printf lab-backup-contract | mc pipe lab/uploads/browser-contract.txt'
+          python3 tools/lab/backup.py backup "$RUNNER_TEMP/lab-backup" "$RUNNER_TEMP/lab-keys"
+          python3 tools/lab/backup.py restore-verify "$RUNNER_TEMP/lab-backup" "$RUNNER_TEMP/lab-keys/lab-backup.totp.key"
+      - name: Remove only isolated browser deployment
+        if: always() && contains(github.event.head_commit.message, '[full-regression]')
+        run: docker compose -p ooa-plane-e2e -f compose.lab.yml down -v
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: lab-test-results
+          path: apps/api/lab*test-results.xml
+          if-no-files-found: ignore
+      - name: Remove test resources
+        if: always()
+        run: docker compose -f docker-compose-test.yml -f compose.lab-test.yml down -v
+
+  frontend:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    env:
+      RAYON_NUM_THREADS: 1
+      ROLLDOWN_WORKER_THREADS: 4
+      ROLLDOWN_MAX_BLOCKING_THREADS: 4
+      TURBO_TELEMETRY_DISABLED: 1
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22.22.1
+      - name: Use repository-pinned package manager
+        run: |
+          corepack enable
+          corepack prepare pnpm@11.3.0 --activate
+          pnpm install --frozen-lockfile --network-concurrency 4 --child-concurrency 1
+      - name: Prepare configuration
+        run: python3 tools/lab/setup.py
+      - uses: actions/cache@v5
+        with:
+          path: .turbo
+          key: lab-turbo-${{ runner.os }}-${{ github.sha }}
+          restore-keys: lab-turbo-${{ runner.os }}-
+      - name: Type checks and lint serially
+        run: pnpm turbo run check:types check:lint --filter=web --filter=admin --filter=space --filter=live --filter=@plane/ui --filter=@plane/shared-state --filter=@plane/types --concurrency=1
+      - name: Build applications serially
+        run: pnpm turbo run build --filter=web --filter=admin --filter=space --filter=live --concurrency=1
+      - name: Calendar and established-session contracts
+        run: |
+          node tools/lab/test-calendar.mjs
+          node tools/lab/test-fields-gantt.mjs
+          node tools/lab/test-workflow.mjs
+          pnpm --filter live test tests/extensions/lab-session-guard.test.ts
+      - name: Chromium component contracts
+        run: |
+          pnpm exec playwright install --with-deps chromium
+          node tools/lab/test-frappe-lifecycle.mjs
+          node tools/lab/test-field-manager.mjs
+          pnpm exec playwright test --config tools/lab/browser/playwright.config.ts
+      - uses: actions/upload-artifact@v7
+        with:
+          name: lab-builds
+          path: |
+            apps/web/build/client
+            apps/admin/build/client
+            apps/space/build/client
+            apps/space/build/server
+            apps/live/dist
+            packages/*/dist
+          retention-days: 3

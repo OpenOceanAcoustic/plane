@@ -1,0 +1,46 @@
+/* FullCalendar's local theme follows Plane's live light/dark theme tokens. */
+.lab-calendar {
+  --fc-monarch-primary: var(--background-color-accent-primary);
+  --fc-monarch-primary-foreground: var(--text-color-on-color);
+  --fc-monarch-primary-over: var(--background-color-accent-primary-hover);
+  --fc-monarch-primary-down: var(--background-color-accent-primary-active);
+  --fc-monarch-secondary: var(--background-color-layer-1);
+  --fc-monarch-secondary-foreground: var(--text-color-secondary);
+  --fc-monarch-secondary-over: var(--background-color-layer-1-hover);
+  --fc-monarch-secondary-down: var(--background-color-layer-1-active);
+  --fc-monarch-tertiary: var(--background-color-layer-2);
+  --fc-monarch-tertiary-foreground: var(--text-color-primary);
+  --fc-monarch-event: var(--background-color-accent-primary);
+  --fc-monarch-event-contrast: var(--text-color-on-color);
+  --fc-monarch-highlight: var(--background-color-accent-subtle);
+  --fc-monarch-now: var(--background-color-danger-primary);
+  --fc-monarch-selected: var(--background-color-accent-primary);
+  --fc-monarch-selected-foreground: var(--text-color-on-color);
+  --fc-monarch-selected-over: var(--background-color-accent-primary-hover);
+  --fc-monarch-selected-down: var(--background-color-accent-primary-active);
+  --fc-monarch-outline: var(--border-color-accent-strong);
+  --fc-monarch-popover: var(--background-color-surface-1);
+  --fc-monarch-background: var(--background-color-surface-1);
+  --fc-monarch-faint: var(--background-color-layer-1);
+  --fc-monarch-muted: var(--background-color-layer-2);
+  --fc-monarch-strong: var(--background-color-layer-3);
+  --fc-monarch-stronger: var(--background-color-layer-3);
+  --fc-monarch-strongest: var(--background-color-layer-3);
+  --fc-monarch-foreground: var(--text-color-primary);
+  --fc-monarch-faint-foreground: var(--text-color-tertiary);
+  --fc-monarch-muted-foreground: var(--text-color-secondary);
+  --fc-monarch-border: var(--border-color-subtle);
+  --fc-monarch-strong-border: var(--border-color-strong);
+  font-family: inherit;
+  font-size: 13px;
+}
+.lab-calendar [class*="fc-monarch"] {
+  font-family: inherit;
+}
+.lab-calendar button:focus-visible {
+  outline: 2px solid var(--border-color-accent-strong);
+  outline-offset: 2px;
+}
+.lab-calendar .lab-busy-event {
+  opacity: 0.65;
+}

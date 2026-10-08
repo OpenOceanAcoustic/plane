@@ -7,6 +7,7 @@ import json
 
 # Django imports
 from django.utils import timezone
+from django.db import transaction
 from django.db.models import Q, OuterRef, F, Func, UUIDField, Value, CharField, Subquery
 from django.core.serializers.json import DjangoJSONEncoder
 from django.db.models.functions import Coalesce
@@ -16,6 +17,7 @@ from django.contrib.postgres.fields import ArrayField
 # Third Party imports
 from rest_framework.response import Response
 from rest_framework import status
+from rest_framework.exceptions import ValidationError
 
 # Module imports
 from .. import BaseViewSet
@@ -32,6 +34,8 @@ from plane.db.models import (
 from plane.bgtasks.issue_activities_task import issue_activity
 from plane.utils.issue_relation_mapper import get_actual_relation
 from plane.utils.host import base_host
+from plane.lab.gantt import graph_lock, validate_native_dependencies
+from plane.lab.permissions import issue_access, readable_issues
 
 
 class IssueRelationViewSet(BaseViewSet):
@@ -40,6 +44,8 @@ class IssueRelationViewSet(BaseViewSet):
     permission_classes = [ProjectEntityPermission]
 
     def list(self, request, slug, project_id, issue_id):
+        project = Project.objects.get(pk=project_id, workspace__slug=slug)
+        issue_access(request.user, project.workspace, issue_id)
         issue_relations = (
             IssueRelation.objects.filter(Q(issue_id=issue_id) | Q(related_issue=issue_id))
             .filter(workspace__slug=self.kwargs.get("slug"))
@@ -101,6 +107,7 @@ class IssueRelationViewSet(BaseViewSet):
 
         queryset = (
             Issue.issue_objects.filter(workspace__slug=slug)
+            .filter(id__in=readable_issues(request.user, project.workspace).values("id"))
             .select_related("workspace", "project", "state", "parent")
             .prefetch_related("assignees", "labels", "issue_module__module")
             .annotate(
@@ -206,6 +213,7 @@ class IssueRelationViewSet(BaseViewSet):
 
         return Response(response_data, status=status.HTTP_200_OK)
 
+    @transaction.atomic
     def create(self, request, slug, project_id, issue_id):
         relation_type = request.data.get("relation_type", None)
         if relation_type is None:
@@ -225,6 +233,17 @@ class IssueRelationViewSet(BaseViewSet):
                 pk__in=issues,
             ).values_list("id", flat=True)
         )
+
+        # All dependency entry points share the preview/commit graph lock and DAG check.
+        # This prevents simultaneous native edits from creating a cycle or bypassing a preview.
+        if get_actual_relation(relation_type) == "blocked_by":
+            graph_lock(project.workspace_id)
+            issue_access(request.user, project.workspace, issue_id, edit=True)
+            additions = []
+            for related_id in issues:
+                issue_access(request.user, project.workspace, related_id, edit=True)
+                additions.append((issue_id, related_id) if relation_type == "blocking" else (related_id, issue_id))
+            validate_native_dependencies(project.workspace_id, additions)
 
         issue_relation = IssueRelation.objects.bulk_create(
             [
@@ -268,8 +287,11 @@ class IssueRelationViewSet(BaseViewSet):
                 status=status.HTTP_201_CREATED,
             )
 
+    @transaction.atomic
     def remove_relation(self, request, slug, project_id, issue_id):
         related_issue = request.data.get("related_issue", None)
+        project = Project.objects.get(pk=project_id, workspace__slug=slug)
+        graph_lock(project.workspace_id)
 
         issue_relations = IssueRelation.objects.filter(
             workspace__slug=slug,
@@ -277,6 +299,11 @@ class IssueRelationViewSet(BaseViewSet):
             Q(issue_id=related_issue, related_issue_id=issue_id) | Q(issue_id=issue_id, related_issue_id=related_issue)
         )
         issue_relations = issue_relations.first()
+        if not issue_relations:
+            raise ValidationError("任务关系不存在")
+        if issue_relations.relation_type == "blocked_by":
+            issue_access(request.user, project.workspace, issue_id, edit=True)
+            issue_access(request.user, project.workspace, related_issue, edit=True)
         current_instance = json.dumps(IssueRelationSerializer(issue_relations).data, cls=DjangoJSONEncoder)
         issue_relations.delete()
         issue_activity.delay(

@@ -7,6 +7,7 @@
 import type { ReactNode } from "react";
 import { observer } from "mobx-react";
 import useSWR from "swr";
+import { useLocation } from "react-router";
 // components
 import { LogoSpinner } from "@/components/common/logo-spinner";
 import { InstanceNotReady, MaintenanceView } from "@/components/instance";
@@ -19,6 +20,7 @@ type TInstanceWrapper = {
 
 const InstanceWrapper = observer(function InstanceWrapper(props: TInstanceWrapper) {
   const { children } = props;
+  const { pathname } = useLocation();
   // store
   const { isLoading, instance, error, fetchInstanceInfo } = useInstance();
 
@@ -27,6 +29,9 @@ const InstanceWrapper = observer(function InstanceWrapper(props: TInstanceWrappe
     async () => await fetchInstanceInfo(),
     { revalidateOnFocus: false }
   );
+
+  // SSH bootstrap must be reachable before the first administrator exists.
+  if (["/", "/lab/register", "/sign-up"].includes(pathname)) return <>{children}</>;
 
   // loading state
   if ((isLoading || isInstanceSWRLoading) && !instance)

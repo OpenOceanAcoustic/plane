@@ -14,6 +14,7 @@ export const coreRoutes: RouteConfigEntry[] = [
 
   // Home - Sign In
   layout("./(home)/layout.tsx", [index("./(home)/page.tsx")]),
+  route("lab/register", "./lab-register.tsx"),
 
   // Sign Up
   layout("./(all)/sign-up/layout.tsx", [route("sign-up", "./(all)/sign-up/page.tsx")]),
@@ -61,6 +62,7 @@ export const coreRoutes: RouteConfigEntry[] = [
 
         // Workspace Home
         route(":workspaceSlug", "./(all)/[workspaceSlug]/(projects)/page.tsx"),
+        route(":workspaceSlug/lab/:section", "./lab-panel.tsx"),
 
         // Active Cycles
         layout("./(all)/[workspaceSlug]/(projects)/active-cycles/layout.tsx", [

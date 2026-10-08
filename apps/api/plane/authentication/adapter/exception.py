@@ -6,6 +6,8 @@
 from rest_framework.views import exception_handler
 from rest_framework.exceptions import NotAuthenticated
 from rest_framework.exceptions import Throttled
+from django.db import IntegrityError
+from rest_framework.response import Response
 
 # Module imports
 from plane.authentication.adapter.error import (
@@ -15,6 +17,8 @@ from plane.authentication.adapter.error import (
 
 
 def auth_exception_handler(exc, context):
+    if isinstance(exc, IntegrityError) and "lab_" in str(exc):
+        return Response({"error":"操作违反实验室 WIP 上限或独立验收要求，请联系负责人处理例外。"},status=409)
     # Call the default exception handler first, to get the standard error response.
     response = exception_handler(exc, context)
     # Check if an AuthenticationFailed exception is raised.

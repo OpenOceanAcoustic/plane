@@ -1,0 +1,19 @@
+# Overlay the upstream isolated test stack; secrets stay outside test containers.
+services:
+  test-minio:
+    image: ooa-plane-minio:source
+    build:
+      context: .
+      dockerfile: tools/lab/Dockerfile.minio
+  api-tests:
+    image: ooa-plane-api:lab
+    environment:
+      LAB_TOTP_KEY_FILE: ""
+      LAB_AUTH_ENABLED: "0"
+      # Preserve upstream fixtures in native-mode regression. Lab auth tests
+      # explicitly enable the lab gate, which rejects these legacy endpoints.
+      ENABLE_SIGNUP: "1"
+      ENABLE_EMAIL_PASSWORD: "1"
+      ENABLE_MAGIC_LINK_LOGIN: "1"
+      DJANGO_SETTINGS_MODULE: plane.settings.test
+      TZ: Asia/Shanghai

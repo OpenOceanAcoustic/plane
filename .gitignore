@@ -117,3 +117,9 @@ packages/i18n/src/types/keys.generated.ts
 
 # Local security notes (not for version control)
 /security/
+/backups/
+/backup-keys/
+/apps/api/lab*test-results.xml
+/apps/api/plane/static-assets/
+/test-results/
+/playwright-report/

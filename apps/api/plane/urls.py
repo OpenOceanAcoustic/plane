@@ -12,10 +12,13 @@ from drf_spectacular.views import (
     SpectacularRedocView,
     SpectacularSwaggerView,
 )
+from plane.lab.urls import auth_patterns, business_patterns
 
 handler404 = "plane.app.views.error_404.custom_404_view"
 
 urlpatterns = [
+    path("auth/lab/", include((auth_patterns, "lab-auth"))),
+    path("api/workspaces/<str:slug>/lab/", include((business_patterns, "lab"))),
     path("api/", include("plane.app.urls")),
     path("api/public/", include("plane.space.urls")),
     path("api/instances/", include("plane.license.urls")),

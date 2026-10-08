@@ -111,6 +111,7 @@ INSTALLED_APPS = [
     "plane.license",
     "plane.api",
     "plane.authentication",
+    "plane.lab",
     # Third-party things
     "rest_framework",
     "corsheaders",
@@ -126,6 +127,7 @@ MIDDLEWARE = [
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware",
+    "plane.lab.middleware.LabAccessMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
     "crum.CurrentRequestUserMiddleware",
     "django.middleware.gzip.GZipMiddleware",
@@ -155,6 +157,13 @@ API_KEY_RATE_LIMIT = os.environ.get("API_KEY_RATE_LIMIT", "60/minute")
 
 # Django Auth Backend
 AUTHENTICATION_BACKENDS = ("django.contrib.auth.backends.ModelBackend",)  # default
+
+# Independent encryption key; never reuse SECRET_KEY for Authenticator credentials.
+LAB_AUTH_ENABLED = os.environ.get("LAB_AUTH_ENABLED", "1") == "1"
+LAB_TOTP_KEY = os.environ.get("LAB_TOTP_KEY", "")
+if not LAB_TOTP_KEY and os.environ.get("LAB_TOTP_KEY_FILE"):
+    with open(os.environ["LAB_TOTP_KEY_FILE"], encoding="utf-8") as lab_key_file:
+        LAB_TOTP_KEY = lab_key_file.read().strip()
 
 # Root Urls
 ROOT_URLCONF = "plane.urls"

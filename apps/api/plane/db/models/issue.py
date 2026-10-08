@@ -183,6 +183,15 @@ class Issue(ChangeTrackerMixin, ProjectBaseModel):
 
         if self._state.adding:
             with transaction.atomic():
+                # Lab statement triggers serialize WIP before tuple locks. Take
+                # that lock before the native project sequence lock as well.
+                # The function is absent while upstream migrations are running.
+                with connection.cursor() as cursor:
+                    cursor.execute("""DO $$ BEGIN
+                        IF to_regprocedure('lab_wip_lock(uuid)') IS NOT NULL THEN
+                            PERFORM lab_wip_lock(NULL);
+                        END IF;
+                    END $$;""")
                 # Create a lock for this specific project using a transaction-level advisory lock
                 # This ensures only one transaction per project can execute this code at a time
                 # The lock is automatically released when the transaction ends
