@@ -214,6 +214,7 @@ async function chooseDay(page: Page) {
     .getByRole("button", { name: "日", exact: true })
     .click();
   await page.getByLabel("跳转日期", { exact: true }).fill("2026-10-08");
+  await page.getByRole("button", { name: "放大时间轴", exact: true }).click();
 }
 
 async function createFolder(page: Page, name: string) {
@@ -542,7 +543,7 @@ test("team timeline native moves resizing and splitting preserve owner and item 
   await expect.poll(() => Date.parse(ownEvents[0]!.end) - Date.parse(ownEvents[0]!.start)).toBeGreaterThan(duration);
   expect(Date.parse(ownEvents[0]!.start)).toBe(beforeResize);
   expect(Date.parse(ownEvents[0]!.end) % 900000).toBe(0);
-  await block.click();
+  await block.getByRole("button", { name: "调整 阵列实验 的排期", exact: true }).click();
   const dialog = page.getByRole("dialog");
   await dialog.getByRole("button", { name: "拆分时间块", exact: true }).click();
   const split = new Date(Date.parse(ownEvents[0]!.start) + 3600000);
@@ -570,6 +571,7 @@ test("monthly native selection moves and resizing retain quarter-hour precision"
     .getByRole("navigation", { name: "时间轴范围", exact: true })
     .getByRole("button", { name: "月", exact: true })
     .click();
+  await pane.getByRole("button", { name: "放大时间轴", exact: true }).click();
   const day = pane.locator('[data-date^="2026-10-08"]').first();
   await day.scrollIntoViewIfNeeded();
   const column = await day.boundingBox();
@@ -642,7 +644,6 @@ test("more than seven user-created folders retain distinct colors after reloadin
   const { planner } = await fixture(page, "workbench");
   const pane = page.getByRole("region", { name: "个人周历区域", exact: true });
   await pane.getByRole("button", { name: "事项时间轴", exact: true }).click();
-  await pane.getByRole("spinbutton", { name: "日历高度", exact: true }).fill("1200");
   for (const name of ["E", "F", "G", "H", "I", "J", "K", "L"]) {
     // oxlint-disable-next-line no-await-in-loop -- Each creation opens and submits the same real dialog.
     await createFolder(page, name);

@@ -21,14 +21,16 @@ import zhCN from "@fullcalendar/react/locales/zh-cn";
 import resourceTimelinePlugin from "@fullcalendar/react-scheduler/resource-timeline";
 import resourceTimeGridPlugin from "@fullcalendar/react-scheduler/resource-timegrid";
 import type { ResourceInput } from "@fullcalendar/react-scheduler";
-import { CalendarDays, ChevronLeft, ChevronRight, Download, Folder, Plus } from "lucide-react";
+import { CalendarDays, ChevronLeft, ChevronRight, Clock3, Download, Folder, Plus, ZoomIn, ZoomOut } from "lucide-react";
 import { Button, LabColorPicker, LabDialog, LabField, LabSelect, labInputClass } from "@plane/ui";
 import type { LabEvent, LabItem, LabMember } from "@plane/types";
 import type { LabStore } from "@plane/shared-state";
 import { calendarInstant, localInput, SLOT_MS, weekDays } from "./calendar-time";
-import { CalendarHeightControl, CalendarResizeHandle, useCalendarHeight } from "./calendar-size";
+import { useCalendarViewportHeight } from "./calendar-size";
 import { calendarFolderColors, useCalendarFolders } from "./calendar-folders";
 import { calendarColor, calendarContrast, calendarLegend } from "./calendar-colors";
+import { LabItemDetails } from "./item-details";
+import type { LabOpenProjectIssue } from "./item-details";
 // oxlint-disable-next-line import/no-unassigned-import -- bundled FullCalendar layout styles
 import "@fullcalendar/react/skeleton.css";
 // oxlint-disable-next-line import/no-unassigned-import -- local theme, no CDN
@@ -95,12 +97,14 @@ export const LabCalendar = observer(function LabCalendar({
   scheduled,
   clearScheduled,
   onCalendarChanged,
+  openProjectIssue,
 }: {
   store: LabStore;
   team?: boolean;
   scheduled?: LabItem;
   clearScheduled: () => void;
   onCalendarChanged?: () => Promise<void>;
+  openProjectIssue?: LabOpenProjectIssue;
 }) {
   const calendar = useRef<CalendarRef>(null);
   const days = weekDays(0);
@@ -112,6 +116,8 @@ export const LabCalendar = observer(function LabCalendar({
   const [view, setView] = useState(team ? "resourceTimelineWeek" : "timeGridWeek");
   const [timelineView, setTimelineView] = useState("resourceTimelineWeek");
   const [calendarView, setCalendarView] = useState("timeGridWeek");
+  const [zoom, setZoom] = useState(0);
+  const [viewing, setViewing] = useState<{ item: LabItem; block?: LabEvent }>();
   const timeline = view.startsWith("resourceTimeline");
   const [userId, setUserId] = useState("all"),
     [projectId, setProjectId] = useState("all");
@@ -125,9 +131,7 @@ export const LabCalendar = observer(function LabCalendar({
     [confirmDelete, setConfirmDelete] = useState(false);
   const editingEvent = editing && editing !== "new" ? editing : undefined;
   const planner = store.planner;
-  const { height, setHeight } = useCalendarHeight(
-    `lab-calendar-height:${store.slug}:${planner?.user_id ?? ""}:${team ? "team" : "personal"}`
-  );
+  const { surfaceRef, height } = useCalendarViewportHeight(`${store.slug}:${team}:${view}`);
   const folders = useMemo(() => {
     const sorted = [...(planner?.folders ?? [])];
     // oxlint-disable-next-line unicorn/no-array-sort -- ES2022 lacks toSorted; only this local copy is mutated
@@ -177,6 +181,19 @@ export const LabCalendar = observer(function LabCalendar({
     setSplit(false);
     setConfirmDelete(false);
     clearScheduled();
+  };
+  const adjust = (block: LabEvent) => {
+    if (!block.editable) return;
+    setViewing(undefined);
+    store.error = "";
+    setEditing(block);
+    setSplit(false);
+    setConfirmDelete(false);
+  };
+  const showItem = (item: LabItem, block?: LabEvent) => {
+    if (item.issue_id && item.project_id && openProjectIssue)
+      openProjectIssue({ issue_id: item.issue_id, project_id: item.project_id, archived: item.archived });
+    else setViewing({ item, block });
   };
   const datesSet = useCallback((info: DatesSetInfo) => {
     const start = info.start.toISOString(),
@@ -253,14 +270,14 @@ export const LabCalendar = observer(function LabCalendar({
         end: event.end,
         resourceId: team ? event.user_id : itemFolders.has(event.item_id ?? "") ? `item:${event.item_id}` : "busy",
         editable: event.editable && !store.busy,
-        interactive: event.editable,
+        interactive: Boolean(event.issue_id || planner?.items.some((item) => item.id === event.item_id)),
         resourceEditable: false,
         extendedProps: { block: event },
         className: event.kind ? "" : "lab-busy-event",
         color: calendarColor(event),
         contrastColor: calendarContrast(calendarColor(event)),
       })),
-    [visibleEvents, store.busy, team, itemFolders]
+    [visibleEvents, store.busy, team, itemFolders, planner]
   );
   const legend = calendarLegend(visibleEvents);
   const resources = useMemo<ResourceInput[]>(() => {
@@ -399,6 +416,37 @@ export const LabCalendar = observer(function LabCalendar({
               {option.label}
             </Button>
           ))}
+          <div className="ml-auto flex items-center gap-1" role="group" aria-label="时间轴缩放">
+            <Button
+              size="sm"
+              variant="neutral-primary"
+              aria-label="缩小时间轴"
+              disabled={zoom === 0}
+              onClick={() => setZoom((value) => Math.max(0, value - 1))}
+            >
+              <ZoomOut size={15} />
+            </Button>
+            <Button
+              size="sm"
+              variant={zoom === 0 ? "primary" : "neutral-primary"}
+              aria-pressed={zoom === 0}
+              onClick={() => {
+                setZoom(0);
+                calendar.current?.getApi().scrollToTime("00:00:00");
+              }}
+            >
+              总览
+            </Button>
+            <Button
+              size="sm"
+              variant="neutral-primary"
+              aria-label="放大时间轴"
+              disabled={zoom === 3}
+              onClick={() => setZoom((value) => Math.min(3, value + 1))}
+            >
+              <ZoomIn size={15} />
+            </Button>
+          </div>
           {!team && (
             <Button
               size="sm"
@@ -440,12 +488,10 @@ export const LabCalendar = observer(function LabCalendar({
           ]}
           onValueChange={setProjectId}
         />
-        <p className="mr-auto text-12 text-tertiary">
-          上海时间 · 十五分钟步长{team ? " · 私人内容仅显示忙碌" : " · 排期与项目日期独立"}
-        </p>
         <Button
           size="sm"
           variant="neutral-primary"
+          className="ml-auto"
           prependIcon={<Download size={13} />}
           disabled={store.busy}
           onClick={() => exportEvents(visibleEvents, store.members, "csv")}
@@ -461,7 +507,10 @@ export const LabCalendar = observer(function LabCalendar({
           JSON
         </Button>
       </div>
-      <div className="lab-calendar min-w-0 overflow-hidden rounded-xl border border-subtle bg-surface-1">
+      <div
+        ref={surfaceRef}
+        className="lab-calendar min-w-0 overflow-hidden rounded-xl border border-subtle bg-surface-1"
+      >
         <FullCalendar
           ref={calendar}
           plugins={plugins}
@@ -479,35 +528,50 @@ export const LabCalendar = observer(function LabCalendar({
           resourceOrder={team ? "title" : "order,title"}
           resourcesInitiallyExpanded
           filterResourcesWithEvents={false}
-          resourceCellContent={(info) =>
-            info.resource && (
-              <span className="flex min-w-0 items-center gap-2" title={info.resource.title}>
+          resourceCellContent={(info) => {
+            const resource = info.resource;
+            if (!resource) return null;
+            const item = !team ? planner?.items.find((row) => row.id === resource.extendedProps.itemId) : undefined;
+            return (
+              <span className="flex min-w-0 items-center gap-2" title={resource.title}>
                 {!team && (
                   <span
                     aria-hidden
                     className="lab-folder-marker"
-                    style={{ backgroundColor: calendarFolderColors(String(info.resource.extendedProps.color)).marker }}
+                    style={{ backgroundColor: calendarFolderColors(String(resource.extendedProps.color)).marker }}
                   />
                 )}
-                <span
-                  className={`min-w-0 truncate ${info.resource.extendedProps.folder ? "rounded px-2 py-1 font-medium" : ""}`}
-                  style={
-                    info.resource.extendedProps.folder
-                      ? {
-                          backgroundColor: calendarFolderColors(String(info.resource.extendedProps.color)).background,
-                          color: calendarFolderColors(String(info.resource.extendedProps.color)).foreground,
-                        }
-                      : undefined
-                  }
-                >
-                  {info.resource.title}
-                  {!team && info.resource.extendedProps.issueKey && (
-                    <span className="ml-2 text-11 text-tertiary">{String(info.resource.extendedProps.issueKey)}</span>
-                  )}
-                </span>
+                {item ? (
+                  <button
+                    type="button"
+                    className="min-w-0 truncate text-left hover:text-accent-primary"
+                    aria-label={`查看事项 ${item.title}`}
+                    onClick={() => showItem(item)}
+                  >
+                    {item.title}
+                    {item.issue_key && <span className="ml-2 text-11 text-tertiary">{item.issue_key}</span>}
+                  </button>
+                ) : (
+                  <span
+                    className={`min-w-0 truncate ${resource.extendedProps.folder ? "rounded px-2 py-1 font-medium" : ""}`}
+                    style={
+                      resource.extendedProps.folder
+                        ? {
+                            backgroundColor: calendarFolderColors(String(resource.extendedProps.color)).background,
+                            color: calendarFolderColors(String(resource.extendedProps.color)).foreground,
+                          }
+                        : undefined
+                    }
+                  >
+                    {resource.title}
+                    {!team && resource.extendedProps.issueKey && (
+                      <span className="ml-2 text-11 text-tertiary">{String(resource.extendedProps.issueKey)}</span>
+                    )}
+                  </span>
+                )}
               </span>
-            )
-          }
+            );
+          }}
           resourceLaneDidMount={(info) => {
             info.el.dataset.labResource = info.resource.id;
             if (!team && info.resource.extendedProps.itemId) {
@@ -529,15 +593,26 @@ export const LabCalendar = observer(function LabCalendar({
                 ? "24:00:00"
                 : view === "resourceTimelineWeek"
                   ? "06:00:00"
-                  : "01:00:00"
+                  : zoom === 0
+                    ? "02:00:00"
+                    : "01:00:00"
               : "00:15:00"
           }
           snapDuration="00:15:00"
-          slotHeaderInterval={timeline && view !== "resourceTimelineDay" ? "24:00:00" : "01:00:00"}
-          slotHeaderFormat={view === "resourceTimelineMonth" ? { day: "numeric", weekday: "short" } : undefined}
-          slotMinWidth={60}
+          slotHeaderInterval={
+            timeline && view !== "resourceTimelineDay" ? "24:00:00" : timeline && zoom === 0 ? "06:00:00" : "01:00:00"
+          }
+          slotHeaderFormat={
+            view === "resourceTimelineMonth"
+              ? zoom === 0
+                ? { day: "numeric" }
+                : { day: "numeric", weekday: "short" }
+              : undefined
+          }
+          slotMinWidth={timeline && zoom === 0 ? 1 : 60 * Math.max(1, 2 ** (zoom - 1))}
           eventMinWidth={24}
-          scrollTime="08:00:00"
+          scrollTime={timeline && zoom === 0 ? "00:00:00" : "08:00:00"}
+          footerScrollbarSticky={timeline}
           allDaySlot={false}
           nowIndicator
           datesSet={datesSet}
@@ -549,11 +624,11 @@ export const LabCalendar = observer(function LabCalendar({
           eventResize={change}
           eventClick={(info) => {
             const block = info.event.extendedProps.block as LabEvent;
-            if (block?.editable) {
-              store.error = "";
-              setEditing(block);
-              setSplit(false);
-            }
+            if (!block?.item_id) return;
+            const item = planner?.items.find((row) => row.id === block.item_id);
+            if (item) showItem(item, block);
+            else if (block.issue_id && block.project_id && openProjectIssue)
+              openProjectIssue({ issue_id: block.issue_id, project_id: block.project_id });
           }}
           eventContent={(info) => {
             // FullCalendar's selection mirror is a temporary event without a
@@ -563,21 +638,33 @@ export const LabCalendar = observer(function LabCalendar({
             const start = block?.start ?? info.event.start?.toISOString();
             const end = block?.end ?? info.event.end?.toISOString();
             return (
-              <div className="h-full w-full overflow-hidden px-1 text-left" title={label}>
+              <div className="group/lab-event relative h-full w-full overflow-hidden px-1 text-left" title={label}>
                 <strong className="block truncate font-medium">{label}</strong>
                 {start && end && (
                   <span className="text-11 opacity-80">
                     {clock(start)}–{clock(end)}
                   </span>
                 )}
+                {block?.editable && !info.isMirror && (
+                  <button
+                    type="button"
+                    aria-label={`调整 ${label} 的排期`}
+                    title="调整排期"
+                    className="absolute top-0 right-0 rounded bg-surface-1 p-0.5 text-primary opacity-0 group-hover/lab-event:opacity-100 hover:bg-layer-1 focus-visible:opacity-100"
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      adjust(block);
+                    }}
+                  >
+                    <Clock3 size={13} />
+                  </button>
+                )}
               </div>
             );
           }}
         />
-        <CalendarResizeHandle height={height} setHeight={setHeight} />
       </div>
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <CalendarHeightControl height={height} setHeight={setHeight} />
         {legend.length > 0 && (
           <ul aria-label="排期类别颜色" className="flex flex-wrap items-center gap-3 text-12 text-secondary">
             {legend.map((entry) => (
@@ -593,6 +680,19 @@ export const LabCalendar = observer(function LabCalendar({
           </ul>
         )}
       </div>
+      {viewing && (
+        <LabItemDetails
+          item={viewing.item}
+          block={viewing.block}
+          folderName={folders.find((folder) => folder.id === viewing.item.folder_id)?.name}
+          onClose={() => setViewing(undefined)}
+          onSchedule={() => {
+            setViewing(undefined);
+            openNew(undefined, undefined, viewing.item.id);
+          }}
+          onAdjust={viewing.block?.editable ? () => adjust(viewing.block!) : undefined}
+        />
+      )}
       {choosingFolders && (
         <LabDialog
           title="选择显示的文件夹"

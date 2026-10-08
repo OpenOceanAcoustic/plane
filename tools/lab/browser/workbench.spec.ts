@@ -184,7 +184,7 @@ test("combined layout retains keyboard folder sorting and pointer moves on the o
 });
 
 for (const layout of ["综合", "个人周历"]) {
-  test(`personal calendar is compact, resizable and internally scrollable in ${layout}`, async ({ page }) => {
+  test(`personal calendar fits the viewport and remains internally scrollable in ${layout}`, async ({ page }) => {
     await page.setViewportSize({ width: 1920, height: 900 });
     await fixture(page);
     await page.getByRole("button", { name: layout, exact: true }).click();
@@ -199,11 +199,7 @@ for (const layout of ["综合", "个人周历"]) {
           ).length
       );
     await expect.poll(innerScrollers).toBeGreaterThan(0);
-    expect((await grid.boundingBox())!.height).toBeLessThan(550);
-    const height = page.getByRole("spinbutton", { name: "日历高度", exact: true });
-    await height.fill("400");
-    await height.press("Enter");
-    await expect.poll(async () => Math.round((await grid.boundingBox())!.height)).toBe(420);
+    expect((await grid.boundingBox())!.height).toBeLessThan(page.viewportSize()!.height);
     const bounds = await grid.boundingBox();
     expect(bounds).not.toBeNull();
     const before = await main.evaluate((element) => element.scrollTop);
@@ -216,19 +212,6 @@ for (const layout of ["综合", "个人周历"]) {
     await page.mouse.wheel(0, 300);
     await expect.poll(scrollTop).toBeGreaterThan(innerBefore);
     expect(await main.evaluate((element) => element.scrollTop)).toBe(before);
-    const handle = page.getByRole("separator", { name: "调整日历高度", exact: true });
-    await handle.focus();
-    await page.keyboard.press("ArrowDown");
-    await expect(height).toHaveValue("420");
-    const grip = await handle.boundingBox();
-    await page.mouse.move(grip!.x + grip!.width / 2, grip!.y + grip!.height / 2);
-    await page.mouse.down();
-    await page.mouse.move(grip!.x + grip!.width / 2, grip!.y + grip!.height / 2 + 80, { steps: 8 });
-    await page.mouse.up();
-    await expect(height).toHaveValue("500");
-    await page.reload();
-    await page.getByRole("button", { name: layout, exact: true }).click();
-    await expect(height).toHaveValue("500");
     await grid.evaluate((element) => {
       for (const node of element.querySelectorAll<HTMLElement>("*"))
         if (/auto|scroll/.test(getComputedStyle(node).overflowY)) node.scrollTop = node.scrollHeight;

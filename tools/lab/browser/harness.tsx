@@ -38,7 +38,16 @@ function Workbench({ section = "planner" }: { section?: "planner" | "team" }) {
     <div style={{ height: "calc(100dvh - 48px)" }}>
       <MemoryRouter initialEntries={[`/lab/lab/${section}`]}>
         <Routes>
-          <Route path="/:workspaceSlug/lab/:section" element={<LabPanel />} />
+          <Route
+            path="/:workspaceSlug/lab/:section"
+            element={
+              <LabPanel
+                openProjectIssue={(issue) =>
+                  window.dispatchEvent(new CustomEvent("lab-open-project-issue", { detail: issue }))
+                }
+              />
+            }
+          />
         </Routes>
       </MemoryRouter>
     </div>

@@ -9,10 +9,17 @@ import { Button } from "@plane/ui";
 import { LabCalendar } from "./calendar";
 import { LabPlannerBoard } from "./planner";
 import { LabCategoryManager } from "./categories";
+import type { LabOpenProjectIssue } from "./item-details";
 // oxlint-disable-next-line import/no-unassigned-import -- responsive workbench layout
 import "./planner-workbench.css";
 
-export const LabPlanningWorkbench = observer(function LabPlanningWorkbench({ store }: { store: LabStore }) {
+export const LabPlanningWorkbench = observer(function LabPlanningWorkbench({
+  store,
+  openProjectIssue,
+}: {
+  store: LabStore;
+  openProjectIssue?: LabOpenProjectIssue;
+}) {
   const [mode, setMode] = useState<"combined" | "board" | "calendar">("combined");
   const [scheduled, setScheduled] = useState<LabItem>();
   const planner = store.planner;
@@ -95,6 +102,7 @@ export const LabPlanningWorkbench = observer(function LabPlanningWorkbench({ sto
         <section className="lab-planning-pane" hidden={mode === "calendar"} aria-label="文件夹看板区域">
           <LabPlannerBoard
             store={store}
+            openProjectIssue={openProjectIssue}
             compact={mode === "combined"}
             schedule={(item) => {
               setScheduled(item);
@@ -105,6 +113,7 @@ export const LabPlanningWorkbench = observer(function LabPlanningWorkbench({ sto
         <section className="lab-planning-pane" hidden={mode === "board"} aria-label="个人周历区域">
           <LabCalendar
             store={store}
+            openProjectIssue={openProjectIssue}
             scheduled={scheduled}
             clearScheduled={() => setScheduled(undefined)}
             onCalendarChanged={store.loadPlanner}

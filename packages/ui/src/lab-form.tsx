@@ -97,7 +97,7 @@ export function LabDialog({
   title: string;
   children: ReactNode;
   onClose: () => void;
-  onSubmit: (data: FormData) => Promise<void>;
+  onSubmit?: (data: FormData) => Promise<void>;
   busy: boolean;
   submitLabel?: string;
   description?: string;
@@ -108,6 +108,7 @@ export function LabDialog({
   const [localError, setLocalError] = useState("");
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (!onSubmit) return;
     const data = new FormData(event.currentTarget);
     setLocalError("");
     try {
@@ -147,11 +148,13 @@ export function LabDialog({
             )}
             <div className="mt-2 flex justify-end gap-2 border-t border-subtle pt-4">
               <Button variant="neutral-primary" disabled={busy} onClick={onClose}>
-                取消
+                {onSubmit ? "取消" : "关闭"}
               </Button>
-              <Button type="submit" loading={busy} variant={destructive ? "danger" : "primary"}>
-                {submitLabel}
-              </Button>
+              {onSubmit && (
+                <Button type="submit" loading={busy} variant={destructive ? "danger" : "primary"}>
+                  {submitLabel}
+                </Button>
+              )}
             </div>
           </form>
           <DialogPrimitive.Close

@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: AGPL-3.0-only
  */
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { observer } from "mobx-react";
 import { useParams } from "react-router";
 import { API_BASE_URL } from "@plane/constants";
@@ -14,11 +14,23 @@ import { LabAnalyticsPanel } from "./analytics";
 import { LabMarket } from "./market";
 import { LabPlanningWorkbench } from "./planner-workbench";
 import { LabTaskTable } from "./task-table";
+import type { LabOpenProjectIssue } from "./item-details";
 
-export const LabPanel = observer(function LabPanel() {
+export const LabPanel = observer(function LabPanel({
+  openProjectIssue,
+  projectDetailsOpen = false,
+}: {
+  openProjectIssue?: LabOpenProjectIssue;
+  projectDetailsOpen?: boolean;
+}) {
   const { workspaceSlug = "", section = "planner" } = useParams();
   const store = useMemo(() => new LabStore(API_BASE_URL, workspaceSlug), [workspaceSlug]);
   const [refreshKey, setRefreshKey] = useState(0);
+  const previousDetailsOpen = useRef(projectDetailsOpen);
+  useEffect(() => {
+    if (previousDetailsOpen.current && !projectDetailsOpen) void store.execute(store.loadPlanner);
+    previousDetailsOpen.current = projectDetailsOpen;
+  }, [projectDetailsOpen, store]);
   useEffect(() => {
     void store.execute(store.loadPlanner);
     const refresh = () => {
@@ -75,11 +87,19 @@ export const LabPanel = observer(function LabPanel() {
           </p>
         )}
         {!store.planner && !store.error && <p className="text-13 text-tertiary">正在读取实验室规划…</p>}
-        {store.planner && section === "planner" && <LabPlanningWorkbench store={store} />}
+        {store.planner && section === "planner" && (
+          <LabPlanningWorkbench store={store} openProjectIssue={openProjectIssue} />
+        )}
         {store.planner &&
           section === "team" &&
           (store.planner.team_access ? (
-            <LabCalendar key="team" store={store} team clearScheduled={() => undefined} />
+            <LabCalendar
+              key="team"
+              store={store}
+              team
+              clearScheduled={() => undefined}
+              openProjectIssue={openProjectIssue}
+            />
           ) : (
             <p className="text-13 text-secondary">
               仅工作区管理员和项目负责人可以查看团队排期。请在个人周历维护本人安排。

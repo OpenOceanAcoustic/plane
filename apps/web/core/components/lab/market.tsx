@@ -152,10 +152,6 @@ export const LabMarket = observer(function LabMarket({ store }: { store: LabStor
           查看 VC JSON 与冲正记录
         </a>
       </div>
-      <p className="text-12 text-tertiary">
-        贡献仅按项目记录。成员确认分工后开工，独立验收后授予
-        VC；有效探索负结果可按约定验收。普通/重大验收期限为三个/五个工作日。
-      </p>
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
         {store.bounties
           .filter((row) => !projectFilter || row.project_id === projectFilter)

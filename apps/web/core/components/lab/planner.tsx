@@ -14,6 +14,8 @@ import { TOAST_TYPE, setToast } from "@plane/propel/toast";
 import type { LabFolder, LabItem, LabStatus, LabTask } from "@plane/types";
 import type { LabStore } from "@plane/shared-state";
 import { LabDialog, LabField, LabSelect, labInputClass } from "@plane/ui";
+import { LabItemDetails } from "./item-details";
+import type { LabOpenProjectIssue } from "./item-details";
 // oxlint-disable-next-line import/no-unassigned-import -- responsive board density shared with workbench
 import "./planner-workbench.css";
 import {
@@ -57,11 +59,14 @@ export const LabPlannerBoard = observer(function LabPlannerBoard({
   store,
   schedule,
   compact = false,
+  openProjectIssue,
 }: {
   store: LabStore;
   schedule: (item: LabItem) => void;
   compact?: boolean;
+  openProjectIssue?: LabOpenProjectIssue;
 }) {
+  const [viewing, setViewing] = useState<LabItem>();
   const [selected, setSelected] = useState<string | null | "all">("all");
   const [dialog, setDialog] = useState<
     "folder" | "item" | "reference" | "mapping" | "delete-folder" | "delete-item" | null
@@ -348,11 +353,27 @@ export const LabPlannerBoard = observer(function LabPlannerBoard({
                         <a
                           href={`/${store.slug}/projects/${item.project_id}/issues/${item.issue_id}`}
                           className="hover:text-accent-primary"
+                          onClick={(event) => {
+                            if (openProjectIssue && item.project_id && !event.ctrlKey && !event.metaKey) {
+                              event.preventDefault();
+                              openProjectIssue({
+                                issue_id: item.issue_id!,
+                                project_id: item.project_id,
+                                archived: item.archived,
+                              });
+                            }
+                          }}
                         >
                           {item.title}
                         </a>
                       ) : (
-                        item.title
+                        <button
+                          type="button"
+                          className="text-left hover:text-accent-primary"
+                          onClick={() => setViewing(item)}
+                        >
+                          {item.title}
+                        </button>
                       )}
                     </p>
                     {!item.issue_id && item.description && (
@@ -629,6 +650,17 @@ export const LabPlannerBoard = observer(function LabPlannerBoard({
             </select>
           </LabField>
         </LabDialog>
+      )}
+      {viewing && (
+        <LabItemDetails
+          item={viewing}
+          folderName={planner.folders.find((folder) => folder.id === viewing.folder_id)?.name}
+          onClose={() => setViewing(undefined)}
+          onSchedule={() => {
+            setViewing(undefined);
+            schedule(viewing);
+          }}
+        />
       )}
       {dialog === "mapping" && (
         <LabDialog

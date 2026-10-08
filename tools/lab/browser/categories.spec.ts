@@ -114,7 +114,7 @@ test("members edit their category names and colors, and choose arbitrary schedul
   await dialog.getByRole("button", { name: "保存", exact: true }).click();
   await expect(block).toHaveCSS("--fc-event-color", "#0e7490");
   await expect(page.locator("article")).toContainText("海上实验");
-  await block.click();
+  await block.getByRole("button", { name: "调整 海试计划 的排期", exact: true }).click();
   dialog = page.getByRole("dialog");
   await expect(dialog.getByRole("checkbox", { name: "跟随事项类别", exact: true })).toBeChecked();
   await dialog.getByLabel("自定义排期颜色", { exact: true }).fill("#eeeeee");
@@ -124,7 +124,7 @@ test("members edit their category names and colors, and choose arbitrary schedul
   await expect(block.locator("strong")).toHaveCSS("color", "rgb(17, 24, 39)");
   await page.reload();
   await expect(block).toHaveCSS("--fc-event-color", "#eeeeee");
-  await block.click();
+  await block.getByRole("button", { name: "调整 海试计划 的排期", exact: true }).click();
   dialog = page.getByRole("dialog");
   await dialog.getByRole("checkbox", { name: "跟随事项类别", exact: true }).check();
   await dialog.getByRole("button", { name: "保存", exact: true }).click();
