@@ -84,11 +84,13 @@ export const LabCalendar = observer(function LabCalendar({
   team = false,
   scheduled,
   clearScheduled,
+  onCalendarChanged,
 }: {
   store: LabStore;
   team?: boolean;
   scheduled?: LabItem;
   clearScheduled: () => void;
+  onCalendarChanged?: () => Promise<void>;
 }) {
   const calendar = useRef<CalendarRef>(null);
   const days = weekDays(0);
@@ -107,6 +109,7 @@ export const LabCalendar = observer(function LabCalendar({
   const [split, setSplit] = useState(false),
     [confirmDelete, setConfirmDelete] = useState(false);
   const editingEvent = editing && editing !== "new" ? editing : undefined;
+  const planner = store.planner;
   const reload = useCallback(async () => {
     await store.loadCalendar(range.start, range.end, team, {
       userId: userId === "all" ? undefined : userId,
@@ -116,7 +119,7 @@ export const LabCalendar = observer(function LabCalendar({
   }, [store, range.start, range.end, team, userId, projectId]);
   useEffect(() => {
     void store.execute(reload);
-  }, [reload, store]);
+  }, [reload, store, planner]);
   const openNew = useCallback(
     (start = roundedNow(), end = new Date(start.getTime() + 3600000)) => {
       setInitialStart(start);
@@ -167,22 +170,24 @@ export const LabCalendar = observer(function LabCalendar({
       const start = info.event.start.toISOString(),
         end = info.event.end.toISOString();
       void store.execute(async () => {
+        let saved: { overlap: boolean };
         try {
-          const saved = await store.request<{ overlap: boolean }>(`calendar/${block.id}/`, "PATCH", {
+          saved = await store.request<{ overlap: boolean }>(`calendar/${block.id}/`, "PATCH", {
             expected_revision: block.revision,
             start,
             end,
           });
-          store.notice = saved.overlap ? "已保存；与已有排期重叠，请确认投入安排。" : "排期已保存";
-          await reload();
         } catch (failure) {
           info.revert();
           await reload();
           throw failure;
         }
+        store.notice = saved.overlap ? "已保存；与已有排期重叠，请确认投入安排。" : "排期已保存";
+        await reload();
+        await onCalendarChanged?.();
       });
     },
-    [store, reload]
+    [store, reload, onCalendarChanged]
   );
   const events = useMemo<EventInput[]>(
     () =>
@@ -222,8 +227,9 @@ export const LabCalendar = observer(function LabCalendar({
           throw failure;
         });
       store.notice = result.overlap ? "已保存；与已有排期重叠，请确认投入安排。" : "排期已保存";
-      await reload();
       close();
+      await reload();
+      await onCalendarChanged?.();
     });
   }
   return (
@@ -250,7 +256,9 @@ export const LabCalendar = observer(function LabCalendar({
         >
           <ChevronRight size={15} />
         </Button>
-        <span className="min-w-40 text-center text-13 font-medium">{title}</span>
+      </div>
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="mr-auto text-13 font-medium">{title}</span>
         {(team ? teamViews : personalViews).map((option) => (
           <Button
             key={option.value}
@@ -354,25 +362,27 @@ export const LabCalendar = observer(function LabCalendar({
           eventResize={change}
           eventClick={(info) => {
             const block = info.event.extendedProps.block as LabEvent;
-            if (block.editable) {
+            if (block?.editable) {
               store.error = "";
               setEditing(block);
               setSplit(false);
             }
           }}
           eventContent={(info) => {
-            const block = info.event.extendedProps.block as LabEvent;
-            const content = (
-              <>
-                <strong className="block truncate font-medium">{block.title}</strong>
-                <span className="text-11 opacity-80">
-                  {clock(block.start)}–{clock(block.end)}
-                </span>
-              </>
-            );
+            // FullCalendar's selection mirror is a temporary event without a
+            // persisted block. Use its native dates until a member saves it.
+            const block = info.event.extendedProps.block as LabEvent | undefined;
+            const label = block?.title || info.event.title || "新时间块";
+            const start = block?.start ?? info.event.start?.toISOString();
+            const end = block?.end ?? info.event.end?.toISOString();
             return (
-              <div className="h-full w-full overflow-hidden px-1 text-left" title={block.title}>
-                {content}
+              <div className="h-full w-full overflow-hidden px-1 text-left" title={label}>
+                <strong className="block truncate font-medium">{label}</strong>
+                {start && end && (
+                  <span className="text-11 opacity-80">
+                    {clock(start)}–{clock(end)}
+                  </span>
+                )}
               </div>
             );
           }}
@@ -468,8 +478,9 @@ export const LabCalendar = observer(function LabCalendar({
                   await reload().catch(() => undefined);
                   throw failure;
                 });
-              await reload();
               close();
+              await reload();
+              await onCalendarChanged?.();
             })
           }
         >

@@ -8,11 +8,27 @@ import { DndContext, KeyboardSensor, PointerSensor, useSensor, useSensors } from
 import type { DragEndEvent } from "@dnd-kit/core";
 import { SortableContext, arrayMove, horizontalListSortingStrategy } from "@dnd-kit/sortable";
 import { observer } from "mobx-react";
-import { Folder, Plus, CalendarDays, Trash2, Pencil } from "lucide-react";
+import {
+  Folder,
+  Plus,
+  CalendarDays,
+  Trash2,
+  Pencil,
+  LockKeyhole,
+  Globe2,
+  Flag,
+  Clock3,
+  BookOpen,
+  FlaskConical,
+  GraduationCap,
+  Layers3,
+} from "lucide-react";
 import { Button } from "@plane/ui";
 import type { LabFolder, LabItem, LabStatus, LabTask } from "@plane/types";
 import type { LabStore } from "@plane/shared-state";
-import { LabDialog, LabField, labInputClass } from "@plane/ui";
+import { LabDialog, LabField, LabSelect, labInputClass } from "@plane/ui";
+// oxlint-disable-next-line import/no-unassigned-import -- responsive board density shared with workbench
+import "./planner-workbench.css";
 import {
   DraggablePlanningCard,
   SortableFolder,
@@ -28,13 +44,37 @@ const statuses: { key: LabStatus; title: string }[] = [
   { key: "review", title: "待验收" },
   { key: "done", title: "完成" },
 ];
+const priorityNames: Record<string, string> = {
+  urgent: "紧急优先级",
+  high: "高优先级",
+  medium: "中优先级",
+  low: "低优先级",
+};
+const kindNames: Record<string, string> = { research: "科研", study: "学习", mentoring: "带教", project: "项目任务" };
+function shortDate(value: string) {
+  return new Intl.DateTimeFormat("zh-CN", { timeZone: "Asia/Shanghai", month: "long", day: "numeric" }).format(
+    new Date(`${value}T12:00:00+08:00`)
+  );
+}
+function scheduleTime(value: string) {
+  return new Intl.DateTimeFormat("zh-CN", {
+    timeZone: "Asia/Shanghai",
+    month: "numeric",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).format(new Date(value));
+}
 
 export const LabPlannerBoard = observer(function LabPlannerBoard({
   store,
   schedule,
+  compact = false,
 }: {
   store: LabStore;
   schedule: (item: LabItem) => void;
+  compact?: boolean;
 }) {
   const [selected, setSelected] = useState<string | null | "all">("all");
   const [dialog, setDialog] = useState<
@@ -43,6 +83,10 @@ export const LabPlannerBoard = observer(function LabPlannerBoard({
   const [editing, setEditing] = useState<LabItem>();
   const [editingFolder, setEditingFolder] = useState<LabFolder>();
   const [query, setQuery] = useState("");
+  const [search, setSearch] = useState("");
+  const [projectFilter, setProjectFilter] = useState("all");
+  const [statusFilter, setStatusFilter] = useState("all");
+  const [onlyPending, setOnlyPending] = useState(false);
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
     useSensor(KeyboardSensor, { coordinateGetter: plannerKeyboardCoordinates })
@@ -70,7 +114,19 @@ export const LabPlannerBoard = observer(function LabPlannerBoard({
   const [projectId, setProjectId] = useState("");
   const planner = store.planner;
   if (!planner) return null;
-  const items = planner.items.filter((item) => selected === "all" || item.folder_id === selected);
+  const matched = planner.items.filter((item) => {
+    const project = item.project_name ?? planner.projects.find((row) => row.id === item.project_id)?.name ?? "";
+    const text =
+      `${item.title} ${item.description ?? ""} ${item.issue_key ?? ""} ${project} ${kindNames[item.kind] ?? ""}`.toLocaleLowerCase();
+    return (
+      (!search.trim() || text.includes(search.trim().toLocaleLowerCase())) &&
+      (projectFilter === "all" ||
+        (projectFilter === "personal" ? !item.issue_id : item.project_id === projectFilter)) &&
+      (statusFilter === "all" || item.status === statusFilter) &&
+      (!onlyPending || (item.status !== "done" && item.schedule?.future_count === 0))
+    );
+  });
+  const items = matched.filter((item) => selected === "all" || item.folder_id === selected);
   const mutation = (path: string, method: string, body?: unknown) =>
     store.execute(async () => {
       await store.request(path, method, body);
@@ -103,7 +159,7 @@ export const LabPlannerBoard = observer(function LabPlannerBoard({
     }
   }
   return (
-    <div className="flex flex-col gap-5">
+    <div className="lab-planner-board flex min-w-0 flex-col gap-4" data-compact={compact}>
       <div className="flex flex-wrap items-center gap-2">
         <Button
           variant="neutral-primary"
@@ -145,6 +201,44 @@ export const LabPlannerBoard = observer(function LabPlannerBoard({
           </Button>
         )}
       </div>
+      <div className="rounded-lg border border-subtle bg-layer-1 p-3">
+        <div className="lab-planner-filter-grid">
+          <input
+            type="search"
+            aria-label="搜索规划事项"
+            placeholder="搜索事项、编号或说明"
+            value={search}
+            className={labInputClass}
+            onChange={(event) => setSearch(event.target.value)}
+          />
+          <LabSelect
+            label="筛选规划项目"
+            value={projectFilter}
+            onValueChange={setProjectFilter}
+            options={[
+              { value: "all", label: "全部项目与个人事项" },
+              { value: "personal", label: "个人事项" },
+              ...planner.projects.map((project) => ({ value: project.id, label: project.name })),
+            ]}
+          />
+          <LabSelect
+            label="筛选规划状态"
+            value={statusFilter}
+            onValueChange={setStatusFilter}
+            options={[
+              { value: "all", label: "全部状态" },
+              ...statuses.map((status) => ({ value: status.key, label: status.title })),
+            ]}
+          />
+        </div>
+        <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-12 text-secondary">
+          <label className="flex cursor-pointer items-center gap-2">
+            <input type="checkbox" checked={onlyPending} onChange={(event) => setOnlyPending(event.target.checked)} />
+            只看待排事项
+          </label>
+          <span>{items.length} 项事项</span>
+        </div>
+      </div>
       <DndContext
         sensors={sensors}
         collisionDetection={plannerCollisionDetection}
@@ -167,7 +261,7 @@ export const LabPlannerBoard = observer(function LabPlannerBoard({
             className={`flex items-center gap-2 rounded-t-xl border border-b-0 px-4 py-3 text-13 ${selected === "all" ? "border-accent-strong text-accent-primary" : "border-subtle text-secondary"}`}
           >
             <Folder size={14} />
-            全部<span className="text-11 text-tertiary">{planner.items.length}</span>
+            全部<span className="text-11 text-tertiary">{matched.length}</span>
           </button>
           <SortableContext
             items={planner.folders.map((folder) => `folder:${folder.id}`)}
@@ -179,7 +273,7 @@ export const LabPlannerBoard = observer(function LabPlannerBoard({
                 folder={folder}
                 index={index}
                 selected={selected === folder.id}
-                count={planner.items.filter((item) => item.folder_id === folder.id).length}
+                count={matched.filter((item) => item.folder_id === folder.id).length}
                 onSelect={() => setSelected(folder.id)}
               >
                 <details className="relative text-12">
@@ -219,11 +313,11 @@ export const LabPlannerBoard = observer(function LabPlannerBoard({
           </SortableContext>
           <UnclassifiedFolder
             selected={selected === null}
-            count={planner.items.filter((item) => !item.folder_id).length}
+            count={matched.filter((item) => !item.folder_id).length}
             onSelect={() => setSelected(null)}
           />
         </div>
-        <div className="mt-5 grid min-w-[760px] grid-cols-4 gap-4">
+        <div className="lab-planner-state-grid">
           {statuses.map((status) => (
             <StatusColumn
               key={status.key}
@@ -235,7 +329,29 @@ export const LabPlannerBoard = observer(function LabPlannerBoard({
                 .filter((item) => item.status === status.key)
                 .map((item) => (
                   <DraggablePlanningCard key={item.id} item={item}>
-                    <p className="mb-2 pr-6 text-14 font-medium">
+                    <div className="lab-planner-card-meta mb-2 pr-5 text-tertiary">
+                      {item.issue_id ? (
+                        <span className="flex items-center gap-1">
+                          <Layers3 size={11} />
+                          {item.project_name ??
+                            planner.projects.find((row) => row.id === item.project_id)?.name ??
+                            "项目任务"}
+                        </span>
+                      ) : (
+                        <span className="flex items-center gap-1">
+                          {item.kind === "study" ? (
+                            <BookOpen size={11} />
+                          ) : item.kind === "mentoring" ? (
+                            <GraduationCap size={11} />
+                          ) : (
+                            <FlaskConical size={11} />
+                          )}
+                          {kindNames[item.kind] ?? "个人事项"}
+                        </span>
+                      )}
+                      {item.issue_key && <span>{item.issue_key}</span>}
+                    </div>
+                    <p className="lab-planner-card-title mb-2 line-clamp-2 pr-6 text-14 font-medium">
                       {item.issue_id ? (
                         <a
                           href={`/${store.slug}/projects/${item.project_id}/issues/${item.issue_id}`}
@@ -247,11 +363,55 @@ export const LabPlannerBoard = observer(function LabPlannerBoard({
                         item.title
                       )}
                     </p>
-                    <p className="mb-3 text-12 text-tertiary">
-                      {item.issue_id ? "项目任务" : item.public ? "公开事项" : "私人事项"}
-                      {item.archived ? " · 已归档" : ""}
-                    </p>
-                    <div className="flex flex-wrap items-center gap-1">
+                    {!item.issue_id && item.description && (
+                      <p className="mb-3 line-clamp-2 text-12 text-secondary">{item.description}</p>
+                    )}
+                    <div className="lab-planner-card-meta mb-3">
+                      {!item.issue_id && (
+                        <span
+                          className="lab-planner-pill"
+                          title={item.public ? "团队可查看事项内容" : "团队只看到忙碌时间"}
+                        >
+                          {item.public ? <Globe2 size={11} /> : <LockKeyhole size={11} />}
+                          {item.public ? "公开事项" : "私人事项"}
+                        </span>
+                      )}
+                      {item.priority && priorityNames[item.priority] && (
+                        <span className="lab-planner-pill">
+                          <Flag size={11} />
+                          {priorityNames[item.priority]}
+                        </span>
+                      )}
+                      {item.target_date && (
+                        <span className="lab-planner-pill">
+                          <CalendarDays size={11} />
+                          截止 {shortDate(item.target_date)}
+                        </span>
+                      )}
+                      {item.archived && <span className="lab-planner-pill">已归档</span>}
+                    </div>
+                    {item.schedule && (
+                      <div className="lab-planner-schedule mb-3 space-y-1">
+                        <p className="flex items-center gap-1">
+                          <Clock3 size={11} />
+                          本周计划{" "}
+                          {new Intl.NumberFormat("zh-CN", { maximumFractionDigits: 2 }).format(
+                            item.schedule.week_minutes / 60
+                          )}{" "}
+                          小时
+                        </p>
+                        {item.schedule.next_start && item.schedule.next_end ? (
+                          <p>
+                            最近安排{" "}
+                            <time dateTime={item.schedule.next_start}>{scheduleTime(item.schedule.next_start)}</time> —{" "}
+                            <time dateTime={item.schedule.next_end}>{scheduleTime(item.schedule.next_end)}</time>
+                          </p>
+                        ) : item.status !== "done" ? (
+                          <p className="text-accent-primary">暂无后续安排</p>
+                        ) : null}
+                      </div>
+                    )}
+                    <div className="flex flex-wrap items-center gap-1 border-t border-subtle pt-2">
                       <select
                         aria-label={`${item.title}状态`}
                         className="rounded border border-subtle bg-surface-1 p-1 text-12"
@@ -269,10 +429,11 @@ export const LabPlannerBoard = observer(function LabPlannerBoard({
                       </select>
                       <button
                         aria-label={`安排${item.title}`}
-                        className="rounded p-1.5 hover:bg-layer-1"
+                        className="ml-auto flex items-center gap-1 rounded bg-accent-primary/5 px-2 py-1.5 text-12 text-accent-primary hover:bg-layer-1"
                         onClick={() => schedule(item)}
                       >
-                        <CalendarDays size={14} />
+                        <CalendarDays size={13} />
+                        安排时间
                       </button>
                       <button
                         aria-label={`编辑${item.title}`}

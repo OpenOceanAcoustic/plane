@@ -103,6 +103,7 @@ docker compose -f docker-compose-test.yml -f compose.lab-test.yml run --rm api-t
 
 ```bash
 node tools/lab/test-calendar.mjs
+node tools/lab/test-planning-store.mjs
 pnpm --filter live test tests/extensions/lab-session-guard.test.ts
 pnpm exec playwright install chromium
 pnpm exec playwright test --config tools/lab/browser/playwright.config.ts
@@ -136,3 +137,5 @@ python3 tools/lab/backup.py restore-verify /ABSOLUTE/BACKUP_DIRECTORY /SEPARATE/
 每次备份使用新目录。恢复验证生成独立临时 Compose 项目，检查数据库记录数、附件逐文件校验和凭据解密，之后只删除本次临时卷，绝不覆盖运行数据。建议每月备份、每季度恢复演练，将认证密钥另存到受控离线位置。真正灾难恢复时，在停机和确认目标卷后恢复 dump、附件、配置及匹配密钥，并删除恢复的旧会话；不要直接覆盖运行中的实例。当前 HTTP 内网地址用于部署验证；团队正式使用时配置 HTTPS，并将访问来源、cookie、各 base URL 同步改为正式域名。
 
 贡献更正只追加冲正记录，不自动占用成员 WIP。需要复验时，负责人在任务卡点击“更正后重新验收”，填写原因；该动作检查 WIP，验收继续按累计差额入账，重大任务仍须第二人复核。
+
+个人规划的并排工作台、增强卡片、筛选和团队共享说明见 [个人规划使用说明](personal-planning-guide.md)。

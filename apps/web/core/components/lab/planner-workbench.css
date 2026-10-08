@@ -1,0 +1,120 @@
+/* Plane theme variables provide colors; these rules only control workbench density. */
+.lab-planning-workbench {
+  container: lab-planning / inline-size;
+}
+.lab-planning-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 24px;
+  align-items: start;
+}
+.lab-planning-pane {
+  min-width: 0;
+}
+.lab-planning-pane[hidden] {
+  display: none;
+}
+@container lab-planning (min-width: 1120px) {
+  .lab-planning-layout[data-layout="combined"] {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+}
+.lab-planning-summary {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  padding: 16px 20px;
+  gap: 20px;
+}
+.lab-planning-summary > div {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--text-color-secondary);
+}
+.lab-planning-summary strong {
+  margin-left: auto;
+  font-size: 22px;
+  font-weight: 600;
+  color: var(--text-color-primary);
+}
+.lab-planner-board {
+  container: lab-board / inline-size;
+  min-width: 0;
+}
+.lab-planner-state-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+.lab-planner-filter-grid {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.lab-planner-filter-grid > input {
+  flex: 1 1 180px;
+  min-width: 0;
+}
+.lab-planner-filter-grid > button {
+  flex: 1 1 130px;
+  min-width: 0;
+}
+.lab-planner-state-grid > section {
+  min-width: 0;
+}
+.lab-planner-card {
+  min-width: 0;
+}
+.lab-planner-card-title {
+  overflow-wrap: anywhere;
+}
+.lab-planner-card-meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  font-size: 11px;
+}
+.lab-planner-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border-radius: 4px;
+  padding: 2px 6px;
+  background: var(--background-color-layer-1);
+  color: var(--text-color-secondary);
+}
+.lab-planner-schedule {
+  border-top: 1px solid var(--border-color-subtle);
+  padding-top: 8px;
+  font-size: 11px;
+  color: var(--text-color-secondary);
+}
+@container lab-board (min-width: 840px) {
+  .lab-planner-board[data-compact="false"] .lab-planner-state-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+@container lab-board (max-width: 410px) {
+  .lab-planner-state-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+@container lab-planning (max-width: 480px) {
+  .lab-planning-summary {
+    gap: 12px;
+    padding: 12px;
+  }
+  .lab-planning-summary > div {
+    flex-direction: column;
+    gap: 4px;
+    align-items: flex-start;
+  }
+  .lab-planning-summary strong {
+    margin-left: 0;
+    font-size: 20px;
+  }
+}

@@ -32,6 +32,7 @@ from .planning import (
     configure_flow,
     default_folders,
     item_data,
+    item_schedules,
     overlaps,
     own_item,
     set_status,
@@ -67,30 +68,46 @@ class PlannerView(LabView):
     def get(self, request, slug):
         allowed = set(project_ids(request.user, self.workspace))
         folders = default_folders(request.user, self.workspace)
-        items = [
-            item_data(row, request.user, allowed)
-            for row in PersonalItem.objects.filter(user=request.user, workspace=self.workspace).select_related(
+        rows = list(
+            PersonalItem.objects.filter(user=request.user, workspace=self.workspace).select_related(
                 "issue__project", "issue__state"
             )
+        )
+        readable_issue_ids = set(
+            readable_issues(request.user, self.workspace)
+            .filter(id__in=[row.issue_id for row in rows if row.issue_id], is_draft=False, deleted_at__isnull=True)
+            .values_list("id", flat=True)
+        )
+        flows = {flow.project_id: flow for flow in ProjectFlow.objects.filter(project_id__in=allowed)}
+        items = [
+            item_data(row, request.user, allowed, readable_issue_ids=readable_issue_ids, flows=flows) for row in rows
         ]
+        items = [item for item in items if item]
+        schedules = item_schedules([item["id"] for item in items])
+        for item in items:
+            item["schedule"] = schedules[item["id"]]
+        members = {}
+        for member in ProjectMember.objects.filter(
+            project_id__in=allowed, is_active=True, role__gte=15, member__is_active=True
+        ).select_related("member"):
+            members.setdefault(member.project_id, []).append(
+                {"id": str(member.member_id), "name": member.member.display_name}
+            )
+        states = {}
+        for state in State.objects.filter(project_id__in=allowed):
+            states.setdefault(state.project_id, []).append(
+                {"id": str(state.id), "name": state.name, "group": state.group}
+            )
         projects = []
         for project in Project.objects.filter(id__in=allowed):
-            flow = ProjectFlow.objects.filter(project=project).first()
+            flow = flows.get(project.id)
             projects.append(
                 {
                     "id": str(project.id),
                     "name": project.name,
                     "lead": project.project_lead_id == request.user.id,
-                    "members": [
-                        {"id": str(member.member_id), "name": member.member.display_name}
-                        for member in ProjectMember.objects.filter(
-                            project=project, is_active=True, role__gte=15, member__is_active=True
-                        ).select_related("member")
-                    ],
-                    "states": [
-                        {"id": str(state.id), "name": state.name, "group": state.group}
-                        for state in State.objects.filter(project=project)
-                    ],
+                    "members": members.get(project.id, []),
+                    "states": states.get(project.id, []),
                     "mapping": {
                         key: str(getattr(flow, key + "_id")) if getattr(flow, key + "_id", None) else None
                         for key in STATUSES
@@ -102,7 +119,7 @@ class PlannerView(LabView):
                 "user_id": str(request.user.id),
                 "team_access": can_view_team(request.user, self.membership),
                 "folders": [{"id": str(f.id), "name": f.name, "position": f.position} for f in folders],
-                "items": [item for item in items if item],
+                "items": items,
                 "projects": projects,
                 "timezone": "Asia/Shanghai",
                 "week_start": 1,

@@ -17,6 +17,7 @@ export class LabStore {
   busy = false;
   error = "";
   notice = "";
+  private plannerRequestId = 0;
   private calendarRequestId = 0;
 
   constructor(
@@ -56,8 +57,10 @@ export class LabStore {
   }
 
   async loadPlanner() {
+    const requestId = ++this.plannerRequestId;
     const planner = await this.request<LabPlanner>("planner/");
     runInAction(() => {
+      if (requestId !== this.plannerRequestId) return;
       this.planner = planner;
     });
   }

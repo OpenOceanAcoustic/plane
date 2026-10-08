@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 
 from datetime import timedelta
+from zoneinfo import ZoneInfo
 
 from django.db import transaction
 from django.utils import timezone
@@ -30,14 +31,26 @@ def default_folders(user, workspace):
     return Folder.objects.filter(workspace=workspace, user=user)
 
 
-def item_data(item, user, allowed_projects):
+def item_data(item, user, allowed_projects, *, readable_issue_ids=None, flows=None):
     if item.kind == "project" and not item.issue_id:
         return None
     if item.issue_id:
         issue = item.issue
-        if not can_read_issue(user, issue, allowed_projects):
+        readable = (
+            issue.id in readable_issue_ids
+            and issue.project_id in allowed_projects
+            and not issue.deleted_at
+            and not issue.is_draft
+            if readable_issue_ids is not None
+            else can_read_issue(user, issue, allowed_projects)
+        )
+        if not readable:
             return None
-        flow = ProjectFlow.objects.filter(project=issue.project).first()
+        flow = (
+            flows.get(issue.project_id)
+            if flows is not None
+            else ProjectFlow.objects.filter(project=issue.project).first()
+        )
         status = (
             "review"
             if flow and issue.state_id == flow.review_id
@@ -51,6 +64,10 @@ def item_data(item, user, allowed_projects):
             "id": str(item.id),
             "issue_id": str(issue.id),
             "project_id": str(issue.project_id),
+            "project_name": issue.project.name,
+            "issue_key": f"{issue.project.identifier}-{issue.sequence_id}",
+            "priority": issue.priority,
+            "target_date": issue.target_date.isoformat() if issue.target_date else None,
             "title": issue.name,
             "status": status,
             "folder_id": str(item.folder_id) if item.folder_id else None,
@@ -67,7 +84,39 @@ def item_data(item, user, allowed_projects):
         "kind": item.kind,
         "public": item.public,
         "issue_id": None,
+        "project_name": None,
+        "issue_key": None,
+        "priority": None,
+        "target_date": None,
     }
+
+
+def item_schedules(item_ids):
+    """Summarize real blocks for already authorized personal items in one query."""
+    now = timezone.now()
+    week_start = now.astimezone(ZoneInfo("Asia/Shanghai")).replace(hour=0, minute=0, second=0, microsecond=0)
+    week_start -= timedelta(days=week_start.weekday())
+    week_end = week_start + timedelta(days=7)
+    schedules = {
+        item_id: {"future_count": 0, "next_start": None, "next_end": None, "week_minutes": 0, "total_count": 0}
+        for item_id in item_ids
+    }
+    blocks = (
+        TimeBlock.objects.filter(item_id__in=item_ids)
+        .order_by("start", "id")
+        .values_list("item_id", "start", "end")
+    )
+    for item_id, start, end in blocks.iterator():
+        schedule = schedules[str(item_id)]
+        schedule["total_count"] += 1
+        if end > now:
+            schedule["future_count"] += 1
+            if schedule["next_start"] is None:
+                schedule["next_start"], schedule["next_end"] = start.isoformat(), end.isoformat()
+        clipped_start, clipped_end = max(start, week_start), min(end, week_end)
+        if clipped_end > clipped_start:
+            schedule["week_minutes"] += (clipped_end - clipped_start).total_seconds() / 60
+    return schedules
 
 
 def own_item(user, workspace, item_id):

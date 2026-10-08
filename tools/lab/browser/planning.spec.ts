@@ -250,3 +250,37 @@ test("native planning fields have exact labels independent of their select optio
   await expect.poll(() => planner.items[0]?.kind).toBe("study");
   expect(planner.items[0]!.folder_id).toBe("B");
 });
+
+for (const insecureOrigin of [false, true]) {
+  test(`blank calendar selection opens a form without crashing on ${insecureOrigin ? "LAN HTTP" : "localhost"}`, async ({
+    page,
+  }) => {
+    const errors: string[] = [];
+    page.on("pageerror", (error) => errors.push(error.message));
+    if (insecureOrigin) {
+      // Exercise the deployed non-loopback HTTP browser context with isolated assets/data.
+      await page.route("http://planning.lab.test/**", async (route) => {
+        const url = new URL(route.request().url());
+        const response = await route.fetch({ url: `http://127.0.0.1:3105${url.pathname}${url.search}` });
+        await route.fulfill({ response });
+      });
+    }
+    await planningServer(page);
+    await page.goto(insecureOrigin ? "http://planning.lab.test/planner" : "/planner");
+    expect(await page.evaluate(() => window.isSecureContext)).toBe(!insecureOrigin);
+    const calendar = page.locator(".lab-calendar");
+    await calendar.scrollIntoViewIfNeeded();
+    const box = await calendar.boundingBox();
+    expect(box).not.toBeNull();
+    await page.mouse.move(box!.x + 200, box!.y + 250);
+    await page.mouse.down();
+    await page.mouse.move(box!.x + 200, box!.y + 310, { steps: 12 });
+    await page.clock.runFor(50);
+    await page.mouse.up();
+    await page.waitForTimeout(200);
+    expect(errors, "Selecting a new time block must not reach Plane's error boundary").toEqual([]);
+    await expect(page.getByRole("dialog", { name: "安排个人时间" })).toBeVisible();
+    await expect(page.getByLabel("开始（上海）", { exact: true })).not.toHaveValue("");
+    await expect(page.locator(".lab-calendar")).toBeVisible();
+  });
+}

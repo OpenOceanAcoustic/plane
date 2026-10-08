@@ -18,6 +18,13 @@ export type LabBountyStatus =
   | "done"
   | "cancelled";
 export type LabFolder = { id: string; name: string; position: number };
+export type LabItemSchedule = {
+  future_count: number;
+  next_start: string | null;
+  next_end: string | null;
+  week_minutes: number;
+  total_count: number;
+};
 export type LabItem = {
   id: string;
   title: string;
@@ -28,6 +35,11 @@ export type LabItem = {
   folder_id: string | null;
   issue_id: string | null;
   project_id?: string;
+  project_name: string | null;
+  issue_key: string | null;
+  priority: string | null;
+  target_date: string | null;
+  schedule: LabItemSchedule;
   archived?: boolean;
 };
 export type LabProject = {

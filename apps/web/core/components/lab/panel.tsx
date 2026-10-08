@@ -8,19 +8,16 @@ import { observer } from "mobx-react";
 import { useParams } from "react-router";
 import { API_BASE_URL } from "@plane/constants";
 import { LabStore } from "@plane/shared-state";
-import type { LabItem } from "@plane/types";
 import { Button } from "@plane/ui";
 import { LabCalendar } from "./calendar";
 import { LabAnalyticsPanel } from "./analytics";
 import { LabMarket } from "./market";
-import { LabPlannerBoard } from "./planner";
+import { LabPlanningWorkbench } from "./planner-workbench";
 import { LabTaskTable } from "./task-table";
 
 export const LabPanel = observer(function LabPanel() {
   const { workspaceSlug = "", section = "planner" } = useParams();
   const store = useMemo(() => new LabStore(API_BASE_URL, workspaceSlug), [workspaceSlug]);
-  const [tab, setTab] = useState<"board" | "calendar">("board");
-  const [scheduled, setScheduled] = useState<LabItem>();
   const [refreshKey, setRefreshKey] = useState(0);
   useEffect(() => {
     void store.execute(store.loadPlanner);
@@ -65,7 +62,10 @@ export const LabPanel = observer(function LabPanel() {
       </header>
       <div className="flex flex-col gap-5 p-6">
         {store.error && (
-          <p role="alert" className="border-orange-300 bg-orange-50 text-orange-800 rounded border p-3 text-13">
+          <p
+            role="alert"
+            className="rounded border border-danger-subtle bg-danger-subtle/10 p-3 text-13 text-danger-primary"
+          >
             {store.error}
           </p>
         )}
@@ -75,51 +75,7 @@ export const LabPanel = observer(function LabPanel() {
           </p>
         )}
         {!store.planner && !store.error && <p className="text-13 text-tertiary">正在读取实验室规划…</p>}
-        {store.planner && section === "planner" && (
-          <>
-            <nav className="flex items-center gap-2">
-              <Button
-                size="sm"
-                variant={tab === "board" ? "primary" : "neutral-primary"}
-                onClick={() => setTab("board")}
-              >
-                文件夹看板
-              </Button>
-              <Button
-                size="sm"
-                variant={tab === "calendar" ? "primary" : "neutral-primary"}
-                onClick={() => setTab("calendar")}
-              >
-                个人周历
-              </Button>
-              <a
-                className="ml-auto text-13 text-accent-primary"
-                href={`${API_BASE_URL}/api/workspaces/${workspaceSlug}/lab/planning-export/?format=csv`}
-              >
-                导出排期 CSV
-              </a>
-              <a
-                className="text-13 text-accent-primary"
-                href={`${API_BASE_URL}/api/workspaces/${workspaceSlug}/lab/planning-export/`}
-                target="_blank"
-                rel="noreferrer"
-              >
-                JSON
-              </a>
-            </nav>
-            {tab === "board" ? (
-              <LabPlannerBoard
-                store={store}
-                schedule={(item) => {
-                  setScheduled(item);
-                  setTab("calendar");
-                }}
-              />
-            ) : (
-              <LabCalendar store={store} scheduled={scheduled} clearScheduled={() => setScheduled(undefined)} />
-            )}
-          </>
-        )}
+        {store.planner && section === "planner" && <LabPlanningWorkbench store={store} />}
         {store.planner &&
           section === "team" &&
           (store.planner.team_access ? (

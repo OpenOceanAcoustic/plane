@@ -185,7 +185,7 @@ export function DraggablePlanningCard({ item, children }: { item: LabItem; child
     <article
       ref={setNodeRef}
       style={{ transform: CSS.Translate.toString(transform) }}
-      className={`shadow-sm relative rounded-lg border border-subtle bg-surface-1 p-3 ${isDragging ? "z-30 opacity-50" : ""}`}
+      className={`lab-planner-card shadow-sm relative rounded-lg border border-subtle bg-surface-1 p-3 ${isDragging ? "z-30 opacity-50" : ""}`}
     >
       <button
         ref={setActivatorNodeRef}
