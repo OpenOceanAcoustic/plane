@@ -12,19 +12,21 @@ import { LabAmountInput, LabDialog, LabField, labAmountError, labDecimalUnits, l
 
 export const LabBountyPublish = observer(function LabBountyPublish({
   store,
-  initialProjectId,
+  initialProjectId = "",
+  fixedTask,
   onClose,
   onPublished,
 }: {
   store: LabStore;
-  initialProjectId: string;
+  initialProjectId?: string;
+  fixedTask?: LabTask;
   onClose: () => void;
   onPublished: () => Promise<void>;
 }) {
   const [budgets, setBudgets] = useState<LabBountyBudget[]>([]);
-  const [projectId, setProjectId] = useState(initialProjectId);
+  const [selectedProjectId, setProjectId] = useState(initialProjectId);
   const [tasks, setTasks] = useState<LabTask[]>([]);
-  const [issueId, setIssueId] = useState("");
+  const [selectedIssueId, setIssueId] = useState("");
   const [query, setQuery] = useState("");
   const [budget, setBudget] = useState("");
   const [reviewerId, setReviewerId] = useState("");
@@ -35,6 +37,9 @@ export const LabBountyPublish = observer(function LabBountyPublish({
   const [loadingTasks, setLoadingTasks] = useState(false);
   const [budgetError, setBudgetError] = useState("");
   const [taskError, setTaskError] = useState("");
+  const projectId = fixedTask?.project_id ?? selectedProjectId;
+  const issueId = fixedTask?.id ?? selectedIssueId;
+  const fixedIssueId = fixedTask?.id;
 
   useEffect(() => {
     let current = true;
@@ -62,17 +67,28 @@ export const LabBountyPublish = observer(function LabBountyPublish({
 
   useEffect(() => {
     if (!projectId) {
+      setTasks([]);
+      setTaskError("");
       setLoadingTasks(false);
       return;
     }
     let current = true;
+    setTasks([]);
     setLoadingTasks(true);
     setTaskError("");
-    const search = new URLSearchParams({ project_id: projectId, publishable: "1", q: query });
+    const search = new URLSearchParams({
+      project_id: projectId,
+      publishable: "1",
+      ...(fixedIssueId ? { issue_id: fixedIssueId } : { q: query }),
+    });
     async function load() {
       try {
         const rows = await store.request<LabTask[]>(`tasks/?${search}`);
-        if (current) setTasks(rows);
+        if (current) {
+          setTasks(rows);
+          if (fixedIssueId && !rows.some((row) => row.id === fixedIssueId && row.project_id === projectId))
+            setTaskError("当前工作项不可发布悬赏");
+        }
       } catch (failure) {
         if (current) setTaskError(failure instanceof Error ? failure.message : "工作项读取失败");
       } finally {
@@ -83,10 +99,11 @@ export const LabBountyPublish = observer(function LabBountyPublish({
     return () => {
       current = false;
     };
-  }, [store, projectId, query]);
+  }, [store, projectId, query, fixedIssueId]);
 
   const source = budgets.find((row) => row.project_id === projectId);
   const project = store.planner?.projects.find((row) => row.id === projectId);
+  const task = tasks.find((row) => row.id === issueId && row.project_id === projectId);
   const quota = labDecimalUnits(budget);
   const projectBudget = source?.budget ? labDecimalUnits(source.budget) : null;
   const quotaError = labAmountError(budget, { limit: source?.available, min: "0.01", unit: "VC" });
@@ -103,14 +120,13 @@ export const LabBountyPublish = observer(function LabBountyPublish({
       title="发布悬赏"
       submitLabel="发布"
       busy={store.busy}
-      submitDisabled={!!quotaError}
+      submitDisabled={!!quotaError || loadingBudgets || loadingTasks || !source?.configured || !task}
       error={store.error || budgetError || taskError}
       onClose={onClose}
       onSubmit={async (data) => {
         if (loadingBudgets || loadingTasks) throw new Error("悬赏资料尚未加载");
         if (!source?.configured) throw new Error("项目尚未配置 VC 预算");
-        if (!tasks.some((task) => task.id === issueId && task.project_id === projectId))
-          throw new Error("请选择当前项目的工作项");
+        if (!task) throw new Error("请选择当前项目的工作项");
         if (quota === null || quota <= 0n || quotaError) throw new Error("VC 配额须大于零且不超过项目剩余预算");
         await store.execute(async () => {
           const deliverable = data.get("deliverable");
@@ -150,7 +166,7 @@ export const LabBountyPublish = observer(function LabBountyPublish({
           className={labInputClass}
           value={projectId}
           required
-          disabled={loadingBudgets}
+          disabled={!!fixedTask || loadingBudgets}
           onChange={(event) => {
             setProjectId(event.target.value);
             setTasks([]);
@@ -159,12 +175,18 @@ export const LabBountyPublish = observer(function LabBountyPublish({
             setReviewerId("");
           }}
         >
-          <option value="">请选择项目</option>
-          {budgets.map((row) => (
-            <option key={row.project_id} value={row.project_id}>
-              {row.project}
-            </option>
-          ))}
+          {fixedTask ? (
+            <option value={fixedTask.project_id}>{source?.project ?? fixedTask.project}</option>
+          ) : (
+            <>
+              <option value="">请选择项目</option>
+              {budgets.map((row) => (
+                <option key={row.project_id} value={row.project_id}>
+                  {row.project}
+                </option>
+              ))}
+            </>
+          )}
         </select>
       </LabField>
       {loadingBudgets ? (
@@ -177,7 +199,9 @@ export const LabBountyPublish = observer(function LabBountyPublish({
         </p>
       ) : (
         <div className="flex items-center justify-between gap-3 text-13">
-          <span>{budgets.length ? "项目尚未配置 VC 预算" : "暂无可管理项目"}</span>
+          <span>
+            {fixedTask && !source ? "当前项目不可发布悬赏" : budgets.length ? "项目尚未配置 VC 预算" : "暂无可管理项目"}
+          </span>
           <Link to={financeUrl} className="text-accent-primary">
             资金与奖励
           </Link>
@@ -189,33 +213,43 @@ export const LabBountyPublish = observer(function LabBountyPublish({
           className={labInputClass}
           value={issueId}
           required
-          disabled={loadingTasks || !projectId}
+          disabled={!!fixedTask || loadingTasks || !projectId}
           onChange={(event) => setIssueId(event.target.value)}
         >
-          <option value="">
-            {loadingTasks ? "正在加载工作项" : tasks.length ? "请选择工作项" : "暂无可发布工作项"}
-          </option>
-          {tasks
-            .filter((task) => task.project_id === projectId)
-            .map((task) => (
-              <option key={task.id} value={task.id}>
-                {task.key} · {task.title}
+          {fixedTask ? (
+            <option value={fixedTask.id}>
+              {task?.key ?? fixedTask.key} · {task?.title ?? fixedTask.title}
+            </option>
+          ) : (
+            <>
+              <option value="">
+                {loadingTasks ? "正在加载工作项" : tasks.length ? "请选择工作项" : "暂无可发布工作项"}
               </option>
-            ))}
+              {tasks
+                .filter((row) => row.project_id === projectId)
+                .map((row) => (
+                  <option key={row.id} value={row.id}>
+                    {row.key} · {row.title}
+                  </option>
+                ))}
+            </>
+          )}
         </select>
       </LabField>
-      <input
-        aria-label="搜索工作项"
-        placeholder="搜索工作项"
-        className={labInputClass}
-        value={query}
-        disabled={!projectId}
-        onChange={(event) => {
-          setQuery(event.target.value);
-          setTasks([]);
-          setIssueId("");
-        }}
-      />
+      {!fixedTask && (
+        <input
+          aria-label="搜索工作项"
+          placeholder="搜索工作项"
+          className={labInputClass}
+          value={query}
+          disabled={!projectId}
+          onChange={(event) => {
+            setQuery(event.target.value);
+            setTasks([]);
+            setIssueId("");
+          }}
+        />
+      )}
       <LabField label="VC配额">
         <LabAmountInput
           aria-label="VC配额"

@@ -41,6 +41,7 @@ from .planning import (
     set_status,
 )
 from .bounty_access import planning_issue_access
+from .bounties import publishable_issues
 
 
 class LabContentNegotiation(DefaultContentNegotiation):
@@ -254,7 +255,9 @@ class TaskSearchView(LabView):
     def get(self, request, slug):
         rows = readable_issues(request.user, self.workspace).filter(is_draft=False, archived_at__isnull=True)
         if request.query_params.get("publishable") == "1":
-            rows = rows.filter(state__group__in=("backlog", "unstarted"), parent_id__isnull=True, bounty__isnull=True)
+            rows = publishable_issues(request.user, self.workspace)
+        if "issue_id" in request.query_params:
+            rows = rows.filter(id=request.query_params["issue_id"])
         if request.query_params.get("project_id"):
             project = get_object_or_404(
                 Project,

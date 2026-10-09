@@ -1,16 +1,9 @@
 /** Copyright (c) 2026 OpenOceanAcoustic and contributors. SPDX-License-Identifier: AGPL-3.0-only */
 import useSWR from "swr";
 import { API_BASE_URL } from "@plane/constants";
+import type { LabTaskCardMetadata } from "@plane/types";
 
-type TaskCardMetadata = {
-  issue_id: string;
-  bounty_id: string | null;
-  bounty_status: string | null;
-  bounty_budget: string | null;
-  color: string | null;
-  detail_path: string | null;
-};
-const emptyMetadata: ReadonlyMap<string, TaskCardMetadata> = new Map();
+const emptyMetadata: ReadonlyMap<string, LabTaskCardMetadata> = new Map();
 
 /** All cards in a project share one permission-filtered request. */
 export function useLabTaskCardMetadataState(
@@ -27,7 +20,7 @@ export function useLabTaskCardMetadataState(
         { credentials: "include" }
       );
       if (!response.ok) throw new Error("工作项标记暂时无法读取");
-      const result = (await response.json()) as { items: TaskCardMetadata[] };
+      const result = (await response.json()) as { items: LabTaskCardMetadata[] };
       return new Map(result.items.map((item) => [item.issue_id, item]));
     },
     {

@@ -21,7 +21,7 @@ export function useUser(){return {data:null}}
 export function useReloadConfirmations(){return {setShowAlert:()=>{}}}
 export function WorkItemVersionService(){}
 export function IssueActivity(){return <section aria-label="活动">活动记录</section>}
-export function PeekOverviewProperties(){return <section aria-label="属性">待做</section>}
+export function PeekOverviewProperties(){return <section aria-label="属性">{location.search.includes('started')?'进行中':'待做'}</section>}
 export function IssuePeekOverviewHeader({setPeekMode}){return <button onClick={()=>setPeekMode('full-screen')}>展开总览</button>}
 export function PeekOverviewIssueDetails(){return <><h1>{issue.name}</h1><div dangerouslySetInnerHTML={{__html:issue.description_html}} /></>}
 export function IssueTitleInput({value}){return <h1>{value}</h1>}
@@ -43,7 +43,7 @@ test.beforeAll(async () => {
   const { build } = require("esbuild") as typeof import("esbuild");
   await build({
     stdin: {
-      contents: `import React, { useState } from 'react'; import { createRoot } from 'react-dom/client'; import { MemoryRouter } from 'react-router'; import { SWRConfig } from 'swr'; import { IssueView } from '${viewPath}'; import { IssueMainContent } from '${mainPath}'; const common={workspaceSlug:'test',projectId:'project',issueId:'issue',issueOperations:{update:async()=>{}}}; function Harness(){const [open,setOpen]=useState(true);return <><button onClick={()=>setOpen(!open)}>{open?'关闭工作项':'打开工作项'}</button>{open&&(location.pathname==='/main'?<IssueMainContent {...common} isEditable={true} isArchived={false}/>:<IssueView {...common} is_archived={false} disabled={location.search.includes('readonly')}/>)}</>}; createRoot(document.getElementById('root')).render(<MemoryRouter><SWRConfig value={{provider:()=>new Map(),dedupingInterval:0}}><Harness/></SWRConfig></MemoryRouter>);`,
+      contents: `import React, { useState } from 'react'; import { createRoot } from 'react-dom/client'; import { MemoryRouter } from 'react-router'; import { SWRConfig } from 'swr'; import { IssueView } from '${viewPath}'; import { IssueMainContent } from '${mainPath}'; const common={workspaceSlug:'test',projectId:'project',issueId:'issue',issueOperations:{update:async()=>{}}}; function Harness(){const [open,setOpen]=useState(true);return <><button onClick={()=>setOpen(!open)}>{open?'关闭工作项':'打开工作项'}</button>{open&&(location.pathname==='/main'?<IssueMainContent {...common} isEditable={!location.search.includes('readonly')} isArchived={false}/>:<IssueView {...common} is_archived={false} disabled={location.search.includes('readonly')}/>)}</>}; createRoot(document.getElementById('root')).render(<MemoryRouter><SWRConfig value={{provider:()=>new Map(),dedupingInterval:0}}><Harness/></SWRConfig></MemoryRouter>);`,
       resolveDir: resolve("apps/web"),
       loader: "tsx",
       sourcefile: "lab-issue-details-harness.tsx",
@@ -141,6 +141,123 @@ async function assertQuota(page: Page) {
   );
 }
 
+async function setupPublication(page: Page, options: { allowed?: boolean; existing?: boolean } = {}) {
+  const state = {
+    allowed: options.allowed ?? true,
+    existing: options.existing ?? false,
+    publishedBudget: "12.50",
+    available: "80.00",
+    reserved: "20.00",
+    rejectPublication: false,
+    metadataReads: 0,
+    budgetReads: 0,
+    taskRequests: [] as string[],
+    publications: [] as Record<string, unknown>[],
+    nativeWrites: [] as string[],
+  };
+  await page.route("**/api/**", (route) => {
+    if (!["GET", "HEAD", "OPTIONS"].includes(route.request().method())) state.nativeWrites.push(route.request().url());
+    return route.fulfill({ status: 404, json: { error: "测试不允许原生工作项写入" } });
+  });
+  await setup(page, null);
+  await page.route("**/auth/get-csrf-token/", (route) => route.fulfill({ json: { csrf_token: "test" } }));
+  await page.route("**/task-card-metadata/**", (route) => {
+    state.metadataReads += 1;
+    return route.fulfill({
+      json: {
+        items: [
+          {
+            issue_id: "issue",
+            bounty_id: state.existing ? "bounty" : null,
+            bounty_status: state.existing ? "open" : null,
+            bounty_budget: state.existing ? state.publishedBudget : null,
+            can_publish_bounty: state.allowed,
+            color: "#0d9488",
+            detail_path: state.existing ? "/test/lab/bounties?bounty_id=bounty" : null,
+          },
+        ],
+      },
+    });
+  });
+  await page.route("**/lab/planner/", (route) =>
+    route.fulfill({
+      json: {
+        user_id: "lead",
+        team_access: true,
+        timezone: "Asia/Shanghai",
+        week_start: 1,
+        step_minutes: 15,
+        items: [],
+        folders: [],
+        categories: [],
+        projects: ["project", "other-project"].map((id) => ({
+          id,
+          name: id === "project" ? "海声实验" : "其他项目",
+          lead: state.allowed,
+          members: [
+            { id: "lead", name: "负责人" },
+            { id: "reviewer", name: "验收人" },
+          ],
+          states: [],
+          mapping: { todo: null, active: null, review: null, done: null },
+        })),
+      },
+    })
+  );
+  await page.route("**/lab/bounties/budgets/", (route) => {
+    state.budgetReads += 1;
+    return route.fulfill({
+      json: [
+        {
+          project_id: "project",
+          project: "海声实验",
+          stage_id: "stage",
+          stage_name: "第一阶段",
+          budget: "100.00",
+          reserved: state.reserved,
+          available: state.available,
+          configured: true,
+        },
+        {
+          project_id: "other-project",
+          project: "其他项目",
+          stage_id: "other-stage",
+          stage_name: "其他阶段",
+          budget: "200.00",
+          reserved: "0.00",
+          available: "200.00",
+          configured: true,
+        },
+      ],
+    });
+  });
+  await page.route(
+    (url) => url.pathname.endsWith("/lab/tasks/"),
+    (route) => {
+      state.taskRequests.push(route.request().url());
+      return route.fulfill({
+        json: [{ id: "issue", title: "共享工作项", project_id: "project", project: "海声实验", key: "LAB-1" }],
+      });
+    }
+  );
+  await page.route("**/lab/bounties/", (route) => {
+    if (route.request().method() !== "POST") return route.fulfill({ json: [] });
+    const body = route.request().postDataJSON() as Record<string, unknown>;
+    state.publications.push(body);
+    if (state.rejectPublication) {
+      state.rejectPublication = false;
+      state.available = "5.00";
+      state.reserved = "95.00";
+      return route.fulfill({ status: 400, json: { error: "项目剩余 VC 已变化，请调整配额后重试" } });
+    }
+    state.existing = true;
+    state.allowed = false;
+    state.publishedBudget = String(body.budget);
+    return route.fulfill({ status: 201, json: { id: "bounty" } });
+  });
+  return state;
+}
+
 async function assertExtension(page: Page) {
   await expect(page.getByText("完整实验说明", { exact: true })).toBeVisible();
   await expect(page.getByRole("region", { name: "活动", exact: true })).toContainText("活动记录");
@@ -171,6 +288,181 @@ test("ordinary issues have the same extensions without a VC quota", async ({ pag
   await page.goto(`${origin}/peek`);
   await assertExtension(page);
   await expect(page.getByText(/VC\s*配额/)).toHaveCount(0);
+});
+
+/* oxlint-disable no-await-in-loop -- These checks navigate and update permissions in one real browser page. */
+test("native publication is available in full and side details for an eligible project lead", async ({ page }) => {
+  await setupPublication(page);
+  for (const path of ["/main", "/peek"]) {
+    await page.goto(`${origin}${path}`);
+    await assertExtension(page);
+    await expect(page.getByRole("button", { name: "发布悬赏", exact: true })).toBeVisible();
+  }
+});
+
+test("native publication remains hidden for read-only views, ordinary members and existing bounties", async ({
+  page,
+}) => {
+  const state = await setupPublication(page);
+  for (const mode of ["readonly", "member", "existing"]) {
+    state.allowed = mode !== "member";
+    state.existing = mode === "existing";
+    for (const surface of ["/main", "/peek"]) {
+      await page.goto(`${origin}${surface}${mode === "readonly" ? "?readonly" : ""}`);
+      await expect(page.getByText("完整实验说明", { exact: true })).toBeVisible();
+      await expect(page.getByLabel("实验频率", { exact: true })).toHaveValue("48000");
+      await expect(page.getByRole("button", { name: "发布悬赏", exact: true })).toHaveCount(0);
+    }
+  }
+  expect(state.publications).toEqual([]);
+  expect(state.nativeWrites).toEqual([]);
+});
+/* oxlint-enable no-await-in-loop */
+
+test("native publication keeps the original work item through quota warnings, failure and successful upgrade", async ({
+  page,
+}) => {
+  const state = await setupPublication(page);
+  await page.goto(`${origin}/peek`);
+  await page.getByRole("button", { name: "发布悬赏", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "发布悬赏", exact: true });
+  await expect(dialog).toBeVisible();
+  await expect(dialog.getByLabel("项目", { exact: true })).toBeDisabled();
+  await expect(dialog.getByLabel("项目", { exact: true })).toHaveValue("project");
+  await expect(dialog.getByLabel("工作项", { exact: true })).toBeDisabled();
+  await expect(dialog.getByLabel("工作项", { exact: true })).toHaveValue("issue");
+  await expect(dialog.getByLabel("工作项", { exact: true })).toContainText("LAB-1 · 共享工作项");
+  await expect(dialog.getByLabel("搜索工作项", { exact: true })).toHaveCount(0);
+  const quota = dialog.getByLabel("VC配额", { exact: true });
+  await quota.fill("80.01");
+  await expect(quota).toHaveAttribute("aria-invalid", "true");
+  await expect(dialog.getByRole("button", { name: "发布", exact: true })).toBeDisabled();
+  expect(state.publications).toEqual([]);
+  await quota.fill("10.00");
+  await dialog.getByLabel("任务资料", { exact: true }).fill("保留原实验资料");
+  await dialog.getByLabel("交付要求", { exact: true }).fill("完成原工作项的实验报告");
+  await dialog.getByLabel("验收标准", { exact: true }).fill("复现实验参数与结论");
+  await dialog.getByLabel("验收人", { exact: true }).selectOption("reviewer");
+  state.rejectPublication = true;
+  await dialog.getByRole("button", { name: "发布", exact: true }).click();
+  await expect(dialog.getByRole("alert").filter({ hasText: "项目剩余 VC 已变化，请调整配额后重试" })).toBeVisible();
+  await expect(dialog.getByLabel("项目 VC 预算", { exact: true })).toContainText("剩余 5.00");
+  await expect(quota).toHaveValue("10.00");
+  await expect(dialog.getByLabel("任务资料", { exact: true })).toHaveValue("保留原实验资料");
+  await expect(dialog.getByLabel("交付要求", { exact: true })).toHaveValue("完成原工作项的实验报告");
+  await expect(dialog.getByLabel("验收标准", { exact: true })).toHaveValue("复现实验参数与结论");
+  await expect(dialog.getByLabel("项目", { exact: true })).toHaveValue("project");
+  await expect(dialog.getByLabel("工作项", { exact: true })).toHaveValue("issue");
+  await expect(dialog.getByRole("button", { name: "发布", exact: true })).toBeDisabled();
+  expect(state.publications).toHaveLength(1);
+  const previousMetadataReads = state.metadataReads;
+  await quota.fill("5.00");
+  await dialog.getByRole("button", { name: "发布", exact: true }).click();
+  await expect(dialog).toHaveCount(0);
+  await expect.poll(() => state.metadataReads).toBeGreaterThan(previousMetadataReads);
+  const badge = page.getByRole("region", { name: "悬赏", exact: true });
+  await expect(badge).toContainText("5.00 VC");
+  await expect(badge.getByRole("link", { name: "打开悬赏大厅", exact: true })).toHaveAttribute(
+    "href",
+    "/test/lab/bounties?bounty_id=bounty"
+  );
+  await expect(page.getByRole("button", { name: "发布悬赏", exact: true })).toHaveCount(0);
+  expect(state.publications).toHaveLength(2);
+  expect(state.publications.map(({ project_id, issue_id }) => ({ project_id, issue_id }))).toEqual([
+    { project_id: "project", issue_id: "issue" },
+    { project_id: "project", issue_id: "issue" },
+  ]);
+  expect(state.taskRequests.length).toBeGreaterThan(0);
+  for (const request of state.taskRequests) {
+    const query = new URL(request).searchParams;
+    expect(query.get("project_id")).toBe("project");
+    expect(query.get("issue_id")).toBe("issue");
+    expect(query.get("publishable")).toBe("1");
+  }
+  expect(state.budgetReads).toBeGreaterThan(1);
+  expect(state.nativeWrites).toEqual([]);
+});
+
+test("native publication cannot open from an old task response after its capability is revoked", async ({ page }) => {
+  const state = await setupPublication(page);
+  let release!: () => void;
+  let capture!: () => void;
+  const blocked = new Promise<void>((done) => {
+    release = done;
+  });
+  const requested = new Promise<void>((done) => {
+    capture = done;
+  });
+  await page.route(
+    (url) => url.pathname.endsWith("/lab/tasks/"),
+    async (route) => {
+      capture();
+      await blocked;
+      await route.fulfill({
+        json: [{ id: "issue", title: "共享工作项", project_id: "project", project: "海声实验", key: "LAB-1" }],
+      });
+    }
+  );
+  await page.goto(`${origin}/peek`);
+  await page.getByRole("button", { name: "发布悬赏", exact: true }).click();
+  await requested;
+  try {
+    state.allowed = false;
+    const denied = page.waitForResponse((response) =>
+      new URL(response.url()).pathname.endsWith("/task-card-metadata/")
+    );
+    await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+    await denied;
+    await page.evaluate(
+      () => new Promise<void>((done) => requestAnimationFrame(() => requestAnimationFrame(() => done())))
+    );
+    const task = page.waitForResponse((response) => new URL(response.url()).pathname.endsWith("/tasks/"));
+    release();
+    await task;
+    await page.evaluate(
+      () => new Promise<void>((done) => requestAnimationFrame(() => requestAnimationFrame(() => done())))
+    );
+    await expect(page.getByRole("dialog", { name: "发布悬赏", exact: true })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "发布悬赏", exact: true })).toHaveCount(0);
+    await expect(page.getByLabel("实验频率", { exact: true })).toHaveValue("48000");
+    expect(state.budgetReads).toBe(0);
+    expect(state.publications).toEqual([]);
+    expect(state.nativeWrites).toEqual([]);
+  } finally {
+    release();
+  }
+});
+
+test("native publication upgrades a started work item without changing its native status", async ({ page }) => {
+  const state = await setupPublication(page);
+  const writes: { method: string; path: string }[] = [];
+  page.on("request", (request) => {
+    if (!["GET", "HEAD", "OPTIONS"].includes(request.method()))
+      writes.push({ method: request.method(), path: new URL(request.url()).pathname });
+  });
+  await page.goto(`${origin}/peek?started`);
+  const properties = page.getByRole("region", { name: "属性", exact: true });
+  await expect(properties).toHaveText("进行中");
+  await page.getByRole("button", { name: "发布悬赏", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "发布悬赏", exact: true });
+  await expect(dialog.getByLabel("项目", { exact: true })).toHaveValue("project");
+  await expect(dialog.getByLabel("项目", { exact: true })).toBeDisabled();
+  await expect(dialog.getByLabel("工作项", { exact: true })).toHaveValue("issue");
+  await expect(dialog.getByLabel("工作项", { exact: true })).toBeDisabled();
+  await dialog.getByLabel("VC配额", { exact: true }).fill("12.50");
+  await dialog.getByLabel("任务资料", { exact: true }).fill("正在执行的原工作项实验资料");
+  await dialog.getByLabel("交付要求", { exact: true }).fill("继续完成原工作项的实验报告");
+  await dialog.getByLabel("验收标准", { exact: true }).fill("复现实验参数与结论");
+  await dialog.getByLabel("验收人", { exact: true }).selectOption("reviewer");
+  await dialog.getByRole("button", { name: "发布", exact: true }).click();
+  await expect(dialog).toHaveCount(0);
+  await assertQuota(page);
+  await expect(properties).toHaveText("进行中");
+  await expect(page.getByRole("button", { name: "发布悬赏", exact: true })).toHaveCount(0);
+  expect(state.publications).toHaveLength(1);
+  expect(state.publications[0]).toMatchObject({ project_id: "project", issue_id: "issue" });
+  expect(writes).toEqual([{ method: "POST", path: "/api/workspaces/test/lab/bounties/" }]);
+  expect(state.nativeWrites).toEqual([]);
 });
 
 for (const status of ["deleted"]) {

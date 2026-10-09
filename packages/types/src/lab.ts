@@ -41,6 +41,19 @@ export type LabBountyStatus =
   | "done"
   | "cancelled"
   | "deleted";
+export type LabTaskCardMetadata = {
+  issue_id: string;
+  bounty_id: string | null;
+  bounty_status: LabBountyStatus | null;
+  bounty_budget: string | null;
+  can_publish_bounty: boolean;
+  category_id: string | null;
+  category_name: string | null;
+  category_color: string | null;
+  color: string | null;
+  detail_path: string | null;
+  bounty_detail_url: string | null;
+};
 export type LabFolder = { id: string; name: string; position: number };
 export type LabCategory = { id: string; name: string; color: string; position: number };
 export type LabItemSchedule = {

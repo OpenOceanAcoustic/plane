@@ -229,3 +229,39 @@ Web 类型、变更 TypeScript 严格 Lint（0 警告／错误）、格式和 Gi
 正式 `http://192.168.137.90:8080` 已更新 API、worker、beat-worker 和前端代理，API 镜像为 `2f68caf7220f`；10 个服务均运行，其余 6 个服务的容器身份不变。三个匿名认证入口和实例接口正常，匿名资金及项目 VC 预算请求返回 401。主页面、实际加载的 **88 个静态资源**和新的悬赏办理模块与最终构建逐字节一致，没有静态请求失败或未知页面错误。既有可恢复 hydration 提示为主入口 #418=41／#423=1、管理后台 0／0、Space 16／1。
 
 日志：`/tmp/lab-bounty-planning-green.log`（浏览器）、`/tmp/lab-bounty-planning-existing-browser.log`、`/tmp/lab-bounty-planning-web-types.log`、`/tmp/lab-bounty-planning-web-lint-final.log`、`/tmp/lab-bounty-planning-web-build.log`、`/tmp/lab-bounty-planning-api-build.log`、`/tmp/lab-bounty-planning-production-backup.log`、`/tmp/lab-bounty-planning-production-restore.log` 和 `/tmp/lab-bounty-planning-production-browser.log`。后端 33 项结果来自工具执行 session 5716。临时浏览器服务和隔离后端测试容器已经清理。
+
+## 从原生工作项直接发布悬赏（2026-10-09）
+
+项目负责人可以在原生待做或进行中的工作项总览点击“发布悬赏”，使用与大厅相同的表单填写 VC 配额、任务资料、交付要求、验收标准和验收人。完整页面、右侧总览、弹窗及全屏总览共用入口，当前项目和工作项锁定，隐藏搜索，避免换到其他任务。验收人继续来自当前项目；重大任务沿用复核条件。额度超过当前项目剩余 VC 时即时提示，提交失败刷新可用额度并保留资料。
+
+没有新增业务接口。既有工作项标记增加 `can_publish_bounty`，`tasks/` 增加 `issue_id` 精确筛选，负责人资格、待做或进行中的顶层状态、归档和已有悬赏条件与实际发布共用服务端判断。发布锁定并重新校验原 Issue，预算只占用一次，标题和身份快照取数据库原记录，不创建替代工作项或改变附件、属性及颜色。保留删除悬赏并解除关联后可重新发布的原规则。普通成员、只读、停用及不符合状态的工作项没有发布入口。
+
+每次打开读取原任务和项目成员，权限撤回、读取失败或切换工作项时使请求失效；迟到响应不会误开窗口，旧发布回调不会关闭新窗口或刷新另一个项目的标记。发布成功刷新原项目共享标记，显示 VC 配额和大厅链接。没有新增说明小字或模型。进行中升级使用增量迁移 `0012_started_bounty_upgrade_guard`，只让开工保护在工作项状态实际变化时检查；普通属性更新可以保留已有进度，完成、取消、父子、WIP 和账目约束继续保留。
+
+验证：
+
+- 真实 PostgreSQL **49 passed（52.76 秒）**，包含新增 12 项原生发布权限、状态和身份合约，以及项目预算、公开访问、删除和简化流程回归。验证原 ID、权威快照、无替代任务、重复预算占用拦截和删除后重发；新增原生标记遗漏先复现后修复。
+- 新增原生详情浏览器 **4 passed（5.0 秒）**，覆盖完整页／侧栏入口、只读／成员／已有悬赏隐藏、固定原任务的超额提示及失败重试、撤权后旧响应隔离。旧 HEAD 基线正常显示说明、字段、文档和活动，仅因缺少发布入口而失败。大厅发布及换项目回归 **2 passed（3.5 秒）**。
+- 共享 types 构建和类型检查、Web 类型、5 个变更 TypeScript 文件严格 Lint（0 警告／错误）、格式、Git 空白、Ruff、Django、无迁移和 Web／API 生产构建通过。没有重复全量回归。
+
+完整备份位于 `/home/l1111y/.local/share/ooa-plane/backups/pre-issue-bounty-20261009-223319`，独立认证密钥继续单独保存，目录 0700、文件 0600。数据库、迁移、附件归档及加密凭据的隔离恢复验证通过。旧前端保留在 `.temp/lab-build/pre-issue-bounty-20261009-223319/client-mounted`，新构建保留 **251 个旧哈希资源**；旧 API 镜像保留为 `ooa-plane-api:pre-issue-bounty-20261009-223319`。
+
+已更新 `http://192.168.137.90:8080`，API 镜像为 `ce8a8f287f5b`，10 个服务运行，其余 6 个容器身份不变。更新前冻结快照和更新后 **30 张表**的数量及完整记录指纹一致，没有正式测试账号或任务、资金、排期写入。首次更新的只读正式标记接口返回 200；当时项目没有未关联的顶层待做项，没有在正式库创建测试悬赏。进行中支持的独立 PostgreSQL 和浏览器夹具覆盖实际发布，后续通过增量迁移追加到同一入口。
+
+三个匿名认证入口和实例 API 正常，匿名资金及 VC 预算请求返回 401。主页面、88 个实际加载资源及新增原生发布模块与构建逐字节一致，没有静态请求失败或未知页面错误。既有可恢复 hydration 提示仍为主入口 #418=41／#423=1、管理后台 0／0、Space 16／1。隔离测试和恢复容器及临时浏览器服务均已清理。
+
+日志：`/tmp/lab-bounty-issue-upgrade-red.log`、`/tmp/lab-bounty-issue-upgrade-regression.log`、`/tmp/lab-native-publication-red.log`、`/tmp/lab-native-publication-green.log`、`/tmp/lab-issue-bounty-hall-regression.log`、`/tmp/lab-issue-bounty-web-types-final.log`、`/tmp/lab-issue-bounty-web-lint-final.log`、`/tmp/lab-issue-bounty-web-build.log`、`/tmp/lab-issue-bounty-api-build.log`、`/tmp/lab-issue-bounty-production-backup.log`、`/tmp/lab-issue-bounty-production-restore.log`、`/tmp/lab-issue-bounty-production-metadata.log` 和 `/tmp/lab-issue-bounty-production-browser.log`。
+
+### 进行中工作项升级与原生属性编辑
+
+待做和进行中的顶层工作项使用相同入口。进行中升级的普通、重大任务分别走完整认领批准、本人确认、开工、提交和独立验收；重大任务仍复核发布和验收。发布本身保留原 Issue 的全部字段、两名原执行人、个人规划文件夹、类别、时间块和两层颜色，不自动创建执行分配。已有原生进行中事项和新的悬赏执行授权按同一任务去重计算 WIP。
+
+原 PostgreSQL 保护对所有工作项更新检查进行中状态，导致升级后仅编辑优先级也会被拒绝。真实回归先复现普通／重大升级属性编辑的错误；增量迁移 `0012_started_bounty_upgrade_guard` 只在实际状态 ID 变化时检查提前开工，保留原函数的完成、取消、父子、WIP 及账目保护。反向 SQL 与原 `0002` 函数体一致，回退和重新应用验证通过。
+
+最终定向后端 **35 passed（34.47 秒）**，覆盖原生发布 17 项、简化流程 11 项、原生 WIP 4 项、原生批量／状态分组保护 2 项及项目搜索 1 项。进行中普通／重大升级先失败再通过，属性编辑同样完成独立失败复现和修复验证。新增进行中原生浏览器 **1 passed（3.1 秒）**，升级后保留“进行中”并显示 VC 配额，所有写请求仅有悬赏 POST。静态检查和最终 API 构建通过；前端产品代码没有再改动，沿用已验证的 Web 构建，没有重复全量检查。
+
+追加更新前完整备份为 `/home/l1111y/.local/share/ooa-plane/backups/pre-started-bounty-20261009-225237`，认证密钥独立保存；隔离恢复同时验证旧快照升级到 `0012`、附件和加密凭据，没有覆盖正式卷。正式停写备份后应用 `0012`，再更新 API、worker 和 beat-worker，最终 API 镜像为 `94b5b0d90297`。10 个服务运行，其他 **7 个容器身份不变**，前端入口 SHA256 不变。更新前后 **30 张业务表**数量及完整指纹一致，没有创建正式测试账号、悬赏或账目。
+
+只读正式标记接口返回 200，已有 **1 条进行中的工作项**获得发布能力，其精准原任务查询与标记身份一致；没有提交正式测试悬赏。证据位于 `.temp/lab-build/pre-started-bounty-20261009-225237/verification.json`、`data-before.json` 和 `data-after.json`。
+
+日志：`/tmp/lab-bounty-started-upgrade-red.log`、`/tmp/lab-bounty-started-attributes-red.log`、`/tmp/lab-bounty-started-final.log`、`/tmp/lab-native-publication-started-green.log`、`/tmp/lab-started-bounty-api-build.log`、`/tmp/lab-started-bounty-production-backup.log`、`/tmp/lab-started-bounty-production-migration.log`、`/tmp/lab-started-bounty-production-restore.log` 和 `/tmp/lab-started-bounty-production-metadata.log`。隔离测试及恢复容器已清理。
