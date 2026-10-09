@@ -66,7 +66,11 @@ def test_delete_real_issue_releases_unearned_budget_and_preserves_earned_history
     assert member.get(lab["base"] + "calendar/", window).json()["events"][0]["issue_id"] == str(issue.id)
     models = (Ledger, FinancialEntry, RewardForecast, RewardSettlement, PaymentCommitment, OfflinePayment)
     facts = [list(model.objects.order_by("id").values()) for model in models]
-    response = lab["client"](lab["lead"]).delete(endpoint(lab, issue, native), {"reason": "移除原工作项"}, format="json")
+    response = lab["client"](lab["lead"]).delete(
+        endpoint(lab, issue, native),
+        {"reason": "移除原工作项"},
+        format="json",
+    )
     assert response.status_code == 204, response.content
     issue.refresh_from_db()
     bounty = Bounty.objects.get(id=bounty_id)
