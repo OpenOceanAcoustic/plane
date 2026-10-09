@@ -12,7 +12,7 @@ from rest_framework.exceptions import APIException, PermissionDenied, Validation
 
 from plane.db.models import Issue, IssueActivity, ProjectMember, State
 from .auth import audit, lock
-from .models import Folder, PersonalItem, ProjectFlow, TimeBlock
+from .models import Bounty, Folder, PersonalItem, ProjectFlow, TimeBlock
 from .permissions import can_read_issue, issue_access, require_lead
 from .categories import hex_color, item_category_data
 
@@ -183,7 +183,9 @@ def planning_projection_context(user, workspace, items, *, readable_issue_ids=No
     }
     bounties_by_issue = {
         row.issue_id: row
-        for row in Bounty.objects.filter(issue_id__in=issues).exclude(status="deleted").select_related(
+        for row in Bounty.objects.filter(issue_id__in=issues)
+        .exclude(status="deleted")
+        .select_related(
             "stage__workspace",
             "issue__project",
         )
@@ -294,6 +296,21 @@ def set_status(item, user, status):
         state = project_status_state(issue.project, status)
         if issue.state_id == state.id:
             return
+        bounty = Bounty.objects.filter(issue=issue).exclude(status="deleted").first()
+        if bounty:
+            actions = {
+                "publication_review": "悬赏发布待复核，请由指定复核人在悬赏详情办理「复核发布」。",
+                "open": "请在悬赏详情完成认领批准和本人确认，再由负责人办理「团队开工」。",
+                "active": "请由参与成员在悬赏详情办理「提交成果验收」。",
+                "partial": "悬赏部分通过，请由参与成员在悬赏详情办理「提交成果验收」。",
+                "rework": "悬赏返工中，请由参与成员在悬赏详情办理「提交成果验收」。",
+                "review": "请由指定验收人在悬赏详情办理「独立验收」。",
+                "acceptance_review": "请由指定复核人在悬赏详情办理「复核验收」。",
+                "done": "悬赏已完成，请由负责人在悬赏详情办理「更正后重新验收」。",
+                "rejected": "悬赏未通过验收，请在悬赏详情查看验收结果。",
+                "cancelled": "悬赏已取消，请在悬赏详情查看取消记录。",
+            }
+            raise ValidationError({"error": actions.get(bounty.status, "请在悬赏详情办理任务状态变更。")})
         previous = issue.state
         issue.state = state
         issue.updated_by = user
@@ -459,7 +476,12 @@ def calendar_events(user, workspace, start, end, *, team=False, user_id=None, pr
             if details.get("issue_id"):
                 event.update({"issue_id": details["issue_id"], "project_id": details["project_id"]})
             for key in (
-                "bounty_id", "bounty_status", "bounty_detail_url", "can_edit_issue", "can_open_issue", "issue_key"
+                "bounty_id",
+                "bounty_status",
+                "bounty_detail_url",
+                "can_edit_issue",
+                "can_open_issue",
+                "issue_key",
             ):
                 if key in details:
                     event[key] = details[key]

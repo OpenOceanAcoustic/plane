@@ -143,8 +143,16 @@ def actions_for(bounty, user, allocations, ledger):
                 if not row.approved and row.user and row.user.is_active:
                     add("approve", f"批准 {row.user_name} 的认领", "claim", {"allocation_id": str(row.id)})
             approved = [row for row in allocations if row.approved]
-            ready = bool(approved) and all(row.confirmed and row.user and row.user.is_active for row in approved)
-            add("start", "团队开工", "active", enabled=ready, reason="" if ready else "需要批准分工并由所有参与者确认")
+            reason = (
+                "尚无已批准的执行人，请先批准认领"
+                if not approved
+                else "执行人已停用，请调整分工"
+                if any(not row.user or not row.user.is_active for row in approved)
+                else "还有执行人未确认交付约定"
+                if any(not row.confirmed for row in approved)
+                else ""
+            )
+            add("start", "团队开工", "active", enabled=not reason, reason=reason)
         if mine and mine.approved and not mine.confirmed and editable:
             add("confirm", "确认交付约定", "confirm")
     if mine and mine.approved and not mine.closed and editable and bounty.status in ("active", "rework", "partial"):

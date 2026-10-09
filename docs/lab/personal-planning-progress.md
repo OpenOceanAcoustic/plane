@@ -207,3 +207,25 @@ Web 类型、变更 TypeScript 严格 Lint（0 警告／错误）、格式和 Gi
 内网 `http://192.168.137.90:8080` 的三个匿名入口与实例 API 正常，匿名资金及项目 VC 预算接口保持 401。主页面、实际加载的 88 个静态资源和 2 个新增样式包与当前构建逐字节一致，没有静态请求失败或未知页面错误。既有可恢复 hydration 提示保持主入口 #418=41／#423=1、管理后台 0／0、Space 16／1。
 
 日志：`/tmp/lab-visual-workbench-tests.log`、`/tmp/lab-visual-web-types-final.log`、`/tmp/lab-visual-format-final.log`、`/tmp/lab-visual-web-build.log` 和 `/tmp/lab-visual-production-browser.log`。
+
+## 个人规划悬赏状态办理修复（2026-10-09）
+
+用户反馈悬赏从“待做”拖到其他列均出现混合了 WIP、验收和冻结账本的错误。正式只读日志确认失败来自悬赏开工约束：任务仍开放认领，没有完成获批执行人和本人确认。原前端把悬赏当作普通工作项直接修改项目状态，数据库正确阻止了绕过流程的操作，但错误信息没有指出实际原因。
+
+拖动和卡片状态选择现在共用“悬赏任务办理”窗口，每次打开重新读取受控详情和流程权限。拖到进行中打开团队开工确认，拖到待验收让获批参与者填写成果，拖到完成让指定验收人办理验收或重大验收复核。打开窗口不会自动提交；表单显示任务名和 VC 配额，验收同时显示提交成果。没有获批执行人、有人未确认或执行人停用时显示具体原因及当前动作。取消或服务端拒绝均保留原状态。
+
+个人规划只显示当前操作和历史记录，不加载大厅中的大幅流程图；取消、冲正及重新验收保留在悬赏大厅。跨项目参与仍采用任务级授权。普通项目任务状态同步、文件夹移动、自定义配色、时间安排及原生详情不变。后端提前拒绝悬赏的直接状态写入，保留同状态请求的幂等行为；数据库约束继续保护开工、验收、WIP 和历史账目，各类冲突分别返回对应原因。没有新增模型或迁移。
+
+验证结果：
+
+- 隔离真实 PostgreSQL 的状态、悬赏、流程和删除合约 **33 passed（43.45 秒）**。新增用例先失败后通过，覆盖绕过开工或验收的拒绝、无预算变动、同状态幂等、正常批准／确认／开工／提交／验收及成员权限、普通任务 WIP 提示。
+- 新增真实组件浏览器 **3 passed（8.7 秒）**，覆盖未认领拖动的具体提示、跨项目提交成果、负责人开工确认、服务端拒绝后重试；均确认没有发送个人规划状态 PATCH。既有原生状态及跨项目受控详情 **5 passed（10.2 秒）**。
+- Web 类型检查、变更文件严格 Lint、格式及 Git 空白检查、Web 和 API 生产构建通过；正式 Django 系统检查和增量迁移检查通过。没有重复全量回归。
+
+升级前数据库与附件备份位于 `/home/l1111y/.local/share/ooa-plane/backups/pre-planning-bounty-20261009-215236`，认证密钥继续独立备份，权限保持目录 0700／文件 0600。数据库、迁移、附件归档和加密认证凭据的隔离恢复验证通过，没有覆盖正式卷。前一版 API 镜像保留为 `ooa-plane-api:pre-planning-bounty-20261009-215236`，旧静态目录保留在 `.temp/lab-build/pre-planning-bounty-20261009-215236/client-mounted`，新构建保留旧哈希资源。
+
+正式数据在核对期间继续发生排期编辑，因此不宣称所有表与最早快照完全相同。冻结备份与当前记录的 **28 张表**完整指纹一致；原有 **56 条审计**逐字段保留，只追加两条 `planning.block_update`，原有 **6 个时间块**全部保留，其中同一块仅修改开始时间和版本号，与两次编辑对应。脱敏证据位于静态备份目录的 `data-readonly-evidence.json`。本轮正式验证只读，没有创建测试账号或发送正式任务、资金及排期写请求，也没有用旧快照覆盖这些新操作。
+
+正式 `http://192.168.137.90:8080` 已更新 API、worker、beat-worker 和前端代理，API 镜像为 `2f68caf7220f`；10 个服务均运行，其余 6 个服务的容器身份不变。三个匿名认证入口和实例接口正常，匿名资金及项目 VC 预算请求返回 401。主页面、实际加载的 **88 个静态资源**和新的悬赏办理模块与最终构建逐字节一致，没有静态请求失败或未知页面错误。既有可恢复 hydration 提示为主入口 #418=41／#423=1、管理后台 0／0、Space 16／1。
+
+日志：`/tmp/lab-bounty-planning-green.log`（浏览器）、`/tmp/lab-bounty-planning-existing-browser.log`、`/tmp/lab-bounty-planning-web-types.log`、`/tmp/lab-bounty-planning-web-lint-final.log`、`/tmp/lab-bounty-planning-web-build.log`、`/tmp/lab-bounty-planning-api-build.log`、`/tmp/lab-bounty-planning-production-backup.log`、`/tmp/lab-bounty-planning-production-restore.log` 和 `/tmp/lab-bounty-planning-production-browser.log`。后端 33 项结果来自工具执行 session 5716。临时浏览器服务和隔离后端测试容器已经清理。

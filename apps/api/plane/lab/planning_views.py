@@ -56,10 +56,23 @@ class LabView(APIView):
         if isinstance(exc, ModelValidationError):
             return Response({"error": "字段或记录 ID 格式无效"}, status=400)
         if isinstance(exc, IntegrityError) and "lab_" in str(exc):
-            return Response(
-                {"error": "操作超过 WIP 上限、违反独立验收流程，或试图修改冻结预算/历史账本。请联系负责人处理例外。"},
-                status=409,
-            )
+            detail = str(exc)
+            if "lab_bounty_workflow:" in detail:
+                if "before start" in detail or "team start confirmation" in detail:
+                    message = "悬赏尚未开工，请在悬赏详情完成认领批准和本人确认，再由负责人办理「团队开工」。"
+                else:
+                    message = "悬赏须经独立验收才能完成，请在悬赏详情办理验收。"
+            elif "lab_wip_limit:" in detail:
+                message = "任务已达到并行上限（默认共2项，其中重大1项）。请先完成现有任务，或由负责人批准WIP例外。"
+            elif "lab_ledger_immutable:" in detail:
+                message = "VC账目不能直接修改或删除，请追加冲正记录。"
+            elif "lab_stage_frozen:" in detail:
+                message = "阶段VC预算已冻结，不能直接修改。"
+            elif "lab_financial_history:" in detail:
+                message = "历史资金记录不可覆盖或删除，请追加更正或冲正。"
+            else:
+                message = "操作与当前数据约束冲突，请刷新后重试。"
+            return Response({"error": message}, status=409)
         return super().handle_exception(exc)
 
     def initial(self, request, *args, **kwargs):
