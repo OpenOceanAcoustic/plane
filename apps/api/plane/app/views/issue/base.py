@@ -9,6 +9,7 @@ import json
 # Django imports
 from django.contrib.postgres.aggregates import ArrayAgg
 from django.contrib.postgres.fields import ArrayField
+from django.db import transaction
 from django.core.serializers.json import DjangoJSONEncoder
 from django.db.models import (
     Count,
@@ -713,18 +714,20 @@ class IssueViewSet(BaseViewSet):
             return Response(status=status.HTTP_204_NO_CONTENT)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
-    @allow_permission([ROLE.ADMIN], creator=True, model=Issue)
     def destroy(self, request, slug, project_id, pk=None):
-        issue = Issue.objects.get(workspace__slug=slug, project_id=project_id, pk=pk)
+        from plane.lab.issue_deletion import delete_issue
+        from plane.lab.permissions import workspace_member
 
-        issue.delete()
-        # delete the issue from recent visits
-        UserRecentVisit.objects.filter(
+        workspace = workspace_member(request.user, slug).workspace
+        issue, changed = delete_issue(
+            request.user,
+            workspace,
+            pk,
             project_id=project_id,
-            workspace__slug=slug,
-            entity_identifier=pk,
-            entity_name="issue",
-        ).delete(soft=False)
+            reason=request.data.get("reason") or "原生工作项删除确认",
+        )
+        if not changed:
+            return Response(status=status.HTTP_204_NO_CONTENT)
         issue_activity.delay(
             type="issue.activity.deleted",
             requested_data=json.dumps({"issue_id": str(pk)}),
@@ -772,13 +775,17 @@ class ProjectUserDisplayPropertyEndpoint(BaseAPIView):
 
 class BulkDeleteIssuesEndpoint(BaseAPIView):
     @allow_permission([ROLE.ADMIN])
+    @transaction.atomic
     def delete(self, request, slug, project_id):
+        from plane.lab.issue_deletion import delete_issue
+        from plane.lab.permissions import workspace_member
+
         issue_ids = request.data.get("issue_ids", [])
 
         if not len(issue_ids):
             return Response({"error": "Issue IDs are required"}, status=status.HTTP_400_BAD_REQUEST)
 
-        issues = Issue.issue_objects.filter(workspace__slug=slug, project_id=project_id, pk__in=issue_ids)
+        issues = list(Issue.objects.filter(workspace__slug=slug, project_id=project_id, pk__in=issue_ids))
 
         total_issues = len(issues)
 
@@ -788,8 +795,16 @@ class BulkDeleteIssuesEndpoint(BaseAPIView):
         # Then, delete all related module issues
         ModuleIssue.objects.filter(issue__in=issues).delete()
 
-        # Finally, delete the issues themselves
-        issues.delete()
+        # Native and lab entry points share the same bounty cleanup and rights.
+        workspace = workspace_member(request.user, slug).workspace
+        for issue in issues:
+            delete_issue(
+                request.user,
+                workspace,
+                issue.id,
+                project_id=project_id,
+                reason=request.data.get("reason") or "原生批量工作项删除确认",
+            )
 
         return Response(
             {"message": f"{total_issues} issues were deleted"},

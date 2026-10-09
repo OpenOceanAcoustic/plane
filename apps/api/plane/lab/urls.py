@@ -24,6 +24,7 @@ from .planning_views import (
     PlannerView,
     PlanningExportView,
     TaskSearchView,
+    TaskDeleteView,
 )
 from .bounty_views import (
     BountyActionView,
@@ -68,6 +69,7 @@ business_patterns = [
     path("items/", ItemView.as_view()),
     path("items/<uuid:pk>/", ItemDetailView.as_view()),
     path("tasks/", TaskSearchView.as_view()),
+    path("tasks/<uuid:pk>/", TaskDeleteView.as_view()),
     path("flows/<uuid:pk>/", FlowView.as_view()),
     path("calendar/", CalendarView.as_view()),
     path("calendar/<uuid:pk>/", BlockDetailView.as_view()),

@@ -20,6 +20,8 @@ export type LabTaskRow = {
   start_date: string | null;
   target_date: string | null;
   editable: boolean;
+  can_delete_issue?: boolean;
+  bounty_id?: string | null;
   values: Record<string, LabFieldValue>;
 };
 export type LabTaskTableData = { tasks: LabTaskRow[]; fields: LabCustomField[] };

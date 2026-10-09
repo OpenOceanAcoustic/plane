@@ -13,6 +13,11 @@ export type LabBountyBudget = {
   reserved: string | null;
   available: string | null;
   configured: boolean;
+  deleted?: boolean;
+  project_deleted?: boolean;
+  can_delete?: boolean;
+  delete_reason?: string | null;
+  can_restore?: boolean;
 };
 export type LabAcceptanceResult = "pass" | "partial" | "rework" | "reject" | "negative";
 export type LabLedgerEntry = {
@@ -47,6 +52,8 @@ export type LabTaskCardMetadata = {
   bounty_status: LabBountyStatus | null;
   bounty_budget: string | null;
   can_publish_bounty: boolean;
+  can_delete_issue?: boolean;
+  title?: string;
   category_id: string | null;
   category_name: string | null;
   category_color: string | null;
@@ -87,6 +94,7 @@ export type LabItem = {
   bounty_detail_url?: string;
   is_bounty?: boolean;
   can_edit_issue?: boolean;
+  can_delete_issue?: boolean;
   can_open_issue?: boolean;
   estimated_reward?: string | null;
   reward_formula_version?: number | null;

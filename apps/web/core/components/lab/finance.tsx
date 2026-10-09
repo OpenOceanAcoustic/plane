@@ -1,12 +1,14 @@
 /** Copyright (c) 2026 OpenOceanAcoustic and contributors. SPDX-License-Identifier: AGPL-3.0-only */
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { observer } from "mobx-react";
 import { useSearchParams } from "react-router";
 import useSWR from "swr";
 import type { LabStore } from "@plane/shared-state";
 import type { LabBountyBudget, LabFinanceOverview } from "@plane/types";
-import { Button, labInputClass } from "@plane/ui";
+import { Button, labDecimalText, labDecimalUnits, labInputClass } from "@plane/ui";
+import { LabFinanceDeleteDialog } from "./finance-delete";
+import type { LabFinanceDeletion } from "./finance-delete";
 import { LabFinanceActionDialog, accountKindLabels, financeActionLabels } from "./finance-form";
 import type { LabFinanceChosenAction } from "./finance-form";
 import { LabForecastDialog, LabFormulaEditor } from "./finance-formula";
@@ -61,6 +63,8 @@ function Records<T extends { id: string }>({
   );
 }
 const stamp = (value: string) => new Date(value).toLocaleString("zh-CN", { timeZone: "Asia/Shanghai" });
+const totalMoney = (amounts: string[]) =>
+  labDecimalText(amounts.reduce((sum, value) => sum + (labDecimalUnits(value) ?? 0n), 0n));
 
 export const LabFinance = observer(function LabFinance({
   store,
@@ -82,6 +86,10 @@ export const LabFinance = observer(function LabFinance({
   const [chosen, setChosen] = useState<LabFinanceChosenAction>();
   const [formulaOpen, setFormulaOpen] = useState(false);
   const [forecastOpen, setForecastOpen] = useState(false);
+  const [deletion, setDeletion] = useState<LabFinanceDeletion>();
+  const [showDeleted, setShowDeleted] = useState(false);
+  const currentProject = useRef(projectId);
+  currentProject.current = projectId;
   const [revision, setRevision] = useState(0);
   const { data, error, isLoading, mutate } = useSWR(["lab-finance", store.slug, projectId, refreshKey], () =>
     store.request<LabFinanceOverview>(
@@ -95,7 +103,9 @@ export const LabFinance = observer(function LabFinance({
   } = useSWR(["lab-project-vc-budgets", store.slug, refreshKey], () =>
     store.request<LabBountyBudget[]>("bounties/budgets/")
   );
-  const visibleBudgets = budgets?.filter((budget) => !projectId || budget.project_id === projectId) ?? [];
+  const visibleBudgets =
+    budgets?.filter((budget) => (!projectId || budget.project_id === projectId) && (showDeleted || !budget.deleted)) ??
+    [];
   useEffect(() => {
     void store.execute(store.loadMarket);
   }, [store]);
@@ -103,8 +113,19 @@ export const LabFinance = observer(function LabFinance({
     await Promise.all([mutate(), mutateBudgets()]);
     setRevision((value) => value + 1);
   };
-  const lead = data?.projects.some((project) => project.id === projectId && project.is_lead) ?? false;
-  const canManage = projectId ? lead : Boolean(data?.is_manager || data?.projects.some((project) => project.is_lead));
+  const selectedProject = data?.projects.find((project) => project.id === projectId);
+  const removedScope = (project: string | null, stage: string | null) =>
+    data?.projects.some((row) => row.id === project && row.deleted) ||
+    data?.stages.some((row) => row.stage_id === stage && row.deleted);
+  const activeBatches = data?.batches.filter((batch) => !batch.reversed && batch.kind !== "opening") ?? [];
+  const receiptTotals = {
+    gross: totalMoney(activeBatches.map((batch) => batch.gross)),
+    D: totalMoney(activeBatches.map((batch) => batch.D)),
+  };
+  const lead = Boolean(selectedProject?.is_lead && !selectedProject.deleted);
+  const canManage = projectId
+    ? lead
+    : Boolean(data?.is_manager || data?.projects.some((project) => project.is_lead && !project.deleted));
   const memberName = (id: string) => data?.members.find((member) => member.id === id)?.name ?? "本人／历史成员";
   const stageName = (id: string) => data?.stages.find((stage) => stage.stage_id === id)?.name ?? "阶段";
   const accountName = (id: string) => data?.accounts.find((account) => account.id === id)?.label ?? "资金账户";
@@ -148,22 +169,25 @@ export const LabFinance = observer(function LabFinance({
           onChange={(event) => {
             setProjectId(event.target.value);
             setChosen(undefined);
+            setDeletion(undefined);
+            setFormulaOpen(false);
+            setForecastOpen(false);
           }}
           className={`${labInputClass} max-w-72`}
         >
           <option value="">全部可见资金与公共池</option>
           {(
-            data?.projects ??
+            data?.projects.filter((project) => showDeleted || !project.deleted) ??
             store.planner?.projects.map((project) => ({ ...project, is_lead: project.lead })) ??
             []
           ).map((project) => (
             <option key={project.id} value={project.id}>
               {project.name}
-              {project.is_lead ? " · 负责人" : ""}
+              {"deleted" in project && project.deleted ? " · 已删除" : project.is_lead ? " · 负责人" : ""}
             </option>
           ))}
         </select>
-        {(projectId ? lead : data?.projects.some((project) => project.is_lead)) && (
+        {(projectId ? lead : data?.projects.some((project) => project.is_lead && !project.deleted)) && (
           <Button variant="primary" size="sm" onClick={() => open("vc-stage")}>
             设置 VC 预算
           </Button>
@@ -173,10 +197,35 @@ export const LabFinance = observer(function LabFinance({
             项目奖励公式
           </Button>
         )}
+        {selectedProject?.is_lead && !selectedProject.deleted && (
+          <Button
+            variant="danger"
+            size="sm"
+            onClick={() =>
+              setDeletion({
+                kind: "project",
+                id: selectedProject.id,
+                name: selectedProject.name,
+                blockedReason: selectedProject.delete_reason ?? undefined,
+              })
+            }
+          >
+            删除资金项目
+          </Button>
+        )}
+        {selectedProject?.is_lead && selectedProject.deleted && (
+          <Button
+            size="sm"
+            variant="neutral-primary"
+            onClick={() => open("project-restore", { project_id: selectedProject.id })}
+          >
+            恢复资金项目
+          </Button>
+        )}
         <Button
           size="sm"
           variant="neutral-primary"
-          disabled={!data?.stages.length}
+          disabled={!data?.stages.some((stage) => !stage.deleted)}
           onClick={() => setForecastOpen(true)}
         >
           新增参考预测
@@ -214,7 +263,35 @@ export const LabFinance = observer(function LabFinance({
                 data-tone="purple"
                 className="lab-finance-card lab-finance-vc rounded-lg border border-subtle bg-layer-2 p-4"
               >
-                <h3 className="text-14 font-medium">{budget.project}</h3>
+                <div className="flex flex-wrap items-center gap-2">
+                  <h3 className="mr-auto text-14 font-medium">{budget.project}</h3>
+                  {budget.deleted && <span className="text-13 text-secondary">已删除</span>}
+                  {budget.stage_id && !budget.deleted && (
+                    <Button
+                      size="sm"
+                      variant="danger"
+                      onClick={() =>
+                        setDeletion({
+                          kind: "stage",
+                          id: budget.stage_id!,
+                          name: budget.stage_name ?? "VC 预算",
+                          blockedReason: budget.delete_reason ?? undefined,
+                        })
+                      }
+                    >
+                      删除阶段预算
+                    </Button>
+                  )}
+                  {budget.stage_id && budget.can_restore && (
+                    <Button
+                      size="sm"
+                      variant="neutral-primary"
+                      onClick={() => open("stage-restore", { stage_id: budget.stage_id! })}
+                    >
+                      恢复阶段预算
+                    </Button>
+                  )}
+                </div>
                 {budget.configured ? (
                   <>
                     <p className="mt-1 text-13">{budget.stage_name}</p>
@@ -266,6 +343,10 @@ export const LabFinance = observer(function LabFinance({
           </Button>
         ))}
       </nav>
+      <label className="flex items-center gap-2 text-13">
+        <input type="checkbox" checked={showDeleted} onChange={(event) => setShowDeleted(event.target.checked)} />
+        显示已删除记录
+      </label>
       {isLoading && <p className="text-13 text-secondary">正在读取资金账…</p>}
       {error && (
         <p role="alert" className="text-13 text-danger-primary">
@@ -299,7 +380,9 @@ export const LabFinance = observer(function LabFinance({
           <section aria-label="可见账户明细" className="space-y-2">
             <h2 className="text-14 font-semibold">资金账户实际余额</h2>
             <Records
-              rows={data.accounts}
+              rows={data.accounts.filter(
+                (account) => showDeleted || !removedScope(account.project_id, account.stage_id)
+              )}
               empty="暂无可见资金账户。"
               columns={[
                 { label: "账户", cell: (row) => row.label },
@@ -357,9 +440,34 @@ export const LabFinance = observer(function LabFinance({
             />
           </section>
           <section aria-label="真实到账批次" className="space-y-2">
-            <h2 className="text-14 font-semibold">实际到账与准备金明细</h2>
+            <div className="flex flex-wrap items-center gap-3">
+              <h2 className="mr-auto text-14 font-semibold">实际到账与准备金明细</h2>
+              {data.stages.some((stage) => stage.can_manage && !stage.deleted) && (
+                <Button size="sm" variant="primary" onClick={() => open("receipt")}>
+                  登记一笔到账
+                </Button>
+              )}
+            </div>
+            <dl aria-label="到账汇总" className="flex flex-wrap gap-5 text-13">
+              <div>
+                <dt className="text-secondary">到账笔数</dt>
+                <dd>{activeBatches.length} 笔</dd>
+              </div>
+              <div>
+                <dt className="text-secondary">累计到账</dt>
+                <dd>
+                  <Money amount={receiptTotals.gross} />
+                </dd>
+              </div>
+              <div>
+                <dt className="text-secondary">累计核准 D</dt>
+                <dd>
+                  <Money amount={receiptTotals.D} />
+                </dd>
+              </div>
+            </dl>
             <Records
-              rows={data.batches}
+              rows={data.batches.filter((batch) => showDeleted || !batch.reversed)}
               columns={[
                 {
                   label: "到账来源／阶段",
@@ -367,8 +475,9 @@ export const LabFinance = observer(function LabFinance({
                     <>
                       {row.source}
                       <p className="text-secondary">
-                        {stageName(row.stage_id)} · {stamp(row.created_at)}
+                        {stageName(row.stage_id)} · {stamp(row.occurred_at ?? row.created_at)}
                       </p>
+                      {row.reversed && <span className="text-secondary">已删除</span>}
                     </>
                   ),
                 },
@@ -388,14 +497,33 @@ export const LabFinance = observer(function LabFinance({
                 {
                   label: "办理",
                   cell: (row) =>
-                    row.can_manage ? (
-                      <Button
-                        size="sm"
-                        variant="neutral-primary"
-                        onClick={() => open("risk-release", { batch_id: row.id })}
-                      >
-                        释放原批次风险金
-                      </Button>
+                    row.can_manage && !row.reversed ? (
+                      <div className="flex flex-wrap gap-1">
+                        <Button
+                          size="sm"
+                          variant="neutral-primary"
+                          onClick={() => open("risk-release", { batch_id: row.id })}
+                        >
+                          释放原批次风险金
+                        </Button>
+                        {row.kind !== "opening" && (
+                          <Button
+                            size="sm"
+                            variant="danger"
+                            onClick={() =>
+                              setDeletion({
+                                kind: "receipt",
+                                id: row.id,
+                                name: row.source,
+                                amount: row.gross,
+                                blockedReason: row.delete_reason ?? undefined,
+                              })
+                            }
+                          >
+                            删除到账记录
+                          </Button>
+                        )}
+                      </div>
                     ) : (
                       "只读"
                     ),
@@ -410,51 +538,80 @@ export const LabFinance = observer(function LabFinance({
           <section aria-label="冻结阶段预算" className="space-y-3">
             <h2 className="text-14 font-semibold">负责人事前阶段预算</h2>
             {!data.stages.length && <p className="text-13 text-secondary">暂无阶段预算。</p>}
-            {data.stages.map((stage) => (
-              <article
-                key={stage.id}
-                data-tone="indigo"
-                className="lab-finance-card lab-finance-stage rounded-lg border border-subtle p-4"
-              >
-                <div className="flex flex-wrap items-center gap-3">
-                  <h3 className="mr-auto text-14 font-semibold">{stage.name}</h3>
-                  <span className="text-13">
-                    预测预算 <Money amount={stage.E} /> · VC 预算 {stage.B} VC
-                  </span>
-                  <span className="text-12 text-secondary">
-                    公式 {stage.formula_version ? `v${stage.formula_version}` : "尚未配置"}
-                  </span>
-                </div>
-                <p className="mt-2 text-12 text-secondary">
-                  实际执行奖励额度 <Money amount={stage.execution_funded} /> · 历史奖励额度{" "}
-                  <Money amount={stage.history_funded} />
-                </p>
-                <ul className="mt-2 flex flex-wrap gap-2 text-12">
-                  {stage.purposes.map((purpose) => (
-                    <li
-                      key={`${purpose.name}-${purpose.amount}`}
-                      className="lab-finance-purpose rounded bg-layer-1 px-2 py-1"
-                    >
-                      {purpose.name} · <Money amount={purpose.amount} />
-                    </li>
-                  ))}
-                </ul>
-                <details className="mt-2 text-12">
-                  <summary className="cursor-pointer">查看冻结成员与历史资格</summary>
-                  {stage.members.map((member) => (
-                    <p key={member.user_id} className="mt-1">
-                      {memberName(member.user_id)}：b {member.b} · r {member.r} · 计划 {member.planned_vc} VC
-                    </p>
-                  ))}
-                  {stage.history.map((member) => (
-                    <p key={member.user_id} className="mt-1">
-                      历史资格 {memberName(member.user_id)}：份额 {member.share} · {member.qualified_at} ·{" "}
-                      {member.basis}
-                    </p>
-                  ))}
-                </details>
-              </article>
-            ))}
+            {data.stages
+              .filter((stage) => showDeleted || !stage.deleted)
+              .map((stage) => (
+                <article
+                  key={stage.id}
+                  data-tone="indigo"
+                  className="lab-finance-card lab-finance-stage rounded-lg border border-subtle p-4"
+                >
+                  <div className="flex flex-wrap items-center gap-3">
+                    <h3 className="mr-auto text-14 font-semibold">{stage.name}</h3>
+                    {stage.deleted && <span className="text-13 text-secondary">已删除</span>}
+                    <span className="text-13">
+                      预测预算 <Money amount={stage.E} /> · VC 预算 {stage.B} VC
+                    </span>
+                    <span className="text-12 text-secondary">
+                      公式 {stage.formula_version ? `v${stage.formula_version}` : "尚未配置"}
+                    </span>
+                    {stage.can_manage && !stage.deleted && (
+                      <Button
+                        size="sm"
+                        variant="danger"
+                        onClick={() =>
+                          setDeletion({
+                            kind: "stage",
+                            id: stage.stage_id,
+                            name: stage.name,
+                            amount: stage.E,
+                            blockedReason: stage.delete_reason ?? undefined,
+                          })
+                        }
+                      >
+                        删除阶段预算
+                      </Button>
+                    )}
+                    {stage.can_restore && stage.deleted && (
+                      <Button
+                        size="sm"
+                        variant="neutral-primary"
+                        onClick={() => open("stage-restore", { stage_id: stage.stage_id })}
+                      >
+                        恢复阶段预算
+                      </Button>
+                    )}
+                  </div>
+                  <p className="mt-2 text-12 text-secondary">
+                    实际执行奖励额度 <Money amount={stage.execution_funded} /> · 历史奖励额度{" "}
+                    <Money amount={stage.history_funded} />
+                  </p>
+                  <ul className="mt-2 flex flex-wrap gap-2 text-12">
+                    {stage.purposes.map((purpose) => (
+                      <li
+                        key={`${purpose.name}-${purpose.amount}`}
+                        className="lab-finance-purpose rounded bg-layer-1 px-2 py-1"
+                      >
+                        {purpose.name} · <Money amount={purpose.amount} />
+                      </li>
+                    ))}
+                  </ul>
+                  <details className="mt-2 text-12">
+                    <summary className="cursor-pointer">查看冻结成员与历史资格</summary>
+                    {stage.members.map((member) => (
+                      <p key={member.user_id} className="mt-1">
+                        {memberName(member.user_id)}：b {member.b} · r {member.r} · 计划 {member.planned_vc} VC
+                      </p>
+                    ))}
+                    {stage.history.map((member) => (
+                      <p key={member.user_id} className="mt-1">
+                        历史资格 {memberName(member.user_id)}：份额 {member.share} · {member.qualified_at} ·{" "}
+                        {member.basis}
+                      </p>
+                    ))}
+                  </details>
+                </article>
+              ))}
           </section>
           <section aria-label="已保存预测快照" className="space-y-2">
             <h2 className="text-14 font-semibold">参考预测及公式快照</h2>
@@ -928,6 +1085,18 @@ export const LabFinance = observer(function LabFinance({
           chosen={chosen}
           onClose={() => setChosen(undefined)}
           onSaved={onSaved}
+        />
+      )}
+      {deletion && (
+        <LabFinanceDeleteDialog
+          key={`${deletion.kind}-${deletion.id}`}
+          store={store}
+          target={deletion}
+          onClose={() => setDeletion((current) => (current === deletion ? undefined : current))}
+          onSaved={async () => {
+            await Promise.all([onSaved(), store.loadMarket()]);
+            if (deletion.kind === "project" && currentProject.current === deletion.id) setProjectId("");
+          }}
         />
       )}
       {formulaOpen && projectId && (

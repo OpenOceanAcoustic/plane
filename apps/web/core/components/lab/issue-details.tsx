@@ -4,12 +4,13 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { observer } from "mobx-react";
 import { Link } from "react-router";
 import { useSWRConfig } from "swr";
-import { Star } from "lucide-react";
+import { Star, Trash2 } from "lucide-react";
 import { API_BASE_URL } from "@plane/constants";
 import { LabStore } from "@plane/shared-state";
 import type { LabTask } from "@plane/types";
 import { Button, LabBountyBadge } from "@plane/ui";
 import { LabBountyPublish } from "./bounty-publish";
+import { LabIssueDeleteDialog } from "./issue-delete-dialog";
 import { LabTaskDocuments } from "./documents";
 import { LabIssueFields } from "./field-manager";
 import { useLabTaskCardMetadataState } from "./use-task-card-metadata";
@@ -19,14 +20,19 @@ export const LabIssueDetails = observer(function LabIssueDetails({
   projectId,
   issueId,
   editable = false,
+  deletable = editable,
+  onDeleted,
 }: {
   workspaceSlug: string;
   projectId: string;
   issueId: string;
   editable?: boolean;
+  deletable?: boolean;
+  onDeleted?: () => void;
 }) {
   const store = useMemo(() => new LabStore(API_BASE_URL, workspaceSlug), [workspaceSlug]);
   const [publishing, setPublishing] = useState<{ task: LabTask; requestId: number }>();
+  const [deleting, setDeleting] = useState(false);
   const requestId = useRef(0);
   const publishAllowed = useRef(false);
   const { mutate } = useSWRConfig();
@@ -37,15 +43,17 @@ export const LabIssueDetails = observer(function LabIssueDetails({
     editable && !error && currentMetadata?.can_publish_bounty === true && !currentMetadata.bounty_id;
   publishAllowed.current = publishingAllowed;
   const canPublish = publishingAllowed && !isValidating;
+  const deletionAllowed = deletable && !error && currentMetadata?.can_delete_issue === true;
   const invalidateRequest = useCallback(() => {
     ++requestId.current;
   }, []);
   useEffect(() => {
     invalidateRequest();
     setPublishing(undefined);
+    setDeleting(false);
     store.error = "";
     return invalidateRequest;
-  }, [workspaceSlug, projectId, issueId, editable, store, invalidateRequest]);
+  }, [workspaceSlug, projectId, issueId, editable, deletable, store, invalidateRequest]);
   useEffect(() => {
     if (!publishingAllowed) {
       invalidateRequest();
@@ -70,12 +78,20 @@ export const LabIssueDetails = observer(function LabIssueDetails({
   }
   return (
     <>
-      {canPublish && (
-        <div className="flex justify-end">
-          <Button size="sm" variant="primary" disabled={store.busy} onClick={() => void openPublish()}>
-            <Star size={14} className="mr-1" aria-hidden="true" />
-            发布悬赏
-          </Button>
+      {(canPublish || (deletionAllowed && !isValidating)) && (
+        <div className="flex justify-end gap-2">
+          {canPublish && (
+            <Button size="sm" variant="primary" disabled={store.busy} onClick={() => void openPublish()}>
+              <Star size={14} className="mr-1" aria-hidden="true" />
+              发布悬赏
+            </Button>
+          )}
+          {deletionAllowed && !isValidating && (
+            <Button size="sm" variant="danger" disabled={store.busy} onClick={() => setDeleting(true)}>
+              <Trash2 size={14} className="mr-1" aria-hidden="true" />
+              删除工作项
+            </Button>
+          )}
         </div>
       )}
       {store.error && (
@@ -111,6 +127,18 @@ export const LabIssueDetails = observer(function LabIssueDetails({
         editable={editable}
       />
       <LabTaskDocuments workspaceSlug={workspaceSlug} projectId={projectId} issueId={issueId} />
+      {deleting && deletionAllowed && (
+        <LabIssueDeleteDialog
+          key={`${projectId}:${issueId}`}
+          store={store}
+          task={{ id: issueId, title: currentMetadata?.title ?? "工作项", bounty_id: currentMetadata?.bounty_id }}
+          onClose={() => setDeleting(false)}
+          onDeleted={() => {
+            onDeleted?.();
+            void mutate(["lab-task-card-metadata", workspaceSlug, projectId]).catch(() => undefined);
+          }}
+        />
+      )}
       {publishing?.task.id === issueId && publishing.task.project_id === projectId && publishingAllowed && (
         <LabBountyPublish
           store={store}

@@ -18,6 +18,7 @@ import { LabItemDetails, labCanOpenProjectIssue } from "./item-details";
 import type { LabOpenProjectIssue } from "./item-details";
 import { LabTaskOverview } from "./task-overview";
 import { LabBountyPlanningDialog } from "./bounty-planning-dialog";
+import { LabIssueDeleteDialog } from "./issue-delete-dialog";
 // oxlint-disable-next-line import/no-unassigned-import -- responsive board density shared with workbench
 import "./planner-workbench.css";
 import {
@@ -75,6 +76,7 @@ export const LabPlannerBoard = observer(function LabPlannerBoard({
     "folder" | "item" | "reference" | "mapping" | "delete-folder" | "delete-item" | null
   >(null);
   const [editing, setEditing] = useState<LabItem>();
+  const [deletingIssue, setDeletingIssue] = useState<LabItem>();
   const [editingFolder, setEditingFolder] = useState<LabFolder>();
   const [query, setQuery] = useState("");
   const [search, setSearch] = useState("");
@@ -511,6 +513,16 @@ export const LabPlannerBoard = observer(function LabPlannerBoard({
                       >
                         <Trash2 size={14} />
                       </button>
+                      {item.issue_id && item.can_delete_issue === true && (
+                        <button
+                          aria-label={`删除工作项${item.title}`}
+                          className="rounded p-1.5 text-danger-primary hover:bg-layer-1"
+                          disabled={store.busy}
+                          onClick={() => setDeletingIssue(item)}
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      )}
                     </div>
                   </DraggablePlanningCard>
                 ))}
@@ -527,6 +539,15 @@ export const LabPlannerBoard = observer(function LabPlannerBoard({
           item={bountyTransition.item}
           requestedStatus={bountyTransition.status}
           onClose={() => setBountyTransition(undefined)}
+        />
+      )}
+      {deletingIssue?.issue_id && (
+        <LabIssueDeleteDialog
+          key={deletingIssue.issue_id}
+          store={store}
+          task={{ id: deletingIssue.issue_id, title: deletingIssue.title, bounty_id: deletingIssue.bounty_id }}
+          onClose={() => setDeletingIssue(undefined)}
+          onDeleted={() => store.loadPlanner()}
         />
       )}
       {dialog === "delete-folder" && editingFolder && (

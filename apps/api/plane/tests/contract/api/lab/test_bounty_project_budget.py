@@ -91,6 +91,11 @@ def test_project_publication_uses_finance_budget_and_preserves_cash_and_vc_ledge
         "reserved": "0.00",
         "available": "100.00",
         "configured": True,
+        "deleted": False,
+        "project_deleted": False,
+        "can_delete": True,
+        "delete_reason": None,
+        "can_restore": False,
     }
     facts = (FinancialOperation.objects.count(), FinancialEntry.objects.count(), Ledger.objects.count())
     result = lab["client"](lab["lead"]).post(lab["base"] + "bounties/", publication(lab, issue), format="json")

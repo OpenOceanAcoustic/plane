@@ -25,6 +25,8 @@ STAGE_ORDER = ("-frozen_at", "-id")
 
 @transaction.atomic
 def freeze_vc_budget(user, workspace, project, data):
+    from .finance_services import require_finance_open
+
     require_lead(user, project)
     budget = amount(data.get("budget"))
     name = str(data.get("name", "")).strip()
@@ -45,6 +47,7 @@ def freeze_vc_budget(user, workspace, project, data):
         Project.objects.select_for_update(of=("self",), no_key=True), id=project.id, workspace=workspace
     )
     require_lead(user, project)
+    require_finance_open(workspace, project.id)
     if key:
         previous = Audit.objects.filter(
             action="stage.frozen", workspace_id_snapshot=workspace.id, details__request_key=key
@@ -77,6 +80,9 @@ def freeze_vc_budget(user, workspace, project, data):
 
 
 def project_budgets(user, workspace):
+    from .finance_services import finance_removal_state, stage_deletion_reason
+
+    removal = finance_removal_state(workspace)
     memberships = ProjectMember.objects.filter(workspace=workspace, member=user, is_active=True, role__gte=15).values(
         "project_id"
     )
@@ -98,6 +104,10 @@ def project_budgets(user, workspace):
     rows = []
     for project in projects:
         stage = stages.get(project.id)
+        project_deleted = project.id in removal["projects"]
+        stage_deleted = bool(stage and stage.id in removal["stages"])
+        deleted = project_deleted or stage_deleted
+        deletion_reason = stage_deletion_reason(workspace, stage, removal) if stage else None
         reserved = reservations.get(stage.id, Decimal("0")) if stage else None
         rows.append(
             {
@@ -109,6 +119,11 @@ def project_budgets(user, workspace):
                 "reserved": f"{reserved:.2f}" if stage else None,
                 "available": f"{stage.budget - reserved:.2f}" if stage else None,
                 "configured": stage is not None,
+                "deleted": deleted,
+                "project_deleted": project_deleted,
+                "can_delete": bool(stage and not deleted and not deletion_reason),
+                "delete_reason": deletion_reason,
+                "can_restore": bool(stage_deleted and not project_deleted),
             }
         )
     return rows
@@ -116,8 +131,11 @@ def project_budgets(user, workspace):
 
 @transaction.atomic
 def publish_from_project(user, workspace, identifier, data):
+    from .finance_services import require_finance_open
+
     project = get_object_or_404(Project, id=identifier, workspace=workspace)
     require_lead(user, project)
+    require_finance_open(workspace, project.id)
     # Keep the same order as financial configuration and native task mutation.
     lock(f"finance:{workspace.id}")
     with connection.cursor() as cursor:
@@ -127,6 +145,7 @@ def publish_from_project(user, workspace, identifier, data):
         Project.objects.select_for_update(of=("self",), no_key=True), id=project.id, workspace=workspace
     )
     require_lead(user, project)
+    require_finance_open(workspace, project.id)
     stage = (
         Stage.objects.select_for_update(of=("self",))
         .filter(project=project, workspace=workspace)
@@ -135,6 +154,7 @@ def publish_from_project(user, workspace, identifier, data):
     )
     if not stage:
         raise ValidationError("请先在资金与奖励配置项目 VC 预算")
+    require_finance_open(workspace, project.id, stage.id)
     ensure_bounty_flow(user, project)
     # The legacy service owns validation, reservation, evidence and independent review.
     # Ignore any client stage_id: a project publication always resolves its source here.

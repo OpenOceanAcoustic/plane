@@ -285,6 +285,14 @@ class TaskSearchView(LabView):
         )
 
 
+class TaskDeleteView(LabView):
+    def delete(self, request, slug, pk):
+        from .issue_deletion import delete_issue
+
+        delete_issue(request.user, self.workspace, pk, reason=request.data.get("reason", ""))
+        return Response(status=204)
+
+
 class ItemView(LabView):
     def post(self, request, slug):
         data = request.data

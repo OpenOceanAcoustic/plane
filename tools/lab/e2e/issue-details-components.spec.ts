@@ -15,7 +15,10 @@ const viewPath = resolve("apps/web/core/components/issues/peek-overview/view.tsx
 const mainPath = resolve("apps/web/core/components/issues/issue-detail/main-content.tsx");
 const nativeStub = `import React from 'react';
 const issue = {id:'issue',project_id:'project',name:'共享工作项',description_html:'<p>完整实验说明</p>',sequence_id:1};
-export function useIssueDetail(){return {issue:{getIssueById:()=>issue},setPeekIssue:()=>{},isAnyModalOpen:false,peekIssue:null}}
+const nativeIssues={removeIssueFromList:(id)=>window.dispatchEvent(new CustomEvent('native-issue-cache-removed',{detail:{kind:'index',id}}))};
+const rootIssueStore={projectIssues:nativeIssues,archivedIssues:nativeIssues,issues:{removeIssue:(id)=>window.dispatchEvent(new CustomEvent('native-issue-cache-removed',{detail:{kind:'map',id}}))}};
+export function useIssueDetail(){return {issue:{getIssueById:()=>issue},rootIssueStore,setPeekIssue:()=>window.dispatchEvent(new Event('native-issue-closed')),isAnyModalOpen:false,peekIssue:null}}
+export function useAppRouter(){return {push:()=>window.dispatchEvent(new Event('native-issue-closed'))}}
 export function useMember(){return {getUserDetails:()=>({display_name:'负责人'})}}
 export function useUser(){return {data:null}}
 export function useReloadConfirmations(){return {setShowAlert:()=>{}}}
@@ -43,7 +46,7 @@ test.beforeAll(async () => {
   const { build } = require("esbuild") as typeof import("esbuild");
   await build({
     stdin: {
-      contents: `import React, { useState } from 'react'; import { createRoot } from 'react-dom/client'; import { MemoryRouter } from 'react-router'; import { SWRConfig } from 'swr'; import { IssueView } from '${viewPath}'; import { IssueMainContent } from '${mainPath}'; const common={workspaceSlug:'test',projectId:'project',issueId:'issue',issueOperations:{update:async()=>{}}}; function Harness(){const [open,setOpen]=useState(true);return <><button onClick={()=>setOpen(!open)}>{open?'关闭工作项':'打开工作项'}</button>{open&&(location.pathname==='/main'?<IssueMainContent {...common} isEditable={!location.search.includes('readonly')} isArchived={false}/>:<IssueView {...common} is_archived={false} disabled={location.search.includes('readonly')}/>)}</>}; createRoot(document.getElementById('root')).render(<MemoryRouter><SWRConfig value={{provider:()=>new Map(),dedupingInterval:0}}><Harness/></SWRConfig></MemoryRouter>);`,
+      contents: `import React, { useEffect, useState } from 'react'; import { createRoot } from 'react-dom/client'; import { MemoryRouter } from 'react-router'; import { SWRConfig } from 'swr'; import { IssueView } from '${viewPath}'; import { IssueMainContent } from '${mainPath}'; import { LabStore } from '${resolve("packages/shared-state/src/lab.store.ts")}'; import { LabPlannerBoard } from '${resolve("apps/web/core/components/lab/planner.tsx")}'; import { LabTaskTable } from '${resolve("apps/web/core/components/lab/task-table.tsx")}'; const store=new LabStore('', 'test'); const common={workspaceSlug:'test',projectId:'project',issueId:'issue',issueOperations:{update:async()=>{}}}; function Harness(){const [open,setOpen]=useState(true);useEffect(()=>{const close=()=>setOpen(false);window.addEventListener('native-issue-closed',close);if(['/planner','/tasks'].includes(location.pathname))void store.loadPlanner();return()=>window.removeEventListener('native-issue-closed',close)},[]);if(location.pathname==='/planner')return <LabPlannerBoard store={store} schedule={()=>{}}/>;if(location.pathname==='/tasks')return <LabTaskTable store={store}/>;return <><button onClick={()=>setOpen(!open)}>{open?'关闭工作项':'打开工作项'}</button>{open&&(location.pathname==='/main'?<IssueMainContent {...common} isEditable={!location.search.includes('readonly')} isArchived={false}/>:<IssueView {...common} is_archived={false} disabled={location.search.includes('readonly')}/>)}</>}; createRoot(document.getElementById('root')).render(<MemoryRouter><SWRConfig value={{provider:()=>new Map(),dedupingInterval:0}}><Harness/></SWRConfig></MemoryRouter>);`,
       resolveDir: resolve("apps/web"),
       loader: "tsx",
       sourcefile: "lab-issue-details-harness.tsx",
@@ -144,6 +147,7 @@ async function assertQuota(page: Page) {
 async function setupPublication(page: Page, options: { allowed?: boolean; existing?: boolean } = {}) {
   const state = {
     allowed: options.allowed ?? true,
+    canDelete: true,
     existing: options.existing ?? false,
     publishedBudget: "12.50",
     available: "80.00",
@@ -172,6 +176,8 @@ async function setupPublication(page: Page, options: { allowed?: boolean; existi
             bounty_status: state.existing ? "open" : null,
             bounty_budget: state.existing ? state.publishedBudget : null,
             can_publish_bounty: state.allowed,
+            can_delete_issue: state.canDelete,
+            title: "共享工作项",
             color: "#0d9488",
             detail_path: state.existing ? "/test/lab/bounties?bounty_id=bounty" : null,
           },
@@ -432,6 +438,152 @@ test("native publication cannot open from an old task response after its capabil
     release();
   }
 });
+
+test("native issue deletion deletes the real work item, keeps rejected context and closes the native peek on success", async ({
+  page,
+}) => {
+  const state = await setupPublication(page, { existing: true });
+  const deletions: { path: string; body: unknown }[] = [];
+  await page.route("**/lab/tasks/issue/", (route) => {
+    deletions.push({ path: new URL(route.request().url()).pathname, body: route.request().postDataJSON() });
+    if (deletions.length === 1) return route.fulfill({ status: 403, json: { detail: "仅项目负责人可删除关联悬赏" } });
+    state.canDelete = false;
+    return route.fulfill({ status: 204 });
+  });
+  await page.goto(`${origin}/peek`);
+  await page.evaluate(() => {
+    const cacheRemovals: unknown[] = [];
+    window.addEventListener("native-issue-cache-removed", (event) => cacheRemovals.push((event as CustomEvent).detail));
+    (window as unknown as { cacheRemovals: unknown[] }).cacheRemovals = cacheRemovals;
+  });
+  await page.getByRole("button", { name: "删除工作项", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "删除工作项", exact: true });
+  await expect(dialog).toContainText("共享工作项");
+  expect(deletions).toEqual([]);
+  const reason = dialog.getByLabel("删除原因", { exact: true });
+  await reason.fill("删除原工作项");
+  await dialog.getByRole("button", { name: "删除", exact: true }).click();
+  await expect(dialog.getByRole("alert")).toContainText("仅项目负责人可删除关联悬赏");
+  await expect(reason).toHaveValue("删除原工作项");
+  await expect(page.getByText("完整实验说明", { exact: true })).toBeVisible();
+  await dialog.getByRole("button", { name: "删除", exact: true }).click();
+  await expect(dialog).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "打开工作项", exact: true })).toBeVisible();
+  expect(await page.evaluate(() => (window as unknown as { cacheRemovals: unknown[] }).cacheRemovals)).toEqual([
+    { kind: "index", id: "issue" },
+    { kind: "map", id: "issue" },
+  ]);
+  expect(deletions).toEqual([
+    { path: "/api/workspaces/test/lab/tasks/issue/", body: { reason: "删除原工作项" } },
+    { path: "/api/workspaces/test/lab/tasks/issue/", body: { reason: "删除原工作项" } },
+  ]);
+  expect(state.nativeWrites).toEqual([]);
+});
+
+test("native issue deletion is hidden for read-only views and tasks without delete capability", async ({ page }) => {
+  const state = await setupPublication(page);
+  await page.goto(`${origin}/peek?readonly`);
+  await assertExtension(page);
+  await expect(page.getByRole("button", { name: "删除工作项", exact: true })).toHaveCount(0);
+  state.canDelete = false;
+  await page.goto(`${origin}/main`);
+  await assertExtension(page);
+  await expect(page.getByRole("button", { name: "删除工作项", exact: true })).toHaveCount(0);
+  expect(state.nativeWrites).toEqual([]);
+});
+
+for (const surface of ["planner", "tasks"]) {
+  test(`${surface} issue deletion removes the real work item while preserving the distinct remove-planning action`, async ({
+    page,
+  }) => {
+    const state = await setupPublication(page);
+    let deleted = false;
+    let allowed = false;
+    const writes: { method: string; path: string }[] = [];
+    page.on("request", (request) => {
+      if (!["GET", "HEAD", "OPTIONS"].includes(request.method()))
+        writes.push({ method: request.method(), path: new URL(request.url()).pathname });
+    });
+    const task = {
+      id: "issue",
+      title: "共享工作项",
+      key: "LAB-1",
+      project_id: "project",
+      project: "海声实验",
+      state: "进行中",
+      priority: "medium",
+      start_date: null,
+      target_date: null,
+      editable: true,
+      values: {},
+    };
+    await page.route("**/lab/planner/", (route) =>
+      route.fulfill({
+        json: {
+          user_id: "lead",
+          team_access: true,
+          timezone: "Asia/Shanghai",
+          week_start: 1,
+          step_minutes: 15,
+          items: deleted
+            ? []
+            : [
+                {
+                  id: "personal-reference",
+                  title: task.title,
+                  kind: "project",
+                  status: "active",
+                  folder_id: null,
+                  public: false,
+                  issue_id: "issue",
+                  issue_key: task.key,
+                  project_id: "project",
+                  project_name: task.project,
+                  priority: "medium",
+                  target_date: null,
+                  can_edit_issue: true,
+                  can_delete_issue: allowed,
+                  schedule: { future_count: 0, next_start: null, next_end: null, week_minutes: 0, total_count: 0 },
+                },
+              ],
+          folders: [],
+          categories: [],
+          projects: [{ id: "project", name: task.project, lead: true, members: [], states: [] }],
+        },
+      })
+    );
+    await page.route("**/lab/task-table/**", (route) =>
+      route.fulfill({ json: { tasks: deleted ? [] : [{ ...task, can_delete_issue: allowed }], fields: [] } })
+    );
+    await page.route("**/lab/projects/project/fields/", (route) =>
+      route.fulfill({ json: { fields: [], members: [] } })
+    );
+    await page.route("**/lab/tasks/issue/", (route) => {
+      deleted = true;
+      return route.fulfill({ status: 204 });
+    });
+    await page.goto(`${origin}/${surface}`);
+    const deletion = page.getByRole("button", { name: "删除工作项共享工作项", exact: true });
+    await expect(page.getByText(task.title, { exact: true })).toBeVisible();
+    await expect(deletion).toHaveCount(0);
+    allowed = true;
+    await page.reload();
+    await expect(deletion).toBeVisible();
+    if (surface === "planner")
+      await expect(page.getByRole("button", { name: "移除共享工作项", exact: true })).toBeVisible();
+    await deletion.click();
+    const dialog = page.getByRole("dialog", { name: "删除工作项", exact: true });
+    await dialog.getByRole("button", { name: "取消", exact: true }).click();
+    expect(writes).toEqual([]);
+    await expect(page.getByText(task.title, { exact: true })).toBeVisible();
+    await deletion.click();
+    await dialog.getByRole("button", { name: "删除", exact: true }).click();
+    await expect(dialog).toHaveCount(0);
+    await expect(page.getByText(task.title, { exact: true })).toHaveCount(0);
+    expect(writes).toEqual([{ method: "DELETE", path: "/api/workspaces/test/lab/tasks/issue/" }]);
+    expect(state.nativeWrites).toEqual([]);
+  });
+}
 
 test("native publication upgrades a started work item without changing its native status", async ({ page }) => {
   const state = await setupPublication(page);

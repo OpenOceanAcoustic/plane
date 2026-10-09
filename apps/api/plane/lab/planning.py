@@ -48,6 +48,7 @@ def item_data(
     bounties_by_issue=None,
     granted_issue_ids=None,
     editable_issue_ids=None,
+    deletable_issue_ids=None,
 ):
     if item.kind == "project" and not item.issue_id:
         return None
@@ -108,6 +109,7 @@ def item_data(
             ),
             "id": str(item.id),
             "can_open_issue": readable,
+            "can_delete_issue": issue.id in deletable_issue_ids if deletable_issue_ids is not None else False,
             "issue_id": str(issue.id),
             "project_id": str(issue.project_id),
             "project_name": issue.project.name,
@@ -153,6 +155,7 @@ def planning_projection_context(user, workspace, items, *, readable_issue_ids=No
     from .bounty_models import BountyTaskAccess
     from .models import Bounty
     from .permissions import readable_issues
+    from .issue_deletion import deletable_issue_ids
 
     issues = {item.issue_id: item.issue for item in items if item.issue_id}
     if readable_issue_ids is None:
@@ -212,6 +215,7 @@ def planning_projection_context(user, workspace, items, *, readable_issue_ids=No
     return {
         "readable_issue_ids": readable_issue_ids,
         "editable_issue_ids": editable_ids,
+        "deletable_issue_ids": deletable_issue_ids(user, workspace, issues.values()),
         "bounties_by_issue": bounties_by_issue,
         "granted_issue_ids": granted_ids,
         "flows": flows,
@@ -451,6 +455,8 @@ def calendar_events(user, workspace, start, end, *, team=False, user_id=None, pr
     events = []
     for block in blocks:
         item = block.item
+        if (item.kind == "project" and not item.issue_id) or (item.issue_id and item.issue.deleted_at):
+            continue
         own = item.user_id == user.id
         details = item_data(item, user, allowed, **context) if own or item.public or item.issue_id else None
         if project_id and details and details.get("project_id") != str(project_id):

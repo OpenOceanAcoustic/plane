@@ -102,28 +102,46 @@ def valid_reviewer(user_id, project):
 
 def publishable_issues(user, workspace):
     """Shared native task eligibility for publication, search and detail capabilities."""
+    from .finance_services import finance_removal_state
+
+    removal = finance_removal_state(workspace)
+    closed_projects = set(removal["projects"])
+    if removal["stages"]:
+        # The current source remains authoritative even when it is deleted.
+        current = (
+            Stage.objects.filter(workspace=workspace).order_by("project_id", "-frozen_at", "-id").distinct("project_id")
+        )
+        closed_projects.update(stage.project_id for stage in current if stage.id in removal["stages"])
     lead_projects = ProjectMember.objects.filter(
         workspace=workspace, member=user, is_active=True, role__gte=15, project__project_lead=user
     ).values("project_id")
-    return readable_issues(user, workspace).filter(
-        project_id__in=lead_projects,
-        project__archived_at__isnull=True,
-        project__deleted_at__isnull=True,
-        is_draft=False,
-        archived_at__isnull=True,
-        parent_id__isnull=True,
-        state__group__in=("backlog", "unstarted", "started"),
-        bounty__isnull=True,
+    return (
+        readable_issues(user, workspace)
+        .exclude(project_id__in=closed_projects)
+        .filter(
+            project_id__in=lead_projects,
+            project__archived_at__isnull=True,
+            project__deleted_at__isnull=True,
+            is_draft=False,
+            archived_at__isnull=True,
+            parent_id__isnull=True,
+            state__group__in=("backlog", "unstarted", "started"),
+            bounty__isnull=True,
+        )
     )
 
 
 @transaction.atomic
 def publish(user, stage_id, data):
+    from .finance_services import require_finance_open
+
     preliminary = Stage.objects.get(id=stage_id)
+    lock(f"finance:{preliminary.workspace_id}")
     with connection.cursor() as cursor:
         cursor.execute("SELECT lab_wip_lock(%s)", [preliminary.workspace_id])
     stage = Stage.objects.select_for_update(of=("self",)).select_related("project", "workspace").get(id=stage_id)
     require_lead(user, stage.project)
+    require_finance_open(stage.workspace, stage.project_id, stage.id)
     issue = issue_access(user, stage.workspace, data.get("issue_id"), edit=True)
     issue = get_object_or_404(
         Issue.objects.select_related("project", "state").select_for_update(of=("self",)), pk=issue.id

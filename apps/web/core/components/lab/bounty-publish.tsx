@@ -49,9 +49,11 @@ export const LabBountyPublish = observer(function LabBountyPublish({
         if (!current) return;
         setBudgets(rows);
         setProjectId((previous) =>
-          rows.some((row) => row.project_id === previous)
+          rows.some((row) => row.project_id === previous && !row.deleted)
             ? previous
-            : (rows.find((row) => row.configured)?.project_id ?? rows[0]?.project_id ?? "")
+            : (rows.find((row) => row.configured && !row.deleted)?.project_id ??
+              rows.find((row) => !row.deleted)?.project_id ??
+              "")
         );
       } catch (failure) {
         if (current) setBudgetError(failure instanceof Error ? failure.message : "项目预算读取失败");
@@ -120,12 +122,21 @@ export const LabBountyPublish = observer(function LabBountyPublish({
       title="发布悬赏"
       submitLabel="发布"
       busy={store.busy}
-      submitDisabled={!!quotaError || loadingBudgets || loadingTasks || !source?.configured || !task}
-      error={store.error || budgetError || taskError}
+      submitDisabled={!!quotaError || loadingBudgets || loadingTasks || !source?.configured || source.deleted || !task}
+      error={
+        store.error ||
+        budgetError ||
+        (source?.deleted
+          ? source.project_deleted
+            ? "资金项目已删除，请先恢复资金项目"
+            : "阶段预算已删除，请先恢复阶段预算"
+          : taskError)
+      }
       onClose={onClose}
       onSubmit={async (data) => {
         if (loadingBudgets || loadingTasks) throw new Error("悬赏资料尚未加载");
         if (!source?.configured) throw new Error("项目尚未配置 VC 预算");
+        if (source.deleted) throw new Error("资金预算已删除，请先恢复");
         if (!task) throw new Error("请选择当前项目的工作项");
         if (quota === null || quota <= 0n || quotaError) throw new Error("VC 配额须大于零且不超过项目剩余预算");
         await store.execute(async () => {
@@ -180,11 +191,13 @@ export const LabBountyPublish = observer(function LabBountyPublish({
           ) : (
             <>
               <option value="">请选择项目</option>
-              {budgets.map((row) => (
-                <option key={row.project_id} value={row.project_id}>
-                  {row.project}
-                </option>
-              ))}
+              {budgets
+                .filter((row) => !row.deleted)
+                .map((row) => (
+                  <option key={row.project_id} value={row.project_id}>
+                    {row.project}
+                  </option>
+                ))}
             </>
           )}
         </select>
@@ -193,14 +206,20 @@ export const LabBountyPublish = observer(function LabBountyPublish({
         <p role="status" className="text-13 text-secondary">
           正在加载项目预算
         </p>
-      ) : source?.configured ? (
+      ) : source?.configured && !source.deleted ? (
         <p className="text-13" aria-label="项目 VC 预算">
           VC预算 {source.budget} · 已占用 {source.reserved} · 剩余 {source.available}
         </p>
       ) : (
         <div className="flex items-center justify-between gap-3 text-13">
           <span>
-            {fixedTask && !source ? "当前项目不可发布悬赏" : budgets.length ? "项目尚未配置 VC 预算" : "暂无可管理项目"}
+            {source?.deleted
+              ? "资金预算已删除"
+              : fixedTask && !source
+                ? "当前项目不可发布悬赏"
+                : budgets.length
+                  ? "项目尚未配置 VC 预算"
+                  : "暂无可管理项目"}
           </span>
           <Link to={financeUrl} className="text-accent-primary">
             资金与奖励

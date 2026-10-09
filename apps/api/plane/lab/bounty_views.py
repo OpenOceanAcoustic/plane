@@ -270,7 +270,12 @@ class TaskCardMetadataView(LabView):
             except (ValueError, TypeError, AttributeError):
                 raise ValidationError("工作项 ID 格式无效")
             rows = rows.filter(id__in=ids)
-        ids = set(rows.values_list("id", flat=True))
+        from .issue_deletion import deletable_issue_ids
+
+        issue_rows = list(rows.select_related("project"))
+        rows_by_id = {row.id: row for row in issue_rows}
+        ids = set(rows_by_id)
+        deletable_ids = deletable_issue_ids(request.user, self.workspace, issue_rows)
         publishable_ids = set(
             bounties.publishable_issues(request.user, self.workspace).filter(id__in=ids).values_list("id", flat=True)
         )
@@ -292,7 +297,7 @@ class TaskCardMetadataView(LabView):
             workspace=self.workspace, user=request.user, legacy_key="project"
         ).first()
         records = []
-        for issue_id in ids.intersection(set(items) | set(bounties_by_issue) | publishable_ids):
+        for issue_id in ids.intersection(set(items) | set(bounties_by_issue) | publishable_ids | deletable_ids):
             item, bounty = items.get(issue_id), bounties_by_issue.get(issue_id)
             category_fields = (
                 item_category_data(item)
@@ -311,6 +316,8 @@ class TaskCardMetadataView(LabView):
                     "bounty_status": bounty.status if bounty else None,
                     "bounty_budget": str(bounty.budget) if bounty else None,
                     "can_publish_bounty": issue_id in publishable_ids,
+                    "can_delete_issue": issue_id in deletable_ids,
+                    "title": rows_by_id[issue_id].name,
                     **category_fields,
                     "color": category_fields["category_color"],
                     "detail_path": detail,
