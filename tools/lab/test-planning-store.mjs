@@ -9,15 +9,20 @@ const require = createRequire(new URL("../../apps/web/package.json", import.meta
 const { build } = createRequire(require.resolve("vite"))("esbuild");
 const directory = mkdtempSync(join(tmpdir(), "plane-lab-planning-store-"));
 try {
-  const output = join(directory, "planning-store.test.mjs");
+  const sources = ["lab.store.test", "lab-contributions.store.test"];
   await build({
-    entryPoints: [fileURLToPath(new URL("../../packages/shared-state/src/lab.store.test.ts", import.meta.url))],
-    outfile: output,
+    entryPoints: sources.map((source) =>
+      fileURLToPath(new URL(`../../packages/shared-state/src/${source}.ts`, import.meta.url))
+    ),
+    outdir: directory,
+    outExtension: { ".js": ".mjs" },
     bundle: true,
     platform: "node",
     format: "esm",
   });
-  const result = spawnSync(process.execPath, ["--test", output], { stdio: "inherit" });
+  const result = spawnSync(process.execPath, ["--test", ...sources.map((source) => join(directory, `${source}.mjs`))], {
+    stdio: "inherit",
+  });
   process.exitCode = result.status ?? 1;
 } finally {
   rmSync(directory, { recursive: true, force: true });

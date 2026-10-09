@@ -20,6 +20,13 @@
   --lab-section-border: var(--label-emerald-border);
 }
 
+.lab-page[data-lab-section="contributions"],
+.lab-navigation-item[data-lab-section="contributions"] {
+  --lab-section-bg: var(--label-indigo-bg);
+  --lab-section-text: var(--label-indigo-text);
+  --lab-section-border: var(--label-indigo-border);
+}
+
 .lab-page[data-lab-section="tasks"],
 .lab-navigation-item[data-lab-section="tasks"] {
   --lab-section-bg: var(--label-orange-bg);

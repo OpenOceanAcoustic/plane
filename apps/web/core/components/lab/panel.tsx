@@ -15,6 +15,7 @@ import { LabMarket } from "./market";
 import { LabFinance } from "./finance";
 import { LabPlanningWorkbench } from "./planner-workbench";
 import { LabTaskTable } from "./task-table";
+import { LabContributions } from "./contributions";
 import type { LabOpenProjectIssue } from "./item-details";
 import { labSections } from "./sections";
 // oxlint-disable-next-line import/no-unassigned-import -- scoped lab page accents
@@ -32,10 +33,14 @@ export const LabPanel = observer(function LabPanel({
   const [refreshKey, setRefreshKey] = useState(0);
   const previousDetailsOpen = useRef(projectDetailsOpen);
   useEffect(() => {
-    if (previousDetailsOpen.current && !projectDetailsOpen) void store.execute(store.loadPlanner);
+    if (previousDetailsOpen.current && !projectDetailsOpen) {
+      if (section === "contributions") setRefreshKey((value) => value + 1);
+      else void store.execute(store.loadPlanner);
+    }
     previousDetailsOpen.current = projectDetailsOpen;
-  }, [projectDetailsOpen, store]);
+  }, [projectDetailsOpen, section, store]);
   useEffect(() => {
+    if (section === "contributions") return;
     void store.execute(store.loadPlanner);
     const refresh = () => {
       if (document.visibilityState === "visible") void store.execute(store.loadPlanner);
@@ -46,7 +51,7 @@ export const LabPanel = observer(function LabPanel({
       window.removeEventListener("focus", refresh);
       window.clearInterval(timer);
     };
-  }, [store]);
+  }, [section, store]);
   const currentSection = labSections.find((entry) => entry.key === section) ?? labSections[0];
   const SectionIcon = currentSection.Icon;
   return (
@@ -66,18 +71,20 @@ export const LabPanel = observer(function LabPanel({
           variant="neutral-primary"
           loading={store.busy}
           onClick={() =>
-            void store.execute(async () => {
-              await store.loadPlanner();
-              if (section === "bounties") await store.loadMarket();
-              setRefreshKey((value) => value + 1);
-            })
+            section === "contributions"
+              ? setRefreshKey((value) => value + 1)
+              : void store.execute(async () => {
+                  await store.loadPlanner();
+                  if (section === "bounties") await store.loadMarket();
+                  setRefreshKey((value) => value + 1);
+                })
           }
         >
           刷新
         </Button>
       </header>
       <div className="flex flex-col gap-5 p-6">
-        {store.error && (
+        {store.error && section !== "contributions" && (
           <p
             role="alert"
             className="rounded border border-danger-subtle bg-danger-subtle/10 p-3 text-13 text-danger-primary"
@@ -85,12 +92,17 @@ export const LabPanel = observer(function LabPanel({
             {store.error}
           </p>
         )}
-        {store.notice && (
+        {store.notice && section !== "contributions" && (
           <p role="status" className="lab-page-notice rounded p-3 text-13">
             {store.notice}
           </p>
         )}
-        {!store.planner && !store.error && <p className="text-13 text-tertiary">正在读取实验室规划…</p>}
+        {!store.planner && !store.error && section !== "contributions" && (
+          <p className="text-13 text-tertiary">正在读取实验室规划…</p>
+        )}
+        {section === "contributions" && (
+          <LabContributions store={store} refreshKey={refreshKey} openProjectIssue={openProjectIssue} />
+        )}
         {store.planner && section === "planner" && (
           <LabPlanningWorkbench store={store} openProjectIssue={openProjectIssue} />
         )}

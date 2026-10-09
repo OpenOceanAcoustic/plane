@@ -141,3 +141,5 @@ python3 tools/lab/backup.py restore-verify /ABSOLUTE/BACKUP_DIRECTORY /SEPARATE/
 个人规划的并排工作台、增强卡片、筛选和团队共享说明见 [个人规划使用说明](personal-planning-guide.md)。
 
 项目自定义奖励公式、资金分池、最终核准及悬赏公开认领说明见 [资金与悬赏使用说明](finance-guide.md)；接口契约见 [Finance API](finance-api.md)，实施与验证记录见 [交付记录](finance-progress.md)。
+
+个人参与项目、历史 VC、月历和逐笔贡献查询说明见 [我的项目与 VC](contributions-guide.md)；确认方案见 [页面与接口契约](contributions-spec.md)，验证与审查见 [交付记录](contributions-progress.md)。

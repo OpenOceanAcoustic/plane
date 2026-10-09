@@ -14,6 +14,7 @@ import { LabCalendar } from "../../../apps/web/core/components/lab/calendar";
 import { LabCategoryManager } from "../../../apps/web/core/components/lab/categories";
 import { LabPanel } from "../../../apps/web/core/components/lab/panel";
 import { LabAnalyticsPanel } from "../../../apps/web/core/components/lab/analytics";
+import { LabContributions } from "../../../apps/web/core/components/lab/contributions";
 import type { LabItem } from "@plane/types";
 
 const Planning = observer(function Planning() {
@@ -57,10 +58,39 @@ function Analytics() {
   const store = useMemo(() => new LabStore("", "lab"), []);
   return <LabAnalyticsPanel store={store} />;
 }
+function Contributions() {
+  const [workspace, setWorkspace] = useState("lab");
+  const store = useMemo(() => new LabStore("", workspace), [workspace]);
+  const [revision, setRevision] = useState(0);
+  useEffect(() => {
+    const refresh = () => setRevision((value) => value + 1);
+    const switchWorkspace = (event: Event) => {
+      if (event instanceof CustomEvent && typeof event.detail === "string") setWorkspace(event.detail);
+    };
+    window.addEventListener("lab-refresh-contributions", refresh);
+    window.addEventListener("lab-switch-contributions-workspace", switchWorkspace);
+    return () => {
+      window.removeEventListener("lab-refresh-contributions", refresh);
+      window.removeEventListener("lab-switch-contributions-workspace", switchWorkspace);
+    };
+  }, []);
+  return (
+    <MemoryRouter>
+      <h1>我的项目与 VC</h1>
+      <LabContributions
+        store={store}
+        refreshKey={revision}
+        openProjectIssue={(issue) => window.dispatchEvent(new CustomEvent("lab-open-project-issue", { detail: issue }))}
+      />
+    </MemoryRouter>
+  );
+}
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <Toast theme="light" />
-    {path === "/analytics" ? (
+    {path === "/contributions" ? (
+      <Contributions />
+    ) : path === "/analytics" ? (
       <Analytics />
     ) : path === "/planner" ? (
       <Planning />
