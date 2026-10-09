@@ -42,6 +42,11 @@ export const financeActionLabels: Record<string, string> = {
   "public-commit": "安排公共职责支付",
   "public-cancel-commit": "取消公共职责未付安排",
   "public-payment": "登记公共职责线下支付",
+  "receipt-delete": "删除到账记录",
+  "stage-delete": "删除阶段预算",
+  "project-delete": "删除资金项目",
+  "stage-restore": "恢复阶段预算",
+  "project-restore": "恢复资金项目",
 };
 export const accountKindLabels: Record<string, string> = {
   project: "项目资金",
@@ -128,7 +133,7 @@ export function LabFinanceActionDialog({
     label: `${account.label} · 可用 ¥${account.available}`,
   }));
   const stages = data.stages
-    .filter((stage) => stage.can_manage)
+    .filter((stage) => stage.can_manage && !stage.deleted)
     .map((stage) => ({ value: stage.stage_id, label: `${stage.name} · 执行实额 ¥${stage.execution_funded}` }));
   const unsettledStages = (store.stages ?? [])
     .filter(
@@ -168,6 +173,7 @@ export function LabFinanceActionDialog({
             .filter(
               (stage) =>
                 stage.can_manage &&
+                !stage.deleted &&
                 stage.project_id === manageable.find((account) => account.id === allocationSource)?.project_id &&
                 stage.stage_id !== manageable.find((account) => account.id === allocationSource)?.stage_id
             )
@@ -182,7 +188,7 @@ export function LabFinanceActionDialog({
           "batch_id",
           "原到账风险准备金批次",
           data.batches
-            .filter((row) => row.can_manage)
+            .filter((row) => row.can_manage && !row.reversed)
             .map((row) => ({ value: row.id, label: `${row.source} · 尚余 ¥${row.risk_remaining}` }))
         ),
         select("category", "责任事项类别", [
@@ -246,7 +252,7 @@ export function LabFinanceActionDialog({
           "project_id",
           "负责项目",
           data.projects
-            .filter((project) => project.is_lead)
+            .filter((project) => project.is_lead && !project.deleted)
             .map((project) => ({ value: project.id, label: project.name }))
         ),
         { key: "name", label: "预算名称", required: true, value: "当前预算" },
@@ -292,7 +298,7 @@ export function LabFinanceActionDialog({
         select("project_id", "资金归属", [
           { value: "public", label: "实验室公共资金" },
           ...data.projects
-            .filter((project) => project.is_lead)
+            .filter((project) => project.is_lead && !project.deleted)
             .map((project) => ({ value: project.id, label: project.name })),
         ]),
         select("stage_id", "所属阶段（奖励余额必填）", stages, false),
@@ -384,7 +390,7 @@ export function LabFinanceActionDialog({
           "batch_id",
           "原到账批次",
           data.batches
-            .filter((row) => row.can_manage)
+            .filter((row) => row.can_manage && !row.reversed)
             .map((row) => ({ value: row.id, label: `${row.source} · 风险金尚余 ¥${row.risk_remaining}` }))
         ),
         number("amount", "释放金额（元）"),

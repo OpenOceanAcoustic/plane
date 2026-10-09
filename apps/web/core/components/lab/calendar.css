@@ -12,8 +12,12 @@
   --fc-monarch-tertiary-foreground: var(--text-color-primary);
   --fc-monarch-event: var(--background-color-accent-primary);
   --fc-monarch-event-contrast: var(--text-color-on-color);
-  --fc-monarch-highlight: var(--background-color-accent-subtle);
-  --fc-monarch-now: var(--background-color-danger-primary);
+  --fc-monarch-highlight: color-mix(
+    in srgb,
+    var(--background-color-accent-primary) 8%,
+    var(--background-color-surface-1)
+  );
+  --fc-monarch-now: var(--background-color-accent-primary);
   --fc-monarch-selected: var(--background-color-accent-primary);
   --fc-monarch-selected-foreground: var(--text-color-on-color);
   --fc-monarch-selected-over: var(--background-color-accent-primary-hover);
@@ -21,7 +25,7 @@
   --fc-monarch-outline: var(--border-color-accent-strong);
   --fc-monarch-popover: var(--background-color-surface-1);
   --fc-monarch-background: var(--background-color-surface-1);
-  --fc-monarch-faint: var(--background-color-layer-1);
+  --fc-monarch-faint: color-mix(in srgb, var(--label-indigo-bg) 45%, var(--background-color-surface-1));
   --fc-monarch-muted: var(--background-color-layer-2);
   --fc-monarch-strong: var(--background-color-layer-3);
   --fc-monarch-stronger: var(--background-color-layer-3);
@@ -33,6 +37,7 @@
   --fc-monarch-strong-border: var(--border-color-strong);
   font-family: inherit;
   font-size: 13px;
+  border-color: color-mix(in srgb, var(--border-color-accent-strong) 15%, var(--border-color-subtle));
 }
 .lab-calendar [class*="fc-monarch"] {
   font-family: inherit;
@@ -40,6 +45,13 @@
 .lab-calendar button:focus-visible {
   outline: 2px solid var(--border-color-accent-strong);
   outline-offset: 2px;
+}
+.lab-calendar .lab-calendar-pan-header {
+  color: var(--text-color-secondary);
+  transition: background-color 120ms ease;
+}
+.lab-calendar .lab-calendar-pan-header:hover {
+  background-color: color-mix(in srgb, var(--background-color-accent-primary) 5%, var(--fc-monarch-faint));
 }
 .lab-calendar .lab-busy-event {
   opacity: 0.65;

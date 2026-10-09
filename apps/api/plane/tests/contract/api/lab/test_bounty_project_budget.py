@@ -91,6 +91,11 @@ def test_project_publication_uses_finance_budget_and_preserves_cash_and_vc_ledge
         "reserved": "0.00",
         "available": "100.00",
         "configured": True,
+        "deleted": False,
+        "project_deleted": False,
+        "can_delete": True,
+        "delete_reason": None,
+        "can_restore": False,
     }
     facts = (FinancialOperation.objects.count(), FinancialEntry.objects.count(), Ledger.objects.count())
     result = lab["client"](lab["lead"]).post(lab["base"] + "bounties/", publication(lab, issue), format="json")
@@ -229,7 +234,7 @@ def test_publishable_task_search_filters_status_parent_and_existing_bounty(labor
     published = task(lab, "已有悬赏")
     response = lab["client"](lab["lead"]).post(lab["base"] + "bounties/", publication(lab, published), format="json")
     assert response.status_code == 201, response.content
-    Issue.objects.create(
+    ongoing = Issue.objects.create(
         workspace=lab["workspace"], project=lab["project"], name="正在工作", state=lab["states"]["active"]
     )
     child = task(lab, "子工作项")
@@ -241,7 +246,7 @@ def test_publishable_task_search_filters_status_parent_and_existing_bounty(labor
     client = lab["client"](lab["lead"])
     response = client.get(lab["base"] + f"tasks/?project_id={lab['project'].id}&publishable=1")
     assert response.status_code == 200, response.content
-    assert [row["id"] for row in response.json()] == [str(eligible.id)]
+    assert [row["id"] for row in response.json()] == [str(ongoing.id), str(eligible.id)]
     normal = client.get(lab["base"] + f"tasks/?project_id={lab['project'].id}")
     assert {str(child.id), str(published.id)} <= {row["id"] for row in normal.json()}
 

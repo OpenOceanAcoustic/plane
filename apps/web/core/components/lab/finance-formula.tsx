@@ -352,7 +352,7 @@ export function LabForecastDialog({
         <select className={labInputClass} required value={stageId} onChange={(event) => setStageId(event.target.value)}>
           <option value="">请选择</option>
           {data.stages
-            .filter((row) => !projectId || row.project_id === projectId)
+            .filter((row) => !row.deleted && (!projectId || row.project_id === projectId))
             .map((row) => (
               <option key={row.stage_id} value={row.stage_id}>
                 {row.name} · E ¥{row.E} · B {row.B}

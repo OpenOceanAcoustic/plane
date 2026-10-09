@@ -13,10 +13,10 @@ from django.db.models import Sum
 from django.utils import timezone
 from rest_framework.exceptions import PermissionDenied, ValidationError
 
-from plane.db.models import IssueAssignee, ProjectMember, WorkspaceMember
+from plane.db.models import Issue, IssueAssignee, ProjectMember, WorkspaceMember
 from .auth import audit, lock
 from .models import Acceptance, Allocation, Bounty, Ledger, PersonalItem, ProjectFlow, Stage, WorkspacePolicy
-from .permissions import issue_access, require_lead, workspace_member
+from .permissions import issue_access, readable_issues, require_lead, workspace_member
 from .bounty_models import BountyMaterial, BountyPublication, BountyTaskAccess
 from .bounty_access import access_level, grant_allocation, planning_issue_access
 
@@ -100,25 +100,64 @@ def valid_reviewer(user_id, project):
     return member.member
 
 
+def publishable_issues(user, workspace):
+    """Shared native task eligibility for publication, search and detail capabilities."""
+    from .finance_services import finance_removal_state
+
+    removal = finance_removal_state(workspace)
+    closed_projects = set(removal["projects"])
+    if removal["stages"]:
+        # The current source remains authoritative even when it is deleted.
+        current = (
+            Stage.objects.filter(workspace=workspace).order_by("project_id", "-frozen_at", "-id").distinct("project_id")
+        )
+        closed_projects.update(stage.project_id for stage in current if stage.id in removal["stages"])
+    lead_projects = ProjectMember.objects.filter(
+        workspace=workspace, member=user, is_active=True, role__gte=15, project__project_lead=user
+    ).values("project_id")
+    return (
+        readable_issues(user, workspace)
+        .exclude(project_id__in=closed_projects)
+        .filter(
+            project_id__in=lead_projects,
+            project__archived_at__isnull=True,
+            project__deleted_at__isnull=True,
+            is_draft=False,
+            archived_at__isnull=True,
+            parent_id__isnull=True,
+            state__group__in=("backlog", "unstarted", "started"),
+            bounty__isnull=True,
+        )
+    )
+
+
 @transaction.atomic
 def publish(user, stage_id, data):
+    from .finance_services import require_finance_open
+
     preliminary = Stage.objects.get(id=stage_id)
+    lock(f"finance:{preliminary.workspace_id}")
     with connection.cursor() as cursor:
         cursor.execute("SELECT lab_wip_lock(%s)", [preliminary.workspace_id])
     stage = Stage.objects.select_for_update(of=("self",)).select_related("project", "workspace").get(id=stage_id)
     require_lead(user, stage.project)
+    require_finance_open(stage.workspace, stage.project_id, stage.id)
     issue = issue_access(user, stage.workspace, data.get("issue_id"), edit=True)
-    if issue.project_id != stage.project_id or issue.parent_id or Bounty.objects.filter(issue=issue).exists():
-        raise ValidationError("请选择同项目未发布悬赏的顶层任务，避免父子重复贡献")
-    if issue.state.group not in ("backlog", "unstarted"):
-        raise ValidationError("悬赏须在开工前发布，请选择待做任务")
+    issue = get_object_or_404(
+        Issue.objects.select_related("project", "state").select_for_update(of=("self",)), pk=issue.id
+    )
+    if (
+        issue.project_id != stage.project_id
+        or not publishable_issues(user, stage.workspace).filter(pk=issue.id).exists()
+    ):
+        raise ValidationError("请选择同项目未发布悬赏、未归档且尚未完成的顶层工作项")
     budget = amount(data.get("budget"))
     if budget <= 0 or total(Bounty.objects.filter(stage=stage), "reserved") + budget > stage.budget:
         raise ValidationError("项目 VC 预算不足或悬赏 VC 配额无效")
     deliverable = str(data.get("deliverable", "")).strip()
     criteria = str(data.get("criteria", "")).strip()
     if not deliverable or not criteria:
-        raise ValidationError("开工前必须确定交付物和验收条件")
+        raise ValidationError("请填写交付要求和验收标准")
     reasons = []
     if budget >= 40:
         reasons.append("40VC")

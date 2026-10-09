@@ -61,6 +61,10 @@ export type LabFinanceStage = {
   history_funded: string | null;
   formula_version: number | null;
   can_manage: boolean;
+  deleted?: boolean;
+  can_delete?: boolean;
+  can_restore?: boolean;
+  delete_reason?: string | null;
 };
 export type LabFinanceSettlement = {
   id: string;
@@ -108,6 +112,8 @@ export type LabFinancePayment = {
 };
 export type LabFinanceBatch = {
   id: string;
+  operation_id?: string;
+  kind?: "receipt" | "opening";
   stage_id: string;
   project_id: string;
   gross: string;
@@ -122,7 +128,11 @@ export type LabFinanceBatch = {
   risk_remaining: string;
   history_snapshot: LabFinanceHistoryShare[];
   created_at: string;
+  occurred_at?: string;
+  reversed?: boolean;
   can_manage: boolean;
+  can_delete?: boolean;
+  delete_reason?: string | null;
 };
 export type LabFinanceEntry = {
   id: string;
@@ -158,7 +168,18 @@ export type LabFinanceOverview = {
   is_manager: boolean;
   can_designate_manager?: boolean;
   public_summary?: { kind: string; label: string; balance: string; committed: string; available: string }[];
-  projects: { id: string; name: string; is_lead: boolean }[];
+  projects: {
+    id: string;
+    name: string;
+    is_lead: boolean;
+    archived?: boolean;
+    finance_deleted?: boolean;
+    deleted?: boolean;
+    can_manage?: boolean;
+    can_delete?: boolean;
+    can_restore?: boolean;
+    delete_reason?: string | null;
+  }[];
   members: { id: string; name: string; is_admin?: boolean }[];
   public_awards?: LabPublicDutyAward[];
   public_commitments?: LabPublicDutyCommitment[];

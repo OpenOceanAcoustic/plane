@@ -91,3 +91,19 @@ Web 和 UI 类型检查、types／UI 构建、变更 TypeScript 严格 Lint、�
 日志：`/tmp/lab-finance-input-limits-final.log`、`/tmp/lab-finance-input-limits-regression.log`、`/tmp/lab-bounty-role-quota-backend-final.log`、`/tmp/lab-bounty-quota-adjusted-regressions.log`、`/tmp/lab-finance-live-all-components.log`、`/tmp/lab-bounty-roles-quota-components-final.log`、`/tmp/lab-live-finance-real-e2e-final.log`、`/tmp/lab-live-finance-web-types.log`、`/tmp/lab-live-finance-web-lint-final.log`、`/tmp/lab-live-finance-web-build.log`、`/tmp/lab-live-finance-api-build.log`、`/tmp/lab-live-finance-production-backup.log`、`/tmp/lab-live-finance-production-restore.log` 和 `/tmp/lab-live-finance-production-browser.log`。
 
 本轮隔离后端与浏览器测试容器、卷及临时认证配置均已清理，正式服务保持运行。
+
+## 分笔到账、资金配置删除及工作项删除
+
+真实到账页面增加直接登记入口及有效到账笔数、金额和核准 D 汇总，同阶段可持续登记独立批次。到账删除通过不可变操作及反向流水处理，保留原凭证、事实日期和登记日期，不重写其他批次。期初余额单列，不计入实际到账汇总；准备金后续操作、年度编列、核准奖励、现金承诺及已用金额继续约束撤销。删除成功但刷新失败时仅重试读取，不重复写删除请求。
+
+阶段预算（包含仅有 VC 的 Stage）和资金项目可删除、查看已删除记录及显式恢复。删除采用追加的状态操作，不删除原生项目、任务或财务历史；未完悬赏、现金余额、未结清奖励和未缴扣款阻止关闭。历史已赚 VC 不永久阻止已结清配置关闭。当前来源被删除不会回退旧 VC 预算；发布、公式、预测、资金目标及历史冲正均校验关闭状态。跨阶段冲正逐一检查原账账户，不能把钱写回已关闭的来源。流程记录显示删除及恢复，已关闭对象只提供恢复动作。
+
+原生工作项详情、个人规划和任务表增加真正删除源任务的入口，与原生单项／批量删除共用事务。关联悬赏仅负责人可删，返还未授予 VC、撤销资料与任务授权，保留贡献、预测、核准及付款历史。原生看板缓存立即移除；后台关联清理后规划和日历隐藏源任务，原排期历史保留。退出项目的旧创建者不能删除；仍有悬赏子孙项时需先处理对应子工作项，防止后台级联跳过清理。
+
+验证：资金定向 82 项通过，新增关闭流程与跨源冲正后 52 项定向通过，最后 3 项展示／流程验证通过（这些运行包含重复用例，不作为独立用例总数）。工作项删除及已有悬赏删除 17 项通过，后补父子保护 1 项通过。真实组件验证资金 7 项、恢复与关闭来源 3 项、最终工作项删除 4 项通过；原生发布及删除组合 7 项也通过。类型构建、Web 类型、变更文件严格 Lint、格式、Ruff、Django 检查和生产 Web／API 构建通过。复用既有增量迁移，无新 schema 迁移。
+
+完整备份为 `/home/l1111y/.local/share/ooa-plane/backups/pre-finance-removal-20261009-233753`，认证密钥独立保存（目录 0700、文件 0600）；数据库、迁移、附件与加密凭据的隔离恢复验证通过，没有覆盖正式卷。旧静态目录保留在 `.temp/lab-build/pre-finance-removal-20261009-233753/client-mounted`，新构建保留 292 个旧哈希资源。旧 API 镜像保留为 `ooa-plane-api:pre-finance-removal-20261009-233753`。
+
+正式服务更新为 API `fdc5c2453147` 和最终 Web 构建，10 个服务运行，其余 6 个服务容器身份不变。停写备份后至更新完成，30 张业务表的数量及完整指纹一致；没有在正式实例创建测试账号或执行到账、删除、悬赏及规划写操作。6 个正式接口在只读事务中验证新权限与删除状态字段；三个匿名入口、实例 API、资金未授权拒绝及 88 个实际加载资源通过，新功能的 7 个模块与构建字节一致。原有可恢复 hydration 提示为主入口 41／1、后台 0／0、Space 16／1，没有新增页面错误。
+
+日志：`/tmp/lab-finance-delete-regression.log`、`/tmp/lab-finance-delete-final.log`、`/tmp/lab-finance-delete-final-increment.log`、`/tmp/lab-issue-delete-pg-final.log`、`/tmp/lab-issue-delete-parent-green.log`、`/tmp/lab-finance-receipts-components.log`、`/tmp/lab-finance-restoration-components.log`、`/tmp/lab-issue-delete-browser-final.log`、`/tmp/lab-finance-removal-web-types-final.log`、`/tmp/lab-finance-removal-web-lint-final.log`、`/tmp/lab-finance-removal-web-build-final.log`、`/tmp/lab-finance-removal-api-build.log`、`/tmp/lab-finance-removal-production-backup.log`、`/tmp/lab-finance-removal-production-restore.log`、`/tmp/lab-finance-removal-production-metadata.log`和 `/tmp/lab-finance-removal-production-browser.log`。隔离测试及恢复服务已经清理。

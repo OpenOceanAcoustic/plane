@@ -1,0 +1,176 @@
+/* Copyright (c) 2026 OpenOceanAcoustic and contributors. SPDX-License-Identifier: AGPL-3.0-only */
+.lab-finance-card,
+.lab-finance-kind,
+.lab-analytics-card {
+  --lab-record-background: var(--label-emerald-bg);
+  --lab-record-foreground: var(--label-emerald-text);
+  --lab-record-border: var(--label-emerald-border);
+}
+.lab-finance-card[data-tone="purple"],
+.lab-finance-kind[data-account-kind="future_exploration"],
+.lab-finance-card[data-account-kind="future_exploration"],
+.lab-analytics-card[data-tone="purple"] {
+  --lab-record-background: var(--label-purple-bg);
+  --lab-record-foreground: var(--label-purple-text);
+  --lab-record-border: var(--label-purple-border);
+}
+.lab-finance-card[data-tone="indigo"],
+.lab-finance-kind[data-account-kind="future_pool"],
+.lab-finance-kind[data-account-kind="future_research"],
+.lab-finance-kind[data-account-kind="history"],
+.lab-finance-card[data-account-kind="future_pool"],
+.lab-finance-card[data-account-kind="future_research"],
+.lab-finance-card[data-account-kind="history"],
+.lab-analytics-card[data-tone="indigo"] {
+  --lab-record-background: var(--label-indigo-bg);
+  --lab-record-foreground: var(--label-indigo-text);
+  --lab-record-border: var(--label-indigo-border);
+}
+.lab-finance-kind[data-account-kind="risk"],
+.lab-finance-kind[data-account-kind="dispute"],
+.lab-finance-kind[data-account-kind="withholding"],
+.lab-finance-card[data-account-kind="risk"],
+.lab-finance-card[data-account-kind="dispute"],
+.lab-finance-card[data-account-kind="withholding"] {
+  --lab-record-background: var(--label-orange-bg);
+  --lab-record-foreground: var(--label-orange-text);
+  --lab-record-border: var(--label-orange-border);
+}
+.lab-finance-card {
+  border-color: color-mix(in srgb, var(--lab-record-border) 22%, var(--border-color-subtle));
+  background: color-mix(in srgb, var(--lab-record-background) 55%, var(--background-color-layer-2));
+  box-shadow:
+    inset 0 2px 0 color-mix(in srgb, var(--lab-record-border) 55%, transparent),
+    var(--shadow-raised-100);
+}
+.lab-finance-card > h3 {
+  color: var(--lab-record-foreground);
+}
+.lab-finance-figure {
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  color: var(--lab-record-foreground);
+}
+.lab-finance-vc dd {
+  margin-top: 5px;
+}
+.lab-finance .lab-finance-available {
+  color: var(--label-emerald-text);
+  font-weight: 600;
+}
+.lab-finance .lab-finance-reserved {
+  color: var(--label-orange-text);
+}
+.lab-finance-kind {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 7px;
+  border-radius: 4px;
+  white-space: nowrap;
+  color: var(--lab-record-foreground);
+  background: var(--lab-record-background);
+}
+.lab-finance .lab-finance-purpose {
+  color: var(--label-indigo-text);
+  background: var(--label-indigo-bg);
+}
+.lab-finance-table,
+.lab-task-table-surface {
+  background: var(--background-color-layer-2);
+  box-shadow: var(--shadow-raised-100);
+}
+.lab-finance-table thead,
+.lab-task-table-surface thead {
+  background: color-mix(in srgb, var(--label-indigo-bg) 55%, var(--background-color-layer-1));
+  color: var(--text-color-primary);
+}
+.lab-finance-table tbody tr:hover,
+.lab-task-table-surface tbody tr:hover {
+  background: color-mix(in srgb, var(--background-color-accent-subtle) 40%, var(--background-color-layer-2));
+}
+.lab-task-table-surface tr[data-grouped="true"] {
+  background: color-mix(in srgb, var(--label-indigo-bg) 40%, var(--background-color-layer-2));
+}
+.lab-finance-tabs,
+.lab-market-tabs,
+.lab-analytics-tabs {
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--border-color-subtle);
+}
+.lab-market-todos {
+  background: color-mix(in srgb, var(--label-orange-bg) 55%, var(--background-color-layer-2));
+  border-color: color-mix(in srgb, var(--label-orange-border) 20%, var(--border-color-subtle));
+}
+.lab-market-todos h2 {
+  color: var(--label-orange-text);
+}
+.lab-market-card {
+  background: color-mix(in srgb, var(--lab-market-category) 4%, var(--background-color-layer-2));
+  transition: background-color 150ms ease;
+}
+button.lab-market-card:hover {
+  background: color-mix(in srgb, var(--lab-market-category) 8%, var(--background-color-layer-2));
+}
+.lab-bounty-status {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 7px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 500;
+  white-space: nowrap;
+  background: var(--label-grey-bg);
+  color: var(--label-grey-text);
+}
+.lab-bounty-status[data-status="open"],
+.lab-bounty-status[data-status="done"],
+.lab-bounty-status[data-status="partial"] {
+  background: var(--label-emerald-bg);
+  color: var(--label-emerald-text);
+}
+.lab-bounty-status[data-status="active"] {
+  background: var(--label-indigo-bg);
+  color: var(--label-indigo-text);
+}
+.lab-bounty-status[data-status="review"],
+.lab-bounty-status[data-status="acceptance_review"] {
+  background: var(--label-purple-bg);
+  color: var(--label-purple-text);
+}
+.lab-bounty-status[data-status="publication_review"],
+.lab-bounty-status[data-status="rework"] {
+  background: var(--label-orange-bg);
+  color: var(--label-orange-text);
+}
+.lab-bounty-status[data-status="rejected"] {
+  background: var(--label-crimson-bg);
+  color: var(--label-crimson-text);
+}
+.lab-market .lab-bounty-quota {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 8px;
+  border-radius: 4px;
+  background: var(--label-purple-bg);
+  color: var(--label-purple-text);
+}
+.lab-analytics-card {
+  border-color: color-mix(in srgb, var(--lab-record-border) 18%, var(--border-color-subtle));
+  box-shadow:
+    inset 0 2px 0 color-mix(in srgb, var(--lab-record-border) 60%, transparent),
+    var(--shadow-raised-100);
+}
+.lab-analytics-card > header h3 {
+  color: var(--lab-record-foreground);
+}
+.lab-analytics-filters {
+  border-color: color-mix(in srgb, var(--label-indigo-border) 18%, var(--border-color-subtle));
+  background: color-mix(in srgb, var(--label-indigo-bg) 35%, var(--background-color-layer-2));
+}
+.lab-task-toolbar {
+  padding: 12px;
+  border: 1px solid var(--border-color-subtle);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--label-indigo-bg) 35%, var(--background-color-layer-2));
+}

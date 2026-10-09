@@ -1,4 +1,4 @@
-/* Plane theme variables provide colors; these rules only control workbench density. */
+/* Workbench density and accents use Plane's theme variables. */
 .lab-planning-workbench {
   container: lab-planning / inline-size;
 }
@@ -22,22 +22,49 @@
 .lab-planning-summary {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  padding: 16px 20px;
-  gap: 20px;
+  padding: 0;
+  gap: 12px;
+  border: 0;
+  background: transparent;
 }
 .lab-planning-summary > div {
+  --lab-summary-bg: var(--label-indigo-bg);
+  --lab-summary-text: var(--label-indigo-text);
+  --lab-summary-border: var(--label-indigo-border);
   display: flex;
   align-items: center;
   flex-wrap: wrap;
   gap: 8px;
+  padding: 14px 16px;
+  border: 1px solid color-mix(in srgb, var(--lab-summary-border) 25%, var(--border-color-subtle));
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--lab-summary-bg) 35%, var(--background-color-surface-1));
   font-size: 13px;
   color: var(--text-color-secondary);
+}
+.lab-planning-summary > [data-summary="pending"] {
+  --lab-summary-bg: var(--label-orange-bg);
+  --lab-summary-text: var(--label-orange-text);
+  --lab-summary-border: var(--label-orange-border);
+}
+.lab-planning-summary > [data-summary="scheduled"] {
+  --lab-summary-bg: var(--label-emerald-bg);
+  --lab-summary-text: var(--label-emerald-text);
+  --lab-summary-border: var(--label-emerald-border);
+}
+.lab-planning-summary > div > svg {
+  box-sizing: content-box;
+  flex-shrink: 0;
+  padding: 7px;
+  border-radius: 8px;
+  background: var(--lab-summary-bg);
+  color: var(--lab-summary-text);
 }
 .lab-planning-summary strong {
   margin-left: auto;
   font-size: 22px;
   font-weight: 600;
-  color: var(--text-color-primary);
+  color: var(--lab-summary-text);
 }
 .lab-planner-board {
   container: lab-board / inline-size;
@@ -65,8 +92,51 @@
 .lab-planner-state-grid > section {
   min-width: 0;
 }
+.lab-planner-column {
+  --lab-status-bg: var(--label-indigo-bg);
+  --lab-status-text: var(--label-indigo-text);
+}
+.lab-planner-column[data-status="active"] {
+  --lab-status-bg: var(--label-orange-bg);
+  --lab-status-text: var(--label-orange-text);
+}
+.lab-planner-column[data-status="review"] {
+  --lab-status-bg: var(--label-purple-bg);
+  --lab-status-text: var(--label-purple-text);
+}
+.lab-planner-column[data-status="done"] {
+  --lab-status-bg: var(--label-emerald-bg);
+  --lab-status-text: var(--label-emerald-text);
+}
+.lab-planner-column[data-over="false"] {
+  background: color-mix(in srgb, var(--lab-status-bg) 25%, var(--background-color-layer-1));
+}
+.lab-planner-column > h2 > span:first-child {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+.lab-planner-column > h2 > span:first-child::before {
+  content: "";
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--lab-status-text);
+}
+.lab-planner-column > h2 > span:last-child {
+  background: var(--lab-status-bg);
+  color: var(--lab-status-text);
+}
 .lab-planner-card {
   min-width: 0;
+  box-shadow: var(--shadow-raised-100);
+}
+.lab-planner-card:hover {
+  box-shadow: var(--shadow-raised-300);
+}
+.lab-planner-card:focus-visible {
+  outline: 2px solid var(--border-color-accent-strong);
+  outline-offset: 2px;
 }
 .lab-planner-card-title {
   overflow-wrap: anywhere;
@@ -105,13 +175,13 @@
 }
 @container lab-planning (max-width: 480px) {
   .lab-planning-summary {
-    gap: 12px;
-    padding: 12px;
+    gap: 8px;
   }
   .lab-planning-summary > div {
     flex-direction: column;
     gap: 4px;
     align-items: flex-start;
+    padding: 10px;
   }
   .lab-planning-summary strong {
     margin-left: 0;

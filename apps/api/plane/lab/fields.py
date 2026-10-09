@@ -243,13 +243,16 @@ class TaskTableView(LabView):
         rows = (
             readable_issues(request.user, self.workspace)
             .filter(is_draft=False, archived_at__isnull=True, project__archived_at__isnull=True)
-            .select_related("project", "state")
+            .select_related("project", "state", "bounty")
             .order_by("project__name", "sequence_id")
         )
         project_id = request.query_params.get("project")
         if project_id:
             rows = rows.filter(project_id=project_id)
         tasks = list(rows)
+        from .issue_deletion import deletable_issue_ids
+
+        deletable_ids = deletable_issue_ids(request.user, self.workspace, tasks)
         enabled = set(
             ProjectField.objects.filter(project_id__in={r.project_id for r in tasks}, enabled=True).values_list(
                 "field_id", flat=True
@@ -280,6 +283,8 @@ class TaskTableView(LabView):
                 or r.created_by_id == request.user.id
                 or r.project.guest_view_all_features,
                 "values": values.get(str(r.id), {}),
+                "can_delete_issue": r.id in deletable_ids,
+                "bounty_id": str(r.bounty.id) if hasattr(r, "bounty") and r.bounty.status != "deleted" else None,
             }
             for r in tasks
         ]

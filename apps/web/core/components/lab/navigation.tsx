@@ -3,9 +3,11 @@
  * SPDX-License-Identifier: AGPL-3.0-only
  */
 
-import { BarChart3, CalendarDays, FolderKanban, TableProperties, Target, Wallet } from "lucide-react";
 import { Link, useParams, useLocation } from "react-router";
 import { SidebarNavItem } from "@/components/sidebar/sidebar-navigation";
+import { labSections } from "./sections";
+// oxlint-disable-next-line import/no-unassigned-import -- scoped lab navigation colors
+import "./theme.css";
 
 export function LabNavigation() {
   const { workspaceSlug } = useParams();
@@ -13,20 +15,19 @@ export function LabNavigation() {
   if (!workspaceSlug) return null;
   return (
     <div className="mt-2 flex flex-col gap-0.5 border-t border-subtle pt-2">
-      {[
-        { key: "planner", name: "个人规划", Icon: FolderKanban },
-        { key: "team", name: "团队排期", Icon: CalendarDays },
-        { key: "tasks", name: "任务表格", Icon: TableProperties },
-        { key: "bounties", name: "悬赏大厅", Icon: Target },
-        { key: "finance", name: "资金与奖励", Icon: Wallet },
-        { key: "analytics", name: "数据总览", Icon: BarChart3 },
-      ].map(({ key, name, Icon }) => {
+      {labSections.map(({ key, name, Icon }) => {
         const href = `/${workspaceSlug}/lab/${key}`;
         return (
-          <Link key={key} to={href}>
+          <Link
+            key={key}
+            to={href}
+            className="lab-navigation-item"
+            data-lab-section={key}
+            aria-current={pathname === href ? "page" : undefined}
+          >
             <SidebarNavItem isActive={pathname === href}>
               <div className="flex items-center gap-1.5 py-[1px] text-13 font-medium">
-                <Icon className="size-4" />
+                <Icon className="lab-navigation-icon size-4" />
                 <span>{name}</span>
               </div>
             </SidebarNavItem>

@@ -19,6 +19,7 @@ from .finance_models import (
     PublicDutyPayment,
     RewardSettlement,
 )
+from .finance_services import finance_removal_state
 from .models import Audit, Bounty, Stage
 from .permissions import project_ids, require_lead
 from .planning_views import LabView
@@ -29,6 +30,11 @@ OPERATION_LABELS = {
     "stage": "确认阶段奖励预算",
     "opening": "登记期初资金",
     "receipt": "到账及资金分池",
+    "receipt-delete": "删除到账记录",
+    "stage-delete": "删除阶段预算",
+    "stage-restore": "恢复阶段预算",
+    "project-delete": "删除资金项目",
+    "project-restore": "恢复资金项目",
     "transfer": "资金划拨",
     "expense": "登记实际支出",
     "settlement": "确认最终执行奖励",
@@ -61,11 +67,15 @@ PROJECT_LABELS = {
 }
 
 
-def projection(workspace, user, overview, project=None, scope="finance"):
+def projection(workspace, user, overview, project=None, scope="finance", selected_project_id=None):
     nodes, edges, history, actions = [], [], [], []
     stages = {row["stage_id"]: row for row in overview["stages"]}
     stage_nodes = {}
     root_id = "project" if project else "funds"
+    removal = finance_removal_state(workspace)
+    managed_projects = {row["id"] for row in overview["projects"] if row.get("can_manage", row.get("is_lead"))}
+    context_id = str(project.id) if project else selected_project_id
+    closed_context = context_id in {str(identifier) for identifier in removal["projects"]}
     nodes.append(
         {"id": root_id, "label": "项目建立" if project else "真实资金账", "x": 0, "y": 0, "state": "completed"}
     )
@@ -95,6 +105,41 @@ def projection(workspace, user, overview, project=None, scope="finance"):
         "label": "资金源记录",
     }
     next_y = 180
+    project_nodes = {}
+    for row in overview["projects"]:
+        if not row.get("deleted"):
+            continue
+        identifier = (
+            root_id
+            if context_id == row["id"]
+            else node(
+                f"finance-project:{row['id']}", f"{row['name']} · 资金项目已删除", 0, next_y, "completed", root_id
+            )
+        )
+        project_nodes[row["id"]] = identifier
+        if identifier != root_id:
+            next_y += 190
+        if row.get("can_restore"):
+            action("project-restore", "恢复资金项目", identifier, {"project_id": row["id"]})
+    for stage in Stage.objects.filter(workspace_id_snapshot=workspace.id, project_id_snapshot__in=managed_projects):
+        if str(stage.id) in stages:
+            continue
+        deleted = stage.id in removal["stages"] or stage.project_id_snapshot in removal["projects"]
+        pending_id = node(
+            f"stage:{stage.id}:cash-budget",
+            f"{stage.name} · {'预算已删除' if deleted else '待确认现金预算'}",
+            0,
+            next_y,
+            "completed" if deleted else "current",
+            root_id,
+        )
+        next_y += 190
+        stage_nodes[str(stage.id)] = {"stage": pending_id, "stage-delete": pending_id, "stage-restore": pending_id}
+        body = {"stage_id": str(stage.id), "project_id": str(stage.project_id_snapshot)}
+        if not deleted:
+            action("stage", "确认阶段奖励预算", pending_id, body)
+        elif stage.id in removal["stages"] and stage.project_id_snapshot not in removal["projects"]:
+            action("stage-restore", "恢复阶段预算", pending_id, body)
     for stage in overview["stages"]:
         stage_id, y = stage["stage_id"], next_y
         batches = [row for row in overview["batches"] if row["stage_id"] == stage_id]
@@ -152,6 +197,8 @@ def projection(workspace, user, overview, project=None, scope="finance"):
         )
         stage_nodes[stage_id] = {
             "stage": budget_id,
+            "stage-delete": budget_id,
+            "stage-restore": budget_id,
             "receipt": receipt_id,
             "stage-allocation": receipt_id,
             "opening": receipt_id,
@@ -169,7 +216,9 @@ def projection(workspace, user, overview, project=None, scope="finance"):
             "carryover": close_id,
             "reverse": close_id,
         }
-        if stage.get("can_manage"):
+        if stage.get("can_restore"):
+            action("stage-restore", "恢复阶段预算", budget_id, {"stage_id": stage_id})
+        if stage.get("can_manage") and not stage.get("deleted"):
             body = {"stage_id": stage_id, "project_id": stage["project_id"]}
             for kind, label in (
                 ("receipt", "登记到账"),
@@ -213,7 +262,12 @@ def projection(workspace, user, overview, project=None, scope="finance"):
                 "current" if Decimal(batch["risk_remaining"]) > 0 else "completed",
                 batch_id,
             )
-            if batch.get("can_manage") and Decimal(batch["risk_remaining"]) > 0:
+            if (
+                batch.get("can_manage")
+                and not batch.get("reversed")
+                and not stage.get("deleted")
+                and Decimal(batch["risk_remaining"]) > 0
+            ):
                 action("risk-release", "释放准备金", risk_id, {"batch_id": batch["id"], "stage_id": stage_id})
                 action("risk-use", "登记责任支出", risk_id, {"batch_id": batch["id"], "stage_id": stage_id})
 
@@ -235,7 +289,11 @@ def projection(workspace, user, overview, project=None, scope="finance"):
         )
         public_nodes[award["group_key"]] = identifier
         next_y += 110
-        if award.get("can_manage") and Decimal(award["outstanding"]) > Decimal(award["committed"]):
+        if (
+            not closed_context
+            and award.get("can_manage")
+            and Decimal(award["outstanding"]) > Decimal(award["committed"])
+        ):
             action("public-commit", "安排公共职责付款", identifier, {"award_id": award["id"]})
     public_revisions = list(PublicDutyAward.objects.filter(group_key__in=public_nodes).select_related("operation"))
     public_award_nodes = {str(row.id): public_nodes[str(row.group_key)] for row in public_revisions}
@@ -244,12 +302,23 @@ def projection(workspace, user, overview, project=None, scope="finance"):
     for commitment in overview.get("public_commitments", []):
         identifier = public_award_nodes[commitment["award_id"]]
         public_commitment_nodes[commitment["id"]] = identifier
-        if commitment.get("can_manage") and not commitment["cancelled"] and Decimal(commitment["remaining"]) > 0:
+        if (
+            not closed_context
+            and commitment.get("can_manage")
+            and not commitment["cancelled"]
+            and Decimal(commitment["remaining"]) > 0
+        ):
             action("public-payment", "登记公共职责实付", identifier, {"commitment_id": commitment["id"]})
 
     def event_node(identifier, kind, stage_id, payload):
         if kind == "receipt" and identifier in batch_operations:
             return batch_operations[identifier]
+        if kind == "receipt-delete" and payload.get("batch_id"):
+            candidate = f"batch:{payload['batch_id']}"
+            if any(row["id"] == candidate for row in nodes):
+                return candidate
+        if kind in {"project-delete", "project-restore"}:
+            return project_nodes.get(str(payload.get("project_id")), root_id)
         if kind in ("risk-release", "risk-use") and payload.get("batch_id"):
             candidate = f"batch:{payload['batch_id']}:risk"
             if any(row["id"] == candidate for row in nodes):
@@ -374,7 +443,7 @@ def projection(workspace, user, overview, project=None, scope="finance"):
             }
         )
 
-    if overview.get("is_manager"):
+    if overview.get("is_manager") and not closed_context:
         for kind, label in (
             ("manager", "指定公共资金管理人"),
             ("opening", "登记公共池期初资金"),
@@ -387,23 +456,11 @@ def projection(workspace, user, overview, project=None, scope="finance"):
             action(kind, label, root_id)
 
     if project:
-        project_stages = list(Stage.objects.filter(project=project))
-        lead = project.project_lead_id == user.id
+        lead = str(project.id) in managed_projects
         if lead:
             require_lead(user, project)
-            action("formula", "配置项目预计奖励公式", root_id, {"project_id": str(project.id)})
-            for stage in project_stages:
-                if str(stage.id) not in stages:
-                    pending_id = node(
-                        f"stage:{stage.id}:cash-budget", f"{stage.name} · 待确认现金预算", 0, next_y, "current", root_id
-                    )
-                    next_y += 190
-                    action(
-                        "stage",
-                        "确认阶段奖励预算",
-                        pending_id,
-                        {"stage_id": str(stage.id), "project_id": str(project.id)},
-                    )
+            if not closed_context:
+                action("formula", "配置项目预计奖励公式", root_id, {"project_id": str(project.id)})
         bounty_rows = Bounty.objects.filter(stage__project=project).select_related("stage")
         task_start = next_y
         for index, bounty in enumerate(bounty_rows):
@@ -412,7 +469,7 @@ def projection(workspace, user, overview, project=None, scope="finance"):
                 f"悬赏 · {bounty.title}",
                 240,
                 task_start + index * 110,
-                "completed" if bounty.status in ("done", "cancelled", "rejected") else "current",
+                "completed" if bounty.status in ("done", "cancelled", "rejected", "deleted") else "current",
                 root_id,
             )
             task_source = {"path": f"/{slug}/lab/bounties?bounty_id={bounty.id}", "label": "悬赏详情与流程"}
@@ -517,7 +574,7 @@ class FinanceLifecycleView(LabView):
 
         project_id = request.query_params.get("project_id") or None
         overview = overview_data(self.workspace, request.user, project_id)
-        return Response(projection(self.workspace, request.user, overview))
+        return Response(projection(self.workspace, request.user, overview, selected_project_id=project_id))
 
 
 lifecycle_patterns = [

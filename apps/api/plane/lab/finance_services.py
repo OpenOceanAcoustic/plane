@@ -13,7 +13,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from types import SimpleNamespace
 from decimal import Decimal, ROUND_DOWN
 
-from django.db import transaction
+from django.db import connection, transaction
 from django.db.models import Sum
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
@@ -67,6 +67,82 @@ LABELS = {
     "withholding": "代扣待缴",
 }
 PUBLIC_KINDS = {"future_pool", "future_research", "future_exploration", "public"}
+REMOVAL_KINDS = {"stage-delete", "stage-restore", "project-delete", "project-restore"}
+
+
+def finance_removal_state(workspace):
+    """Current availability is projected from append-only configuration actions."""
+    latest = {"projects": {}, "stages": {}}
+    rows = FinancialOperation.objects.filter(workspace=workspace, kind__in=REMOVAL_KINDS).order_by("-created_at", "-id")
+    for row in rows:
+        scope = "stages" if row.kind.startswith("stage-") else "projects"
+        identifier = row.stage_id if scope == "stages" else row.project_id_snapshot
+        latest[scope].setdefault(identifier, row.kind.endswith("-delete"))
+    return {scope: {key for key, deleted in values.items() if deleted} for scope, values in latest.items()}
+
+
+def require_finance_open(workspace, project_id, stage_id=None, state=None):
+    state = state if state is not None else finance_removal_state(workspace)
+    if project_id in state["projects"]:
+        raise ValidationError("资金项目已删除，请先恢复资金项目")
+    if stage_id in state["stages"]:
+        raise ValidationError("阶段预算已删除，请先恢复阶段预算")
+
+
+def finance_obligation_reason(workspace, project_id, stage=None):
+    bounties = Bounty.objects.filter(stage__workspace_id_snapshot=workspace.id, stage__project_id_snapshot=project_id)
+    budgets = StageBudget.objects.filter(
+        stage__workspace_id_snapshot=workspace.id, stage__project_id_snapshot=project_id
+    )
+    accounts = FinancialAccount.objects.filter(workspace=workspace, project_id_snapshot=project_id)
+    if stage:
+        bounties = bounties.filter(stage=stage)
+        budgets = budgets.filter(stage=stage)
+        accounts = accounts.filter(stage=stage)
+    if bounties.exclude(status__in=("done", "cancelled", "rejected", "deleted")).exists():
+        return "还有未结束的悬赏，请先完成或删除悬赏"
+    for row in budgets:
+        for kind in ("execution", "history"):
+            if any(item.amount > settlement_paid(item) for item in settlement_latest(row, kind).values()):
+                return "还有未结清的核准奖励，请先处理核准和付款"
+    for row in accounts:
+        if committed(row) > ZERO:
+            return "还有未取消的付款安排，请先结清或取消安排"
+        if balance(row) != ZERO:
+            return "资金账户还有余额，请先处理余额和准备金"
+    if stage:
+        # Unallocated receipt cash belongs to the project account; other stages' cash is independent.
+        for row in FinancialAccount.objects.filter(
+            workspace=workspace, project_id_snapshot=project_id, stage__isnull=True
+        ):
+            contribution = aggregate(row.entries.filter(batch__budget__stage=stage), "delta")
+            if balance(row) != ZERO and contribution != ZERO:
+                return "本阶段还有未分配的项目资金，请先处理余额"
+            if (
+                row.kind == "withholding"
+                and balance(row) != ZERO
+                and active_operations(
+                    OfflinePayment.objects.filter(commitment__settlement__budget__stage=stage, withheld__gt=ZERO)
+                ).exists()
+            ):
+                return "本阶段还有代扣待缴资金，请先登记扣缴款缴付"
+    return None
+
+
+def stage_deletion_reason(workspace, stage, state=None):
+    state = state if state is not None else finance_removal_state(workspace)
+    if stage.project_id_snapshot in state["projects"]:
+        return "资金项目已删除，请先恢复资金项目"
+    if stage.id in state["stages"]:
+        return "阶段预算已删除"
+    return finance_obligation_reason(workspace, stage.project_id_snapshot, stage)
+
+
+def project_deletion_reason(workspace, project, state=None):
+    state = state if state is not None else finance_removal_state(workspace)
+    if project.id in state["projects"]:
+        return "资金项目已删除"
+    return finance_obligation_reason(workspace, project.id)
 
 
 def aggregate(rows, field):
@@ -310,6 +386,7 @@ def stage_budget(user, workspace, identifier):
         stage__workspace_id_snapshot=workspace.id,
     )
     require_lead(user, row.stage.project)
+    require_finance_open(workspace, row.stage.project_id_snapshot, row.stage_id)
     return row
 
 
@@ -318,6 +395,7 @@ def account_by_id(user, workspace, identifier):
         FinancialAccount.objects.select_related("project", "workspace", "stage"), id=identifier, workspace=workspace
     )
     account_permission(user, row)
+    require_finance_open(workspace, row.project_id_snapshot, row.stage_id)
     return row
 
 
@@ -760,52 +838,18 @@ def move_reserved(operation, user, workspace, data, action):
     return source, source.stage
 
 
-def reverse_operation(operation, user, workspace, data):
-    original = get_object_or_404(
-        FinancialOperation.objects.select_related("project"), id=data.get("operation_id"), workspace=workspace
-    )
-    if original.kind == "exploration-allocation":
-        require_manager(user, workspace)
-    elif original.project_id_snapshot:
-        require_lead(user, original.project)
-    else:
-        require_manager(user, workspace)
-    require_evidence(data)
-    if (
-        original.reverses_id
-        or (hasattr(original, "reversal") and original.reversal.id != operation.id)
-        or original.kind
-        in {
-            "stage",
-            "manager",
-            "history-settlement",
-            "history-award",
-            "cancel-commit",
-            "settlement",
-            "commit",
-            "public-duty",
-            "public-commit",
-            "public-cancel-commit",
-        }
-    ):
-        raise ValidationError("该记录不可冲正；核准请追加修订，承诺请取消，冻结方案不可覆盖")
+def reversal_entries(workspace, original):
+    """Validate real balances, commitments and source-specific downstream dependencies."""
     entries = list(original.entries.select_related("account", "batch"))
-    for entry in entries:
-        if original.kind == "exploration-allocation":
-            # This action is managed by the designated public manager and explicitly targets one approved stage.
-            if (
-                entry.account.kind not in {"future_exploration", "execution"}
-                or entry.account.kind == "execution"
-                and entry.account.stage_id != original.stage_id
-            ):
-                raise PermissionDenied("探索拨款记录的账户范围不一致")
-        elif entry.account.kind in PUBLIC_KINDS and original.kind == "receipt":
-            if not entry.batch_id or entry.batch.operation_id != original.id:
-                raise PermissionDenied("只有原始到账分池记录可以随原批次冲正公共池划入")
-        else:
-            account_permission(user, entry.account)
     if not entries:
         raise ValidationError("该记录没有可冲正资金流水")
+    if (
+        CashBatch.objects.filter(operation=original).exists()
+        and active_operations(
+            FinancialEntry.objects.filter(batch__operation=original).exclude(operation=original)
+        ).exists()
+    ):
+        raise ValidationError("该笔资金已有准备金释放或使用，请先冲正原批次后续流水")
     changes = {}
     for entry in entries:
         changes.setdefault(entry.account_id, [entry.account, ZERO])[1] -= entry.delta
@@ -820,6 +864,85 @@ def reverse_operation(operation, user, workspace, data):
             # Reversing a payment also removes paid amount, so do not count its restored cash twice.
             if funded(budget, row.kind) + delta < final:
                 raise ValidationError("冲正会使阶段累计核准奖励超过真实资金，请先追加核准调整")
+        if row.kind == "future_pool" and delta < ZERO and original.kind in {"receipt", "opening"}:
+            year = original.occurred_at.astimezone(workspace_zone(workspace)).year
+            unplanned = ZERO
+            for entry in (
+                row.entries.filter(
+                    operation__kind__in=("receipt", "opening", "future-plan"), operation__reversal__isnull=True
+                )
+                .exclude(operation=original)
+                .select_related("operation")
+            ):
+                op = entry.operation
+                belongs = (op.kind == "future-plan" and str(op.payload.get("year")) == str(year)) or (
+                    op.kind in {"receipt", "opening"}
+                    and op.occurred_at.astimezone(workspace_zone(workspace)).year == year
+                )
+                if belongs:
+                    unplanned += entry.delta
+            if unplanned < ZERO:
+                raise ValidationError("该年度未来资金已编列，请先冲正后续年度编列")
+    return entries
+
+
+def receipt_deletion_reason(batch):
+    if batch.operation.kind != "receipt":
+        return "期初余额请通过冲正更正"
+    if hasattr(batch.operation, "reversal"):
+        return "到账记录已删除或冲正"
+    try:
+        reversal_entries(batch.operation.workspace, batch.operation)
+    except ValidationError as error:
+        return str(error.detail[0]) if isinstance(error.detail, list) else str(error.detail)
+    return None
+
+
+def reverse_operation(operation, user, workspace, data):
+    original = get_object_or_404(
+        FinancialOperation.objects.select_related("project"), id=data.get("operation_id"), workspace=workspace
+    )
+    if original.kind == "exploration-allocation":
+        require_manager(user, workspace)
+    elif original.project_id_snapshot:
+        require_lead(user, original.project)
+    else:
+        require_manager(user, workspace)
+    if operation.kind != "receipt-delete":
+        require_evidence(data)
+    if (
+        original.reverses_id
+        or (hasattr(original, "reversal") and original.reversal.id != operation.id)
+        or original.kind
+        in REMOVAL_KINDS
+        | {
+            "stage",
+            "manager",
+            "history-settlement",
+            "history-award",
+            "cancel-commit",
+            "settlement",
+            "commit",
+            "public-duty",
+            "public-commit",
+            "public-cancel-commit",
+        }
+    ):
+        raise ValidationError("该记录不可冲正；核准请追加修订，承诺请取消，冻结方案不可覆盖")
+    entries = reversal_entries(workspace, original)
+    removal = finance_removal_state(workspace)
+    for entry in entries:
+        if original.kind == "exploration-allocation":
+            if entry.account.kind not in {"future_exploration", "execution"} or (
+                entry.account.kind == "execution" and entry.account.stage_id != original.stage_id
+            ):
+                raise PermissionDenied("探索拨款记录的账户范围不一致")
+        elif entry.account.kind in PUBLIC_KINDS and original.kind == "receipt":
+            if not entry.batch_id or entry.batch.operation_id != original.id:
+                raise PermissionDenied("只有原始到账分池记录可以随原批次冲正公共池划入")
+        else:
+            account_permission(user, entry.account)
+        require_finance_open(workspace, entry.account.project_id_snapshot, entry.account.stage_id, state=removal)
     if original.kind == "public-payment":
         payment = PublicDutyPayment.objects.get(operation=original)
         if public_commitment_cancelled(payment.commitment):
@@ -836,6 +959,20 @@ def reverse_operation(operation, user, workspace, data):
 def operation_scope(workspace, action, data):
     """Scope is derived from the action's actual resource, never unrelated caller-supplied IDs."""
     stage, project, original = None, None, None
+    if action == "receipt-delete":
+        batch = get_object_or_404(
+            CashBatch.objects.select_related("operation__stage", "operation__project"),
+            id=data.get("batch_id"),
+            operation__workspace=workspace,
+        )
+        original = batch.operation
+        if original.kind != "receipt":
+            raise ValidationError("期初余额请通过冲正更正")
+        if hasattr(original, "reversal"):
+            raise ValidationError("到账记录已删除或冲正")
+        return original.stage, original.project, original
+    if action in {"project-delete", "project-restore"}:
+        return None, get_object_or_404(Project, id=data.get("project_id"), workspace=workspace), None
     if action == "reverse":
         original = get_object_or_404(
             FinancialOperation.objects.select_related("stage", "project"),
@@ -846,7 +983,17 @@ def operation_scope(workspace, action, data):
             raise ValidationError("记录已冲正或是冲正记录")
         return original.stage, original.project, original
     if (
-        action in {"stage", "receipt", "settlement", "history-settlement", "exploration-allocation", "stage-allocation"}
+        action
+        in {
+            "stage",
+            "receipt",
+            "settlement",
+            "history-settlement",
+            "exploration-allocation",
+            "stage-allocation",
+            "stage-delete",
+            "stage-restore",
+        }
         or action == "opening"
         and data.get("stage_id")
     ):
@@ -890,6 +1037,11 @@ def operation_result_id(row):
     lookups = {
         "stage": lambda: StageBudget.objects.get(stage=row.stage).id,
         "receipt": lambda: CashBatch.objects.get(operation=row).id,
+        "receipt-delete": lambda: row.payload.get("batch_id"),
+        "stage-delete": lambda: row.stage_id,
+        "stage-restore": lambda: row.stage_id,
+        "project-delete": lambda: row.project_id_snapshot,
+        "project-restore": lambda: row.project_id_snapshot,
         "settlement": lambda: RewardSettlement.objects.get(operation=row).id,
         "history-settlement": lambda: StageBudget.objects.get(stage=row.stage).id,
         "commit": lambda: PaymentCommitment.objects.get(operation=row).id,
@@ -920,6 +1072,9 @@ def operation_result_id(row):
 @transaction.atomic
 def perform(user, workspace, action, data):
     lock(f"finance:{workspace.id}")
+    if action in REMOVAL_KINDS:
+        with connection.cursor() as cursor:
+            cursor.execute("SELECT lab_wip_lock(%s)", [workspace.id])
     policy(workspace, create=True)
     try:
         key = uuid.UUID(str(data.get("request_key")))
@@ -941,6 +1096,32 @@ def perform(user, workspace, action, data):
     if timezone.is_naive(fact):
         raise ValidationError("事实时间须包含时区")
     initial_stage, initial_project, original = operation_scope(workspace, action, data)
+    if initial_project:
+        if action == "exploration-allocation":
+            require_manager(user, workspace)
+        else:
+            require_lead(user, initial_project)
+    if action in REMOVAL_KINDS:
+        state = finance_removal_state(workspace)
+        if action.endswith("-delete"):
+            blocking = (
+                stage_deletion_reason(workspace, initial_stage, state)
+                if initial_stage
+                else project_deletion_reason(workspace, initial_project, state)
+            )
+            if blocking:
+                raise ValidationError(blocking)
+        elif initial_stage:
+            if initial_project.id in state["projects"]:
+                raise ValidationError("请先恢复资金项目，再恢复阶段预算")
+            if initial_stage.id not in state["stages"]:
+                raise ValidationError("阶段预算未删除")
+        elif initial_project.id not in state["projects"]:
+            raise ValidationError("资金项目未删除")
+    else:
+        require_finance_open(
+            workspace, initial_project.id if initial_project else None, initial_stage.id if initial_stage else None
+        )
     operation = FinancialOperation.objects.create(
         workspace=workspace,
         project=initial_project,
@@ -958,7 +1139,12 @@ def perform(user, workspace, action, data):
         reverses=original,
     )
     result, stage = operation, None
-    if action == "manager":
+    if action in REMOVAL_KINDS:
+        result, stage = initial_stage or initial_project, initial_stage
+    elif action == "receipt-delete":
+        reverse_operation(operation, user, workspace, {**data, "operation_id": str(original.id)})
+        result, stage = CashBatch.objects.get(operation=original), initial_stage
+    elif action == "manager":
         require_manager(user, workspace)
         manager = user_in_workspace(workspace, data.get("user_id"))
         if not WorkspaceMember.objects.filter(workspace=workspace, member=manager, is_active=True, role=20).exists():
@@ -1247,6 +1433,7 @@ def perform(user, workspace, action, data):
 def save_formula(user, project, data):
     require_lead(user, project)
     lock(f"finance:{project.workspace_id}")
+    require_finance_open(project.workspace, project.id)
     params = parameter_definitions(data.get("parameters", []))
     expressions = {kind: str(data.get(f"{kind}_expression", "")).strip() for kind in ("task", "member")}
     for kind, expression in expressions.items():
@@ -1314,6 +1501,7 @@ def create_forecast(user, workspace, data):
         stage_id=data.get("stage_id"),
         stage__workspace_id_snapshot=workspace.id,
     )
+    require_finance_open(workspace, budget.stage.project_id_snapshot, budget.stage_id)
     kind, basis = data.get("kind"), data.get("basis")
     if kind not in ("task", "member") or basis not in ("budget", "received"):
         raise ValidationError("请选择任务/成员与预算/到账测算口径")

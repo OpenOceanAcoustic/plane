@@ -17,6 +17,7 @@
   --xy-handle-background-color: var(--text-color-tertiary);
   --xy-handle-border-color: var(--background-color-surface-1);
   font-family: inherit;
+  border-color: color-mix(in srgb, var(--border-color-accent-strong) 15%, var(--border-color-subtle));
 }
 
 .lab-bounty-flow .react-flow__attribution {
@@ -26,6 +27,62 @@
 
 .lab-bounty-flow .react-flow__attribution a {
   color: inherit;
+}
+
+.lab-workflow-node {
+  --lab-workflow-color: var(--label-indigo-text);
+  --lab-workflow-border: var(--label-indigo-border);
+  --lab-workflow-bg: var(--label-indigo-bg);
+  border-color: var(--border-color-subtle);
+  background: var(--background-color-surface-1);
+  color: var(--text-color-tertiary);
+  transition:
+    border-color 120ms ease,
+    box-shadow 120ms ease,
+    background-color 120ms ease;
+}
+
+.lab-workflow-node[data-workflow-state="completed"] {
+  border-color: color-mix(in srgb, var(--lab-workflow-border) 25%, var(--border-color-subtle));
+  background: color-mix(in srgb, var(--lab-workflow-bg) 45%, var(--background-color-surface-1));
+  color: var(--text-color-primary);
+  box-shadow: inset 2px 0 0 color-mix(in srgb, var(--lab-workflow-border) 65%, transparent);
+}
+
+.lab-workflow-node[data-workflow-state="current"] {
+  --lab-workflow-color: var(--text-color-accent-primary);
+  --lab-workflow-border: var(--border-color-accent-strong);
+  --lab-workflow-bg: color-mix(in srgb, var(--background-color-accent-primary) 8%, var(--background-color-surface-1));
+  border-color: var(--lab-workflow-border);
+  background: var(--lab-workflow-bg);
+  color: var(--lab-workflow-color);
+  box-shadow: inset 3px 0 0 var(--lab-workflow-border);
+}
+
+.lab-workflow-node[data-workflow-outcome="complete"] {
+  --lab-workflow-color: var(--label-emerald-text);
+  --lab-workflow-border: var(--label-emerald-border);
+  --lab-workflow-bg: var(--label-emerald-bg);
+}
+
+.lab-workflow-node[data-workflow-outcome="rework"] {
+  --lab-workflow-color: var(--label-orange-text);
+  --lab-workflow-border: var(--label-orange-border);
+  --lab-workflow-bg: var(--label-orange-bg);
+}
+
+.lab-workflow-node[data-workflow-outcome="rejected"] {
+  --lab-workflow-color: var(--text-color-danger-primary);
+  --lab-workflow-border: var(--border-color-danger-strong);
+  --lab-workflow-bg: var(--background-color-danger-subtle);
+}
+
+.lab-workflow-node[data-workflow-outcome][data-workflow-state="completed"] {
+  color: var(--lab-workflow-color);
+}
+
+.lab-workflow-node:hover {
+  border-color: color-mix(in srgb, var(--lab-workflow-border) 50%, var(--border-color-subtle));
 }
 
 .lab-bounty-node {
@@ -51,7 +108,7 @@
 }
 
 .lab-bounty-flow .lab-bounty-edge-primary .react-flow__edge-path {
-  stroke: var(--text-color-secondary);
+  stroke: color-mix(in srgb, var(--label-indigo-text) 35%, var(--text-color-secondary));
 }
 
 .lab-bounty-flow .lab-bounty-edge-secondary .react-flow__edge-path {
@@ -60,11 +117,12 @@
   opacity: 0.4;
 }
 
+.lab-bounty-flow .react-flow__edge.animated .react-flow__edge-path,
 .lab-bounty-flow .lab-bounty-edge-focused .react-flow__edge-path {
   stroke: var(--text-color-accent-primary);
 }
 
-.lab-bounty-flow .react-flow__node.selected .lab-bounty-node {
+.lab-bounty-flow .react-flow__node.selected .lab-workflow-node {
   border-color: var(--border-color-accent-strong);
   box-shadow: 0 0 0 2px color-mix(in srgb, var(--background-color-accent-primary) 15%, transparent);
 }

@@ -17,6 +17,8 @@ import { LabDialog, LabField, LabSelect, labInputClass } from "@plane/ui";
 import { LabItemDetails, labCanOpenProjectIssue } from "./item-details";
 import type { LabOpenProjectIssue } from "./item-details";
 import { LabTaskOverview } from "./task-overview";
+import { LabBountyPlanningDialog } from "./bounty-planning-dialog";
+import { LabIssueDeleteDialog } from "./issue-delete-dialog";
 // oxlint-disable-next-line import/no-unassigned-import -- responsive board density shared with workbench
 import "./planner-workbench.css";
 import {
@@ -68,11 +70,13 @@ export const LabPlannerBoard = observer(function LabPlannerBoard({
   openProjectIssue?: LabOpenProjectIssue;
 }) {
   const [viewing, setViewing] = useState<LabItem>();
+  const [bountyTransition, setBountyTransition] = useState<{ item: LabItem; status: LabStatus }>();
   const [selected, setSelected] = useState<string | null | "all">("all");
   const [dialog, setDialog] = useState<
     "folder" | "item" | "reference" | "mapping" | "delete-folder" | "delete-item" | null
   >(null);
   const [editing, setEditing] = useState<LabItem>();
+  const [deletingIssue, setDeletingIssue] = useState<LabItem>();
   const [editingFolder, setEditingFolder] = useState<LabFolder>();
   const [query, setQuery] = useState("");
   const [search, setSearch] = useState("");
@@ -141,6 +145,22 @@ export const LabPlannerBoard = observer(function LabPlannerBoard({
       setEditing(undefined);
     });
   };
+  async function changeStatus(item: LabItem, status: LabStatus) {
+    if (status === item.status || store.busy) return;
+    if (item.bounty_id) {
+      setBountyTransition({ item, status });
+      return;
+    }
+    if (item.is_bounty || item.can_edit_issue === false) {
+      setToast({
+        type: TOAST_TYPE.ERROR,
+        title: "规划更新失败",
+        message: item.is_bounty ? "悬赏资料尚未加载，请刷新后重试" : "你没有修改此任务状态的权限",
+      });
+      return;
+    }
+    await mutation(`items/${item.id}/`, "PATCH", { status });
+  }
   async function dropped(event: DragEndEvent) {
     const source = event.active.data.current,
       target = event.over?.data.current;
@@ -155,12 +175,8 @@ export const LabPlannerBoard = observer(function LabPlannerBoard({
       const item = source.item as LabItem;
       if (target.type === "folder" && target.folderId !== item.folder_id)
         await mutation(`items/${item.id}/`, "PATCH", { folder_id: target.folderId });
-      if (target.type === "status" && item.can_edit_issue === false) {
-        store.notice = "此悬赏通过任务详情办理，项目状态由负责人和验收流程更新。";
-        return;
-      }
       if (target.type === "status" && target.status !== item.status)
-        await mutation(`items/${item.id}/`, "PATCH", { status: target.status });
+        await changeStatus(item, target.status as LabStatus);
     }
   }
   return (
@@ -460,10 +476,8 @@ export const LabPlannerBoard = observer(function LabPlannerBoard({
                         aria-label={`${item.title}状态`}
                         className="rounded border border-subtle bg-surface-1 p-1 text-12"
                         value={item.status}
-                        disabled={store.busy || item.can_edit_issue === false}
-                        onChange={(event) =>
-                          void mutation(`items/${item.id}/`, "PATCH", { status: event.target.value })
-                        }
+                        disabled={store.busy || (item.can_edit_issue === false && !item.bounty_id && !item.is_bounty)}
+                        onChange={(event) => void changeStatus(item, event.target.value as LabStatus)}
                       >
                         {statuses.map((option) => (
                           <option key={option.key} value={option.key}>
@@ -499,6 +513,16 @@ export const LabPlannerBoard = observer(function LabPlannerBoard({
                       >
                         <Trash2 size={14} />
                       </button>
+                      {item.issue_id && item.can_delete_issue === true && (
+                        <button
+                          aria-label={`删除工作项${item.title}`}
+                          className="rounded p-1.5 text-danger-primary hover:bg-layer-1"
+                          disabled={store.busy}
+                          onClick={() => setDeletingIssue(item)}
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      )}
                     </div>
                   </DraggablePlanningCard>
                 ))}
@@ -509,6 +533,23 @@ export const LabPlannerBoard = observer(function LabPlannerBoard({
           ))}
         </div>
       </DndContext>
+      {bountyTransition && (
+        <LabBountyPlanningDialog
+          store={store}
+          item={bountyTransition.item}
+          requestedStatus={bountyTransition.status}
+          onClose={() => setBountyTransition(undefined)}
+        />
+      )}
+      {deletingIssue?.issue_id && (
+        <LabIssueDeleteDialog
+          key={deletingIssue.issue_id}
+          store={store}
+          task={{ id: deletingIssue.issue_id, title: deletingIssue.title, bounty_id: deletingIssue.bounty_id }}
+          onClose={() => setDeletingIssue(undefined)}
+          onDeleted={() => store.loadPlanner()}
+        />
+      )}
       {dialog === "delete-folder" && editingFolder && (
         <LabDialog
           title={`删除文件夹 ${editingFolder.name}`}

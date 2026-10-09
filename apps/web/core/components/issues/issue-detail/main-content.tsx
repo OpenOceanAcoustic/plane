@@ -22,6 +22,7 @@ import { useMember } from "@/hooks/store/use-member";
 import { useUser } from "@/hooks/store/user";
 import useReloadConfirmations from "@/hooks/use-reload-confirmation";
 import useSize from "@/hooks/use-window-size";
+import { useAppRouter } from "@/hooks/use-app-router";
 // services
 import { WorkItemVersionService } from "@/services/issue";
 // local imports
@@ -53,11 +54,13 @@ export const IssueMainContent = observer(function IssueMainContent(props: Props)
   const [isSubmitting, setIsSubmitting] = useState<TNameDescriptionLoader>("saved");
   // hooks
   const windowSize = useSize();
+  const router = useAppRouter();
   const { data: currentUser } = useUser();
   const { getUserDetails } = useMember();
   const {
     issue: { getIssueById },
     peekIssue,
+    rootIssueStore,
   } = useIssueDetail();
   const { setShowAlert } = useReloadConfirmations(isSubmitting === "submitting");
   // derived values
@@ -177,6 +180,13 @@ export const IssueMainContent = observer(function IssueMainContent(props: Props)
         projectId={projectId}
         issueId={issueId}
         editable={isEditable && !isArchived}
+        deletable={isEditable}
+        onDeleted={() => {
+          const nativeIssues = isArchived ? rootIssueStore.archivedIssues : rootIssueStore.projectIssues;
+          nativeIssues.removeIssueFromList(issueId);
+          rootIssueStore.issues.removeIssue(issueId);
+          router.push(`/${workspaceSlug}/projects/${projectId}/issues`);
+        }}
       />
 
       {windowSize[0] < 768 && (

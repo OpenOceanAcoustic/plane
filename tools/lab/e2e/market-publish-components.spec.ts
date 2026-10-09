@@ -158,6 +158,29 @@ test("bounty hall exposes a single publication entry without separate frozen B o
   await expect(page.getByText("导出项目 VC CSV", { exact: true })).toHaveCount(0);
 });
 
+test("deleted funding sources cannot be selected or used to publish a bounty", async ({ page }) => {
+  let publications = 0;
+  await mount(page, async () => {
+    await page.route("**/lab/bounties/budgets/", (route) =>
+      route.fulfill({
+        json: budgets.map((budget) => Object.assign({}, budget, { deleted: true, project_deleted: true })),
+      })
+    );
+    await page.route("**/lab/bounties/", (route) => {
+      if (route.request().method() === "POST") ++publications;
+      return route.fulfill({ json: [] });
+    });
+  });
+  await page.getByRole("button", { name: "发布悬赏", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "发布悬赏", exact: true });
+  await expect(dialog.getByText("项目尚未配置 VC 预算", { exact: true })).toBeVisible();
+  await expect(dialog.getByLabel("项目", { exact: true }).locator("option")).toHaveText(["请选择项目"]);
+  await expect(dialog.getByLabel("项目", { exact: true })).toHaveValue("");
+  await dialog.getByLabel("VC配额", { exact: true }).fill("10");
+  await expect(dialog.getByRole("button", { name: "发布", exact: true })).toBeDisabled();
+  expect(publications).toBe(0);
+});
+
 test("publication loads project work items without searching and sends a single set of materials against the project budget", async ({
   page,
 }) => {
