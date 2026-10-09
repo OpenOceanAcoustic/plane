@@ -80,6 +80,8 @@ test("task-only access opens a controlled right overview without requesting nati
   const overview = page.getByRole("dialog", { name: "悬赏任务详情", exact: true });
   await expect(overview).toBeVisible();
   await expect(overview.getByRole("region", { name: "事项内容", exact: true })).toContainText("任务授权可见的交付要求");
+  await expect(overview).toContainText("VC配额");
+  await expect(overview).toContainText("10 VC");
   await expect(overview.getByRole("region", { name: "悬赏共享资料", exact: true })).toBeVisible();
   await expect(overview.getByRole("region", { name: "悬赏流程图", exact: true })).toBeVisible();
   const bounds = await overview.boundingBox();

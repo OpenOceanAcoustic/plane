@@ -60,7 +60,7 @@ export const LabTaskOverview = observer(function LabTaskOverview({
               <dd className="mt-1">{bounty.project}</dd>
             </div>
             <div>
-              <dt className="text-secondary">任务预算</dt>
+              <dt className="text-secondary">VC配额</dt>
               <dd className="mt-1">{bounty.budget} VC</dd>
             </div>
             <div>

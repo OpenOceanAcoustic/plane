@@ -127,6 +127,7 @@ def test_delete_revokes_execution_materials_and_preserves_existing_planning(labo
         .json()["items"]
     )
     assert metadata[0]["bounty_id"] is None and metadata[0]["color"] == "#abcdef"
+    assert metadata[0]["bounty_budget"] is None
     assert lead.get(sources).json()["materials"] == []
     assert (
         lead.post(sources, {"kind": "document_version", "page_version_id": str(version.id)}, format="json").status_code

@@ -8,7 +8,7 @@ from unittest.mock import patch
 import pytest
 from django.utils import timezone
 
-from plane.db.models import FileAsset, Page, PageVersion, ProjectMember, ProjectPage, User, WorkspaceMember
+from plane.db.models import FileAsset, Issue, Page, PageVersion, ProjectMember, ProjectPage, User, WorkspaceMember
 from plane.lab.bounty_models import BountyPublication, BountyTaskAccess
 from plane.lab.models import Allocation, Folder, PersonalCategory, PersonalItem
 from .test_bounties import action, prepare
@@ -186,7 +186,7 @@ def test_shared_attachment_stream_and_native_uuid_download_do_not_expand_project
 
 def test_card_metadata_uses_viewers_category_and_requires_native_project_access(laboratory):
     lab = laboratory
-    bounty, issue, _ = prepare(lab)
+    bounty, issue, _ = prepare(lab, budget="20.12")
     user = cross_member(lab)
     approve_cross(lab, bounty, user)
     category = PersonalCategory.objects.create(
@@ -200,9 +200,25 @@ def test_card_metadata_uses_viewers_category_and_requires_native_project_access(
     assert response.status_code == 200
     assert response.json()["items"][0]["color"] == "#123456"
     assert response.json()["items"][0]["bounty_id"] == bounty
+    assert response.json()["items"][0]["bounty_budget"] == "20.12"
+    by_issue = lab["client"](lab["member"]).post(endpoint, {"issue_ids": [str(issue.id)]}, format="json")
+    assert by_issue.status_code == 200
+    assert by_issue.json()["items"][0]["bounty_budget"] == "20.12"
     client = lab["client"](user)
     assert client.get(endpoint + f"?project_id={lab['project'].id}").status_code == 404
+    assert client.get(endpoint + f"?issue_ids={issue.id}").json() == {"items": []}
     assert client.post(endpoint, {"issue_ids": [str(issue.id)]}, format="json").json() == {"items": []}
+
+
+def test_card_metadata_personal_workitem_without_bounty_has_no_quota(laboratory):
+    lab = laboratory
+    issue = Issue.objects.create(
+        workspace=lab["workspace"], project=lab["project"], name="Ordinary work item", state=lab["states"]["todo"]
+    )
+    PersonalItem.objects.create(workspace=lab["workspace"], user=lab["member"], issue=issue, kind="project")
+    result = lab["client"](lab["member"]).get(lab["base"] + f"task-card-metadata/?issue_ids={issue.id}").json()["items"]
+    assert len(result) == 1 and result[0]["issue_id"] == str(issue.id)
+    assert result[0]["bounty_id"] is None and result[0]["bounty_budget"] is None
 
 
 def test_old_bounty_requires_explicit_summary_and_never_publishes_old_evidence(laboratory):

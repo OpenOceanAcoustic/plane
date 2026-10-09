@@ -303,6 +303,7 @@ class TaskCardMetadataView(LabView):
                     "issue_id": str(issue_id),
                     "bounty_id": str(bounty.id) if bounty else None,
                     "bounty_status": bounty.status if bounty else None,
+                    "bounty_budget": str(bounty.budget) if bounty else None,
                     **category_fields,
                     "color": category_fields["category_color"],
                     "detail_path": detail,

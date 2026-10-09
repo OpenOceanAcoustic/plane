@@ -6,15 +6,20 @@ type TaskCardMetadata = {
   issue_id: string;
   bounty_id: string | null;
   bounty_status: string | null;
+  bounty_budget: string | null;
   color: string | null;
   detail_path: string | null;
 };
 const emptyMetadata: ReadonlyMap<string, TaskCardMetadata> = new Map();
 
 /** All cards in a project share one permission-filtered request. */
-export function useLabTaskCardMetadata(workspaceSlug: string | undefined, projectId: string | null | undefined) {
+export function useLabTaskCardMetadataState(
+  workspaceSlug: string | undefined,
+  projectId: string | null | undefined,
+  revalidateOnMount = false
+) {
   const key = workspaceSlug && projectId ? (["lab-task-card-metadata", workspaceSlug, projectId] as const) : null;
-  const { data } = useSWR(
+  return useSWR(
     key,
     async ([, slug, project]: readonly [string, string, string]) => {
       const response = await fetch(
@@ -25,7 +30,15 @@ export function useLabTaskCardMetadata(workspaceSlug: string | undefined, projec
       const result = (await response.json()) as { items: TaskCardMetadata[] };
       return new Map(result.items.map((item) => [item.issue_id, item]));
     },
-    { refreshInterval: 30000, shouldRetryOnError: false }
+    {
+      refreshInterval: 30000,
+      shouldRetryOnError: false,
+      ...(revalidateOnMount ? { revalidateOnMount: true, dedupingInterval: 0 } : {}),
+    }
   );
+}
+
+export function useLabTaskCardMetadata(workspaceSlug: string | undefined, projectId: string | null | undefined) {
+  const { data } = useLabTaskCardMetadataState(workspaceSlug, projectId);
   return data ?? emptyMetadata;
 }

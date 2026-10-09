@@ -12,6 +12,8 @@ import type { EditorRefApi } from "@plane/editor";
 import type { TNameDescriptionLoader } from "@plane/types";
 import { EIssueServiceType } from "@plane/types";
 import { cn } from "@plane/utils";
+// components
+import { LabIssueDetails } from "@/components/lab/issue-details";
 // hooks
 import { useIssueDetail } from "@/hooks/store/use-issue-detail";
 import useKeypress from "@/hooks/use-keypress";
@@ -206,6 +208,13 @@ export const IssueView = observer(function IssueView(props: IIssueView) {
                       disabled={disabled || is_archived}
                     />
 
+                    <LabIssueDetails
+                      workspaceSlug={workspaceSlug}
+                      projectId={projectId}
+                      issueId={issueId}
+                      editable={!disabled && !is_archived}
+                    />
+
                     <IssueActivity
                       workspaceSlug={workspaceSlug}
                       projectId={projectId}
@@ -238,6 +247,13 @@ export const IssueView = observer(function IssueView(props: IIssueView) {
                             issueServiceType={EIssueServiceType.ISSUES}
                           />
                         </div>
+
+                        <LabIssueDetails
+                          workspaceSlug={workspaceSlug}
+                          projectId={projectId}
+                          issueId={issueId}
+                          editable={!disabled && !is_archived}
+                        />
 
                         <IssueActivity
                           workspaceSlug={workspaceSlug}
