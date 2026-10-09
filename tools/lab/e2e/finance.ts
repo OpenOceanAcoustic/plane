@@ -4,6 +4,7 @@ import { readFileSync } from "node:fs";
 import { expect } from "@playwright/test";
 import type { Page } from "@playwright/test";
 import type { LabEvent, LabLedgerEntry, LabPlanner } from "../../../packages/types/src/index";
+import { verifySimpleBounty } from "./simple-bounty";
 
 type FinanceFixture = {
   stage: string;
@@ -305,4 +306,5 @@ export async function verifyFinance(page: Page, fixture: { project: string }): P
   await expect(nativeCard).toBeVisible();
   await expect(nativeCard.getByLabel("悬赏任务", { exact: true })).toHaveCount(0);
   milestone("published bounty deletion preserves paid cash, earned VC, personal folder, colors and schedule");
+  await verifySimpleBounty(page, fixture);
 }

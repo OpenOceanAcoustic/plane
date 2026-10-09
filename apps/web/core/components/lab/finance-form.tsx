@@ -25,7 +25,7 @@ export const financeActionLabels: Record<string, string> = {
   carryover: "结转未用余额",
   reverse: "冲正资金操作",
   manager: "指定公共资金管理员",
-  "vc-stage": "冻结阶段 VC 预算 B",
+  "vc-stage": "设置项目 VC 预算",
   "exploration-allocation": "拨付探索阶段奖励",
   "stage-allocation": "拨付留存至新阶段奖励",
   "risk-use": "登记风险事项实际支出",
@@ -229,8 +229,8 @@ export function LabFinanceActionDialog({
             .filter((project) => project.is_lead)
             .map((project) => ({ value: project.id, label: project.name }))
         ),
-        { key: "name", label: "阶段（季度或里程碑）", required: true },
-        number("budget", "冻结预算 B（VC）"),
+        { key: "name", label: "预算名称", required: true, value: "当前预算" },
+        number("budget", "VC 预算"),
       ];
       break;
     case "exploration-allocation":

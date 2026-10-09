@@ -10,7 +10,15 @@ import type { LabStore } from "@plane/shared-state";
 import type { LabLedgerEntry } from "@plane/types";
 import { Button, LabDialog, LabField, labInputClass } from "@plane/ui";
 
-export const LabLedger = observer(function LabLedger({ store, projectId }: { store: LabStore; projectId: string }) {
+export const LabLedger = observer(function LabLedger({
+  store,
+  projectId,
+  onSaved,
+}: {
+  store: LabStore;
+  projectId: string;
+  onSaved?: () => Promise<void>;
+}) {
   const [entries, setEntries] = useState<LabLedgerEntry[]>();
   const [chosen, setChosen] = useState<LabLedgerEntry>();
   const [requestKey, setRequestKey] = useState("");
@@ -90,6 +98,7 @@ export const LabLedger = observer(function LabLedger({ store, projectId }: { sto
               });
               await store.loadMarket();
               await load();
+              await onSaved?.();
               setChosen(undefined);
             })
           }

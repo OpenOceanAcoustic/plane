@@ -20,11 +20,12 @@ from rest_framework.response import Response
 from plane.db.models import Project, ProjectMember, WorkspaceMember
 from . import bounties
 from .auth import audit
-from .models import Bounty, Ledger, PersonalCategory, PersonalItem, Stage, WIPException, WorkspacePolicy
+from .models import Bounty, Ledger, PersonalCategory, PersonalItem, Stage, WIPException
 from .permissions import can_view_team, collaboration_projects as project_ids, readable_issues, require_lead
 from .planning_views import LabView
 from .bounty_access import access_level, accessible_bounties, bounty_access, issue_capabilities
 from .bounty_models import BountyPublication
+from .bounty_budgets import freeze_vc_budget, project_budgets, publish_from_project
 from .categories import item_category_data
 from .finance_services import bounty_reward_projection, reward_projection_context
 
@@ -155,25 +156,13 @@ class StageView(LabView):
 
     def post(self, request, slug):
         project = get_object_or_404(Project, id=request.data.get("project_id"), workspace=self.workspace)
-        require_lead(request.user, project)
-        budget = bounties.amount(request.data.get("budget"))
-        name = str(request.data.get("name", "")).strip()
-        if budget <= 0 or not name or len(name) > 120:
-            raise ValidationError("请填写阶段名称和正数预算 B")
-        with transaction.atomic():
-            stage = Stage.objects.create(
-                workspace=self.workspace,
-                project=project,
-                workspace_id_snapshot=self.workspace.id,
-                project_id_snapshot=project.id,
-                project_name=project.name,
-                name=name,
-                budget=budget,
-                frozen_at=timezone.now(),
-            )
-            WorkspacePolicy.objects.get_or_create(workspace=self.workspace)
-            audit("stage.frozen", stage, request.user, self.workspace, budget=str(budget))
+        stage = freeze_vc_budget(request.user, self.workspace, project, request.data)
         return Response({"id": str(stage.id)}, status=201)
+
+
+class BountyBudgetView(LabView):
+    def get(self, request, slug):
+        return Response(project_budgets(request.user, self.workspace))
 
 
 class BountyView(LabView):
@@ -194,8 +183,11 @@ class BountyView(LabView):
         return Response(records)
 
     def post(self, request, slug):
-        stage = get_object_or_404(Stage, id=request.data.get("stage_id"), workspace=self.workspace)
-        row = bounties.publish(request.user, stage.id, request.data)
+        if request.data.get("project_id"):
+            row = publish_from_project(request.user, self.workspace, request.data["project_id"], request.data)
+        else:
+            stage = get_object_or_404(Stage, id=request.data.get("stage_id"), workspace=self.workspace)
+            row = bounties.publish(request.user, stage.id, request.data)
         return Response({"id": str(row.id)}, status=201)
 
 

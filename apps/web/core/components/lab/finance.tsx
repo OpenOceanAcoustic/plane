@@ -5,11 +5,12 @@ import { observer } from "mobx-react";
 import { useSearchParams } from "react-router";
 import useSWR from "swr";
 import type { LabStore } from "@plane/shared-state";
-import type { LabFinanceOverview } from "@plane/types";
+import type { LabBountyBudget, LabFinanceOverview } from "@plane/types";
 import { Button, labInputClass } from "@plane/ui";
 import { LabFinanceActionDialog, accountKindLabels, financeActionLabels } from "./finance-form";
 import type { LabFinanceChosenAction } from "./finance-form";
 import { LabForecastDialog, LabFormulaEditor } from "./finance-formula";
+import { LabLedger } from "./ledger";
 import { LabRecordWorkflowView } from "./record-workflow";
 
 function Money({ amount }: { amount: string | null | undefined }) {
@@ -83,11 +84,19 @@ export const LabFinance = observer(function LabFinance({
       `finance/overview/${projectId ? `?project_id=${encodeURIComponent(projectId)}` : ""}`
     )
   );
+  const {
+    data: budgets,
+    error: budgetError,
+    mutate: mutateBudgets,
+  } = useSWR(["lab-project-vc-budgets", store.slug, refreshKey], () =>
+    store.request<LabBountyBudget[]>("bounties/budgets/")
+  );
+  const visibleBudgets = budgets?.filter((budget) => !projectId || budget.project_id === projectId) ?? [];
   useEffect(() => {
     void store.execute(store.loadMarket);
   }, [store]);
   const onSaved = async () => {
-    await mutate();
+    await Promise.all([mutate(), mutateBudgets()]);
     setRevision((value) => value + 1);
   };
   const lead = data?.projects.some((project) => project.id === projectId && project.is_lead) ?? false;
@@ -97,7 +106,6 @@ export const LabFinance = observer(function LabFinance({
   const accountName = (id: string) => data?.accounts.find((account) => account.id === id)?.label ?? "资金账户";
   const open = (action: string, body?: Record<string, string>) => setChosen({ action, body });
   const managementActions = [
-    "vc-stage",
     "stage",
     "receipt",
     "opening",
@@ -151,6 +159,11 @@ export const LabFinance = observer(function LabFinance({
             </option>
           ))}
         </select>
+        {(projectId ? lead : data?.projects.some((project) => project.is_lead)) && (
+          <Button variant="primary" size="sm" onClick={() => open("vc-stage")}>
+            设置 VC 预算
+          </Button>
+        )}
         {lead && (
           <Button variant="neutral-primary" size="sm" onClick={() => setFormulaOpen(true)}>
             项目奖励公式
@@ -187,12 +200,51 @@ export const LabFinance = observer(function LabFinance({
           </Button>
         )}
       </div>
+      {!!visibleBudgets.length && (
+        <section aria-label="项目 VC 预算" className="space-y-2">
+          <h2 className="text-14 font-semibold">项目 VC 预算</h2>
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+            {visibleBudgets.map((budget) => (
+              <article key={budget.project_id} className="rounded-lg border border-subtle bg-layer-1 p-3">
+                <h3 className="text-14 font-medium">{budget.project}</h3>
+                {budget.configured ? (
+                  <>
+                    <p className="mt-1 text-13">{budget.stage_name}</p>
+                    <dl className="mt-3 grid grid-cols-3 gap-2 text-13">
+                      <div>
+                        <dt className="text-secondary">预算</dt>
+                        <dd>{budget.budget} VC</dd>
+                      </div>
+                      <div>
+                        <dt className="text-secondary">已占用</dt>
+                        <dd>{budget.reserved} VC</dd>
+                      </div>
+                      <div>
+                        <dt className="text-secondary">剩余</dt>
+                        <dd>{budget.available} VC</dd>
+                      </div>
+                    </dl>
+                  </>
+                ) : (
+                  <p className="mt-2 text-13 text-secondary">尚未设置 VC 预算</p>
+                )}
+              </article>
+            ))}
+          </div>
+        </section>
+      )}
+      {budgetError && (
+        <p role="alert" className="text-13 text-danger-primary">
+          {budgetError instanceof Error ? budgetError.message : "项目 VC 预算加载失败"}
+        </p>
+      )}
       <nav aria-label="资金账视图" className="flex flex-wrap gap-2">
         {[
           { id: "accounts", label: "真实余额与到账" },
           { id: "forecasts", label: "预算与参考预测" },
           { id: "settlements", label: "核准与付款" },
           { id: "ledger", label: "账目明细" },
+          { id: "vc-ledger", label: "VC 明细" },
           { id: "workflow", label: "资金与项目流程" },
         ].map((view) => (
           <Button
@@ -336,7 +388,7 @@ export const LabFinance = observer(function LabFinance({
                 <div className="flex flex-wrap items-center gap-3">
                   <h3 className="mr-auto text-14 font-semibold">{stage.name}</h3>
                   <span className="text-13">
-                    预算 E <Money amount={stage.E} /> · B {stage.B} VC
+                    预测预算 <Money amount={stage.E} /> · VC 预算 {stage.B} VC
                   </span>
                   <span className="text-12 text-secondary">
                     公式 {stage.formula_version ? `v${stage.formula_version}` : "尚未配置"}
@@ -781,6 +833,27 @@ export const LabFinance = observer(function LabFinance({
               />
             </div>
           </details>
+        </>
+      )}
+      {tab === "vc-ledger" && (
+        <>
+          <div className="flex gap-4 text-13">
+            <a
+              className="text-accent-primary"
+              href={`${store.apiBase}/api/workspaces/${encodeURIComponent(store.slug)}/lab/ledger/?format=csv${projectId ? `&project_id=${encodeURIComponent(projectId)}` : ""}`}
+            >
+              导出项目 VC CSV
+            </a>
+            <a
+              className="text-accent-primary"
+              target="_blank"
+              rel="noreferrer"
+              href={`${store.apiBase}/api/workspaces/${encodeURIComponent(store.slug)}/lab/ledger/${projectId ? `?project_id=${encodeURIComponent(projectId)}` : ""}`}
+            >
+              查看 VC JSON 与冲正记录
+            </a>
+          </div>
+          <LabLedger key={projectId} store={store} projectId={projectId} onSaved={onSaved} />
         </>
       )}
       {data && tab === "workflow" && (

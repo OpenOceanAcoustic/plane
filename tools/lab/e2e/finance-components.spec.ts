@@ -230,12 +230,211 @@ async function common(page: import("@playwright/test").Page, bounties: LabBounty
       ],
     })
   );
+  await page.route("**/lab/bounties/budgets/", (route) =>
+    route.fulfill({
+      json: [
+        {
+          project_id: projectId,
+          project: "声学实验",
+          stage_id: stageId,
+          stage_name: "第一阶段",
+          budget: "1000.00",
+          reserved: "100.00",
+          available: "900.00",
+          configured: true,
+        },
+      ],
+    })
+  );
   await page.route("**/lab/bounties/", (route) => route.fulfill({ json: bounties }));
   await page.route("**/lab/inbox/", (route) => route.fulfill({ json: [] }));
   await page.route("**/lab/bounties/*/detail/", (route) =>
     route.fulfill({ json: bounties.find((row) => route.request().url().includes(row.id)) ?? bounty })
   );
 }
+
+test("bounty hall keeps publication without separate frozen budget or WIP administration", async ({ page }) => {
+  await common(page);
+  await mount(page, "market", "/test/lab/bounties", planner, httpOrigin);
+  await expect(page.getByRole("button", { name: /发布.*悬赏/ })).toBeVisible();
+  await expect(page.getByRole("button", { name: "冻结阶段预算 B", exact: true })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "批准 WIP 例外", exact: true })).toHaveCount(0);
+  await expect(page.getByText("B", { exact: true })).toHaveCount(0);
+  await expect(page.getByText("团队 T", { exact: false })).toHaveCount(0);
+});
+
+test("finance configures new project VC budget without rewriting previous yuan stages or forecasts", async ({
+  page,
+}) => {
+  await common(page);
+  const data = overview();
+  await page.route("**/lab/finance/overview/**", (route) => route.fulfill({ json: data }));
+  const budget = {
+    project_id: projectId,
+    project: "声学实验",
+    stage_id: stageId,
+    stage_name: "第一阶段",
+    budget: "1000.00",
+    reserved: "100.00",
+    available: "900.00",
+    configured: true,
+  };
+  await page.route("**/lab/bounties/budgets/", (route) => route.fulfill({ json: [budget] }));
+  let submitted: Record<string, unknown> | undefined;
+  const originalForecasts = structuredClone(data.forecasts);
+  const originalStages = structuredClone(data.stages);
+  await page.route("**/lab/stages/", (route) => {
+    if (route.request().method() === "POST") {
+      submitted = route.request().postDataJSON() as Record<string, unknown>;
+      Object.assign(budget, {
+        stage_id: "55555555-5555-4555-8555-555555555555",
+        stage_name: "新执行预算",
+        budget: "25.00",
+        reserved: "0.00",
+        available: "25.00",
+      });
+      return route.fulfill({ status: 201, json: { id: budget.stage_id } });
+    }
+    return route.fulfill({
+      json: [
+        {
+          id: stageId,
+          project_id: projectId,
+          project: "声学实验",
+          name: "第一阶段",
+          budget: "1000.00",
+          reserved: "100.00",
+          frozen_at: "2026-10-09T08:00:00Z",
+        },
+        ...(submitted
+          ? [
+              {
+                id: budget.stage_id,
+                project_id: projectId,
+                project: "声学实验",
+                name: budget.stage_name,
+                budget: budget.budget,
+                reserved: budget.reserved,
+                frozen_at: "2026-10-09T10:00:00Z",
+              },
+            ]
+          : []),
+      ],
+    });
+  });
+  await mount(page, "finance", `/test/lab/finance?project_id=${projectId}`, planner, httpOrigin);
+  const current = page.getByRole("region", { name: "项目 VC 预算", exact: true });
+  await expect(current).toContainText("1000.00");
+  await expect(current).toContainText("100.00");
+  await expect(current).toContainText("900.00");
+  await page.getByRole("button", { name: "设置 VC 预算", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "设置项目 VC 预算", exact: true });
+  await expect(dialog.getByLabel("负责项目", { exact: true })).toHaveValue(projectId);
+  await expect(dialog.getByLabel("预算名称", { exact: true })).toHaveValue("当前预算");
+  await dialog.getByLabel("预算名称", { exact: true }).fill("新执行预算");
+  await dialog.getByLabel("VC 预算", { exact: true }).fill("25");
+  await dialog.getByLabel("操作／核准依据", { exact: true }).fill("本轮执行预算批准");
+  await dialog.getByRole("button", { name: "保存", exact: true }).click();
+  await expect(dialog).toHaveCount(0);
+  expect(submitted).toMatchObject({ project_id: projectId, name: "新执行预算", budget: "25" });
+  await expect(current).toContainText("新执行预算");
+  await expect(current).toContainText("25.00");
+  expect(data.forecasts).toEqual(originalForecasts);
+  expect(data.stages).toEqual(originalStages);
+});
+
+test("finance VC ledger keeps project-scoped exports and clears previous records when changing project", async ({
+  page,
+}) => {
+  await common(page);
+  const otherProjectId = "66666666-6666-4666-8666-666666666666";
+  const data = overview();
+  data.projects.push({ id: otherProjectId, name: "其他项目", is_lead: true });
+  await page.route("**/lab/finance/overview/**", (route) => route.fulfill({ json: data }));
+  const budget = {
+    project_id: projectId,
+    project: "声学实验",
+    stage_id: stageId,
+    stage_name: "第一阶段",
+    budget: "1000.00",
+    reserved: "100.00",
+    available: "900.00",
+    configured: true,
+  };
+  await page.route("**/lab/bounties/budgets/", (route) => route.fulfill({ json: [budget] }));
+  let corrected = false;
+  const queried: string[] = [];
+  await page.route("**/lab/ledger/**", (route) => {
+    const project = new URL(route.request().url()).searchParams.get("project_id") ?? "";
+    queried.push(project);
+    return route.fulfill({
+      json: [
+        {
+          id: `${project}-entry`,
+          delta: "20.00",
+          task: { title: project === projectId ? "原项目已授予贡献" : "另一项目已授予贡献", project: project },
+          participant: { id: memberId, name: "成员甲" },
+          actor: "独立验收人",
+          reason: "成果已验收",
+          can_reverse: project === projectId && !corrected,
+        },
+        ...(project === projectId && corrected
+          ? [
+              {
+                id: "append-only-correction",
+                delta: "-20.00",
+                task: { title: "原项目贡献追加更正", project },
+                participant: { id: memberId, name: "成员甲" },
+                actor: "项目负责人",
+                reason: "复验后更正贡献",
+                reverses: `${projectId}-entry`,
+                can_reverse: false,
+              },
+            ]
+          : []),
+      ],
+    });
+  });
+  await page.route(`**/lab/ledger/${projectId}-entry/reverse/`, (route) => {
+    const body = route.request().postDataJSON() as { reason: string; request_key: string };
+    expect(body.reason).toBe("复验后更正贡献");
+    expect(body.request_key).toMatch(/^[0-9a-f-]{36}$/);
+    corrected = true;
+    budget.reserved = "80.00";
+    budget.available = "920.00";
+    return route.fulfill({ json: { ok: true } });
+  });
+  await mount(page, "finance", `/test/lab/finance?project_id=${projectId}`);
+  await page.getByRole("button", { name: "VC 明细", exact: true }).click();
+  await expect(page.getByRole("link", { name: "导出项目 VC CSV", exact: true })).toHaveAttribute(
+    "href",
+    `/api/workspaces/test/lab/ledger/?format=csv&project_id=${projectId}`
+  );
+  await expect(page.getByRole("link", { name: "查看 VC JSON 与冲正记录", exact: true })).toHaveAttribute(
+    "href",
+    `/api/workspaces/test/lab/ledger/?project_id=${projectId}`
+  );
+  await page.getByRole("button", { name: "读取账本", exact: true }).click();
+  await expect(page.getByRole("cell", { name: /原项目已授予贡献/ })).toBeVisible();
+  await page.getByRole("button", { name: "冲正", exact: true }).click();
+  const correction = page.getByRole("dialog", { name: "贡献冲正", exact: true });
+  await correction.getByLabel("更正原因", { exact: true }).fill("复验后更正贡献");
+  await correction.getByRole("button", { name: "保存", exact: true }).click();
+  await expect(correction).toHaveCount(0);
+  await expect(page.getByRole("cell", { name: /原项目已授予贡献/ })).toBeVisible();
+  await expect(page.getByRole("cell", { name: /原项目贡献追加更正/ })).toBeVisible();
+  await expect(page.getByRole("region", { name: "项目 VC 预算", exact: true })).toContainText("920.00");
+  await expect(page.getByRole("region", { name: "项目 VC 预算", exact: true })).toContainText("80.00");
+  await page.getByLabel("资金项目", { exact: true }).selectOption(otherProjectId);
+  await expect(page.getByRole("cell", { name: /原项目已授予贡献/ })).toHaveCount(0);
+  await expect(page.getByRole("link", { name: "导出项目 VC CSV", exact: true })).toHaveAttribute(
+    "href",
+    `/api/workspaces/test/lab/ledger/?format=csv&project_id=${otherProjectId}`
+  );
+  await page.getByRole("button", { name: "读取账本", exact: true }).click();
+  await expect(page.getByRole("cell", { name: /另一项目已授予贡献/ })).toBeVisible();
+  expect(queried).toEqual([projectId, projectId, otherProjectId]);
+});
 
 /* oxlint-disable no-await-in-loop -- The actions open and close the same dialog in sequence. */
 test("ordinary HTTP finance and project workflow actions open their business forms without crashing", async ({

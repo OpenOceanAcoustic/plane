@@ -240,6 +240,8 @@ class CategoryDetailView(LabView):
 class TaskSearchView(LabView):
     def get(self, request, slug):
         rows = readable_issues(request.user, self.workspace).filter(is_draft=False, archived_at__isnull=True)
+        if request.query_params.get("publishable") == "1":
+            rows = rows.filter(state__group__in=("backlog", "unstarted"), parent_id__isnull=True, bounty__isnull=True)
         if request.query_params.get("project_id"):
             project = get_object_or_404(
                 Project,

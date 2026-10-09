@@ -108,7 +108,7 @@ def publish(user, stage_id, data):
         raise ValidationError("悬赏须在开工前发布，请选择待做任务")
     budget = amount(data.get("budget"))
     if budget <= 0 or total(Bounty.objects.filter(stage=stage), "reserved") + budget > stage.budget:
-        raise ValidationError("阶段预算 B 不足或团队预算 T 无效")
+        raise ValidationError("项目 VC 预算不足或悬赏 VC 配额无效")
     deliverable = str(data.get("deliverable", "")).strip()
     criteria = str(data.get("criteria", "")).strip()
     if not deliverable or not criteria:
@@ -157,7 +157,16 @@ def publish(user, stage_id, data):
         criteria=str(data.get("public_criteria", criteria)).strip()[:4000],
     )
     WorkspacePolicy.objects.get_or_create(workspace=stage.workspace)
-    audit("bounty.published", bounty, user, stage.workspace, major=reasons, budget=str(budget))
+    audit(
+        "bounty.published",
+        bounty,
+        user,
+        stage.workspace,
+        major=reasons,
+        budget=str(budget),
+        project_id=str(stage.project_id_snapshot),
+        stage_id=str(stage.id),
+    )
     return bounty
 
 

@@ -4,6 +4,16 @@
  */
 
 export type LabStatus = "todo" | "active" | "review" | "done";
+export type LabBountyBudget = {
+  project_id: string;
+  project: string;
+  stage_id: string | null;
+  stage_name: string | null;
+  budget: string | null;
+  reserved: string | null;
+  available: string | null;
+  configured: boolean;
+};
 export type LabAcceptanceResult = "pass" | "partial" | "rework" | "reject" | "negative";
 export type LabLedgerEntry = {
   id: string;

@@ -53,3 +53,21 @@
 正式匿名页面可用，构建资源逐字节一致，匿名财务返回 401。额外检查发现根页面的既有可恢复 React hydration 警告；旧、新构建对照均为 40 次 #418 和 1 次 #423，静态节点树相同，本轮没有修改认证或 hydration 入口。
 
 本轮日志：`/tmp/lab-bugfix-api-full.log`、`/tmp/ooa-planner-native-browser-final.log`、`/tmp/lab-finance-components-ledger-complete.log`、`/tmp/lab-bugfix-store-final.log`、`/tmp/lab-bugfix-native-delete-e2e.log`、`/tmp/lab-bugfix-web-final-build.log`、`/tmp/lab-bugfix-production-backup.log`、`/tmp/lab-bugfix-production-restore.log`、`/tmp/lab-bugfix-production-browser-verified.log`。
+
+## 2026-10-09：简化项目 VC 预算与悬赏发布
+
+悬赏大厅仅保留发布、认领和任务详情，移除独立冻结阶段 B、WIP 管理和账本入口。发布只选择项目和工作项，填写一次资料、交付要求、验收标准、VC 配额和验收人；重大任务复核按门槛显示，其他设置折叠。工作项自动列出可发布事项。VC 预算与 VC 明细统一在“资金与奖励”，保留筛选、冲正和 CSV／JSON 导出。
+
+当前发布来源为该项目最新 VC Stage，不要求先配置人民币 E，也不跨阶段合并或回退旧预算。服务器锁定来源、校验余额并预留额度；删除／取消只返还尚未授予的部分。真实 VC、参考公式、历史资格、现金核准和线下付款继续独立。项目 VC 预算保存支持可选 UUID 请求键，同一请求重试返回原来源，不重建预算、清空占用或提升旧来源。锁等待后重新核验当前负责人。
+
+原生新项目第一次发布可自动从现有待做、进行中及完成状态建立映射，复用或追加独立待验收状态；已有完整或部分人工映射不被覆写。自动准备和发布同处事务，失败时回滚新增状态及审计。旧 stage_id 客户端保持原接口语义；新增 project_id 客户端由服务器确定当前预算。没有新增模型或迁移。
+
+验证：真实迁移后的后端全量 **697 passed**（334.66 秒，92 条既有依赖警告）；新增原生状态及既有悬赏／项目预算专项 **38 passed**，其中新增状态测试 11 条，合计覆盖 708 个不同后端用例。资金与普通 HTTP 组件 **21 passed**，简化发布组件 **6 passed**。最终构建的真实主浏览器流程通过（2.1 分钟），另三个真实入口／重启限流测试通过；真实新项目及既有项目的 25→20→25、111→106→111 VC 扣减和返还均验证，超额请求返回 400，已有现金、VC、事项、状态和配色保留。
+
+验收脚本已按实际原生接口契约采用默认待做映射和 state_id：创建后读取工作项详情作为状态基线，删除后再次读取比较，不将创建响应缺失的字段视为零或默认值。Web／types 类型、变更文件严格 Lint、格式、Ruff、Git 空白、Django 系统检查和迁移漂移检查通过；最终 Web 和 API 镜像构建通过。
+
+部署备份：`/home/l1111y/.local/share/ooa-plane/backups/pre-simple-bounty-20261009-1252`；独立认证密钥：`/home/l1111y/.local/share/ooa-plane/auth-key-backups/pre-simple-bounty-20261009-1252.totp.key`，权限 0700／0600。独立恢复验证通过，14 个附件文件和 1 条加密认证凭据验证成功，未覆盖正式卷。更新前后原有 15 张表（含原生状态、状态映射及审计）的数量和完整记录指纹一致。
+
+正式 `ooa-plane-lab` 已更新为 API `8ec6723aeae3` 与最终 Web 构建，10 个服务运行。原数据 4 个资金／项目读取视图及新增项目预算读取通过，相关资金、VC、状态、映射与审计数量保持不变，真实签名上传下载通过。三个匿名认证入口和实例 API 正常，匿名资金及预算均返回 401；主应用 HTML 及实际载入的 88 个静态资源与最终构建逐内容一致，没有静态请求失败。可恢复 React 提示按页面记录：主入口 #418=41／#423=1，管理后台 0／0，Space 16／1。主入口与旧记录 40／1 相差一次 #418；没有改动认证／hydration 入口，不宣称次数完全不变，也不描述为完全无控制台错误。
+
+本轮日志：`/tmp/lab-bounty-simple-backend-final.log`、`/tmp/lab-bounty-native-flow-final.log`、`/tmp/lab-simple-bounty-all-components.log`、`/tmp/lab-simple-bounty-real-e2e-native-contract.log`、`/tmp/lab-simple-bounty-web-build-final.log`、`/tmp/lab-simple-bounty-api-build-with-flow.log`、`/tmp/lab-simple-bounty-production-backup.log`、`/tmp/lab-simple-bounty-production-restore.log`、`/tmp/lab-simple-bounty-production-smoke.log` 和 `/tmp/lab-simple-bounty-production-browser.log`。隔离后端及浏览器测试资源与临时凭据均已清理，正式实例没有创建测试账号、悬赏或资金。
