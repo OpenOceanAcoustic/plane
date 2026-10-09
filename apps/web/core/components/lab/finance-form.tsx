@@ -440,25 +440,12 @@ export function LabFinanceActionDialog({
       ];
       break;
   }
-  const hints: Record<string, string> = {
-    stage: "预算 E 只用于预测。填写具体用途和成员份额，不录入项目合同或资助总额。冻结后保留版本。",
-    receipt: "登记本次实际到账、成本和可分配 D。系统按制度分池，到账不会自动增加个人应付。",
-    settlement: "填写累计最终金额，系统校验实际阶段额度。预计金额仅供参考，分期到账需要负责人追加确认。",
-    payment: "仅记录已经发生的线下付款。实付 = 本次核销应付 − 扣缴，不会触发银行转账。",
-    "risk-release": "释放回原批次所属阶段，不重新提取反哺比例；执行部分需另行核准个人追加金额。",
-    "future-plan": "该年度新增资金按研究支出 70%／探索奖励 30% 编列。",
-    "stage-allocation":
-      "将同一项目的留存资金拨付到已冻结的新阶段执行奖励额度，不重新提取反哺比例。负责人仍须另行核准成员最终金额。",
-    reverse: "保留原账并追加冲正；已被下游结算、承诺或支付占用的操作需先解除相关占用。",
-    expense: "公共职责奖励填写职责、履职记录及核准依据，由指定管理员管理公共池。",
-  };
   return (
     <LabDialog
       title={financeActionLabels[action] ?? "办理资金事项"}
       busy={store.busy || saving}
       onClose={onClose}
       error={error}
-      description={hints[action]}
       onSubmit={async (form) => {
         setError("");
         setSaving(true);

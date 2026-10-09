@@ -86,7 +86,6 @@ export function LabBountyMaterials({ store, bounty }: { store: LabStore; bounty:
             })
           }
         >
-          <p className="text-12 text-secondary">已获批参与成员可读取此资料；共享文档固定到当前选定的版本。</p>
           <LabField label="资料类型">
             <select
               value={kind}

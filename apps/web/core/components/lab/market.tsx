@@ -329,9 +329,7 @@ export const LabMarket = observer(function LabMarket({ store }: { store: LabStor
                     </>
                   )}
                 </dl>
-                {bounty.overdue && (
-                  <p className="text-orange-600 mt-2 text-12">验收已超过截止时间，请验收人处理；系统不会自动通过。</p>
-                )}
+                {bounty.overdue && <p className="text-orange-600 mt-2 text-12">验收已逾期，请验收人处理。</p>}
                 <div className="my-4 flex flex-col gap-2">
                   {bounty.allocations.map((allocation) => (
                     <div key={allocation.id} className="rounded bg-layer-1 p-3 text-12">
@@ -485,7 +483,7 @@ export const LabMarket = observer(function LabMarket({ store }: { store: LabStor
       <LabLedger key={projectFilter} store={store} projectId={projectFilter} />
       {store.bounties.length === 0 && (
         <p className="rounded border border-dashed border-subtle p-10 text-center text-13 text-tertiary">
-          负责人冻结阶段预算并发布悬赏后，成员可以认领分工。
+          暂无悬赏任务。
         </p>
       )}
       {reasonAction && (
@@ -678,7 +676,6 @@ export const LabMarket = observer(function LabMarket({ store }: { store: LabStor
           busy={store.busy}
           error={store.error}
           onClose={close}
-          description="全实验室仅能看到这里明确发布的摘要、交付要求和验收条件；下架摘要不会撤回已有参与授权。"
           onSubmit={(form) =>
             finish(() =>
               store.request(`bounties/${chosen.id}/public-summary/`, "POST", {
@@ -802,7 +799,6 @@ export const LabMarket = observer(function LabMarket({ store }: { store: LabStor
                   />
                 </LabField>
               ))}
-          <p className="text-12 text-tertiary">只记新增差额。重大任务还需独立复核。</p>
         </LabDialog>
       )}
       {mode === "exception" && (

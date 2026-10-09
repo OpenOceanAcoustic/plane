@@ -129,9 +129,6 @@ export const LabFinance = observer(function LabFinance({
   ];
   return (
     <div className="space-y-5">
-      <p className="rounded border border-subtle bg-layer-1 p-3 text-13">
-        负责人录入阶段预算和用途，并配置项目公式。预计奖励仅供参考；最终核准、现金安排和线下付款分别留痕。
-      </p>
       <div className="flex flex-wrap items-center gap-2">
         <select
           aria-label="资金项目"
@@ -238,7 +235,7 @@ export const LabFinance = observer(function LabFinance({
             <h2 className="text-14 font-semibold">资金账户实际余额</h2>
             <Records
               rows={data.accounts}
-              empty="当前权限可查看公共池汇总和本人奖励。项目资金明细由项目负责人管理。"
+              empty="暂无可见资金账户。"
               columns={[
                 { label: "账户", cell: (row) => row.label },
                 { label: "资金类型", cell: (row) => accountKindLabels[row.kind] ?? row.kind },
@@ -333,9 +330,7 @@ export const LabFinance = observer(function LabFinance({
         <>
           <section aria-label="冻结阶段预算" className="space-y-3">
             <h2 className="text-14 font-semibold">负责人事前阶段预算</h2>
-            {!data.stages.length && (
-              <p className="text-13 text-secondary">先在悬赏大厅冻结阶段 VC 预算 B，再录入本阶段奖励预算 E。</p>
-            )}
+            {!data.stages.length && <p className="text-13 text-secondary">暂无阶段预算。</p>}
             {data.stages.map((stage) => (
               <article key={stage.id} className="rounded-lg border border-subtle p-4">
                 <div className="flex flex-wrap items-center gap-3">
@@ -416,9 +411,6 @@ export const LabFinance = observer(function LabFinance({
               ]}
             />
           </section>
-          <p className="text-12 text-secondary">
-            每个快照保留计算时的公式和输入。后续修改公式、验收或到账均不会覆盖旧快照。
-          </p>
         </>
       )}
       {data && tab === "settlements" && (

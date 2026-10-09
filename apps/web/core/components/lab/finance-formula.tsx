@@ -59,7 +59,6 @@ export function LabFormulaEditor({
       busy={busy}
       onClose={onClose}
       error={localError || (error instanceof Error ? error.message : "")}
-      description="任务和成员阶段分别计算。支持四则运算、括号、min/max；保存新版本不会改动历史预测或已核准金额。"
       submitLabel="保存新公式版本"
       onSubmit={async (form) => {
         setBusy(true);
@@ -126,8 +125,7 @@ export function LabFormulaEditor({
         />
       </LabField>
       <p className="text-12 text-secondary">
-        E：阶段奖励预算／到账奖励额度；B：冻结 VC
-        预算；VC：计划／有效贡献；b、r：冻结基础／职责份额。正式预测由系统读取，不能被自定义参数覆盖。
+        E：阶段奖励预算／到账奖励额度；B：冻结 VC 预算；VC：计划／有效贡献；b、r：冻结基础／职责份额。
       </p>
       <fieldset className="space-y-3 rounded border border-subtle p-3">
         <legend className="text-13 font-medium">自定义数值参数</legend>
@@ -328,7 +326,6 @@ export function LabForecastDialog({
       busy={busy}
       onClose={onClose}
       error={error}
-      description="预算预测使用事前 E；到账测算使用实际阶段奖励额度。预测保存公式和输入快照，均不产生应付或付款授权。"
       onSubmit={async (form) => {
         const parameters: Record<string, string> = {};
         form.forEach((value, name) => {

@@ -795,8 +795,6 @@ test("retained funds allocate only to another frozen stage in the same project w
   await page.getByRole("button", { name: "拨付新阶段奖励", exact: true }).click();
   const dialog = page.getByRole("dialog");
   await expect(dialog).toHaveAccessibleName("拨付留存至新阶段奖励");
-  await expect(dialog).toContainText("不重新提取反哺比例");
-  await expect(dialog).toContainText("另行核准成员最终金额");
   await expect(dialog.getByLabel("同项目留存来源账户", { exact: true })).toHaveValue("retained-source");
   const targets = dialog.getByLabel("已冻结的新阶段", { exact: true });
   await expect(targets.locator("option")).toHaveCount(2);

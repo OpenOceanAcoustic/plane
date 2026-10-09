@@ -249,9 +249,6 @@ export const LabBountyWorkflow = observer(function LabBountyWorkflow({
           {["start", "approve", "confirm"].includes(chosen.action) && (
             <p className="text-13">确认执行“{chosen.label}”？</p>
           )}
-          {chosen.action === "reverse" && (
-            <p className="text-12 text-secondary">冲正会保留原记录，并新增等额负数记录。</p>
-          )}
           {store.error && (
             <p role="alert" className="text-12 text-danger-primary">
               {store.error}
