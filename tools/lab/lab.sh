@@ -7,6 +7,10 @@ export TURBO_TELEMETRY_DISABLED=1
 lab_root=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)
 cd "$lab_root"
 compose=(docker compose -p "${LAB_COMPOSE_PROJECT:-ooa-plane-lab}" -f compose.lab.yml)
+# Keep the running instance on its published assets during isolated builds.
+if [[ "${LAB_COMPOSE_PROJECT:-ooa-plane-lab}" == "ooa-plane-lab" && -f .temp/lab-runtime/compose.proxy.yml ]]; then
+  compose+=(-f .temp/lab-runtime/compose.proxy.yml)
+fi
 case "${1:-help}" in
   setup) shift; python3 tools/lab/setup.py "$@" ;;
   build)
@@ -35,6 +39,7 @@ case "${1:-help}" in
   status) "${compose[@]}" ps ;;
   access) shift; "${compose[@]}" exec -T api python manage.py lab_access "$@" ;;
   check)
+    python3 tools/lab/test_runtime_mounts.py
     node tools/lab/test-calendar.mjs
     node tools/lab/test-planning-store.mjs
     node tools/lab/test-fields-gantt.mjs

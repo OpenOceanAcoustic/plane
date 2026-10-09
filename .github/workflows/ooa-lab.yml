@@ -29,6 +29,7 @@ jobs:
       - name: Verify access configuration preserves credentials
         run: |
           python3 tools/lab/test_setup.py
+          python3 tools/lab/test_runtime_mounts.py
           python3 tools/lab/test_backup.py
           python3 tools/lab/e2e/test_prepare.py
       - name: Prepare isolated configuration

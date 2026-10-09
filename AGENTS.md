@@ -30,6 +30,12 @@
 - Keep empty states brief and factual; do not use them to explain an entire workflow or management policy.
 - This rule applies regardless of text size. Do not reintroduce removed explanations in subtitles, tooltips, or another part of the interface.
 
+## Protect the running service during builds
+
+- Inspect the running proxy's actual Docker mounts before production build validation. Use an isolated checkout or output directory; a build must not replace a directory mounted by the running service.
+- The local deployment may use `.temp/lab-runtime/compose.proxy.yml` and its published Web/Admin directories. Preserve these files and directories; they are live assets, not disposable test caches.
+- Keep validation artifacts separate from published assets. Publishing requires the intended release's complete assets, with the entry HTML updated last; do not publish an unmerged feature while repairing service availability.
+
 ## Backend tests (Docker)
 
 The Django/pytest suite for `apps/api` runs in an isolated stack defined by `docker-compose-test.yml` at the repo root.
