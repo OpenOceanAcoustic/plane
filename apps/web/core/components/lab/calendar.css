@@ -57,3 +57,16 @@
   outline-offset: -2px;
   box-shadow: 0 0 0 1px var(--border-color-accent-strong);
 }
+
+.lab-calendar-timeline .lab-calendar-pan-header,
+.lab-calendar-browsing [data-lab-resource] {
+  cursor: grab;
+}
+.lab-calendar-browsing [data-lab-calendar-event] {
+  cursor: pointer;
+}
+.lab-calendar-drag-browsing,
+.lab-calendar-drag-browsing * {
+  cursor: grabbing !important;
+  user-select: none !important;
+}

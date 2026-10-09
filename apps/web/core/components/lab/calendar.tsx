@@ -27,6 +27,7 @@ import type { LabEvent, LabItem, LabMember } from "@plane/types";
 import type { LabStore } from "@plane/shared-state";
 import { calendarInstant, localInput, SLOT_MS, weekDays } from "./calendar-time";
 import { useCalendarViewportHeight } from "./calendar-size";
+import { useCalendarTimelinePan } from "./calendar-pan";
 import { calendarFolderColors, useCalendarFolders } from "./calendar-folders";
 import { calendarColor, calendarContrast, calendarLegend } from "./calendar-colors";
 import { LabItemDetails, labCanOpenProjectIssue } from "./item-details";
@@ -118,6 +119,7 @@ export const LabCalendar = observer(function LabCalendar({
   const [timelineView, setTimelineView] = useState("resourceTimelineWeek");
   const [calendarView, setCalendarView] = useState("timeGridWeek");
   const [zoom, setZoom] = useState(0);
+  const [browse, setBrowse] = useState(true);
   const [viewing, setViewing] = useState<{ item: LabItem; block?: LabEvent }>();
   const timeline = view.startsWith("resourceTimeline");
   const [userId, setUserId] = useState("all"),
@@ -133,6 +135,12 @@ export const LabCalendar = observer(function LabCalendar({
   const editingEvent = editing && editing !== "new" ? editing : undefined;
   const planner = store.planner;
   const { surfaceRef, height } = useCalendarViewportHeight(`${store.slug}:${team}:${view}`);
+  const navigateTimeline = useCallback((direction: -1 | 1) => {
+    const api = calendar.current?.getApi();
+    if (direction > 0) api?.next();
+    else api?.prev();
+  }, []);
+  useCalendarTimelinePan(surfaceRef, team && timeline ? `${view}:${zoom}` : undefined, browse, navigateTimeline);
   const folders = useMemo(() => {
     const sorted = [...(planner?.folders ?? [])];
     // oxlint-disable-next-line unicorn/no-array-sort -- ES2022 lacks toSorted; only this local copy is mutated
@@ -422,6 +430,16 @@ export const LabCalendar = observer(function LabCalendar({
               {option.label}
             </Button>
           ))}
+          {team && (
+            <Button
+              size="sm"
+              variant={browse ? "neutral-primary" : "primary"}
+              aria-pressed={!browse}
+              onClick={() => setBrowse((value) => !value)}
+            >
+              框选排期
+            </Button>
+          )}
           <div className="ml-auto flex items-center gap-1" role="group" aria-label="时间轴缩放">
             <Button
               size="sm"
@@ -515,7 +533,7 @@ export const LabCalendar = observer(function LabCalendar({
       </div>
       <div
         ref={surfaceRef}
-        className="lab-calendar min-w-0 overflow-hidden rounded-xl border border-subtle bg-surface-1"
+        className={`lab-calendar min-w-0 overflow-hidden rounded-xl border border-subtle bg-surface-1 ${team && timeline ? `lab-calendar-timeline ${browse ? "lab-calendar-browsing" : ""}` : ""}`}
       >
         <FullCalendar
           ref={calendar}
@@ -585,7 +603,7 @@ export const LabCalendar = observer(function LabCalendar({
             }
           }}
           editable={!store.busy}
-          selectable={!store.busy}
+          selectable={!store.busy && !(team && timeline && browse)}
           eventResourceEditable={false}
           selectMirror
           selectAllow={(info) =>
@@ -616,6 +634,7 @@ export const LabCalendar = observer(function LabCalendar({
               : undefined
           }
           slotMinWidth={timeline && zoom === 0 ? 1 : 60 * Math.max(1, 2 ** (zoom - 1))}
+          slotHeaderClass={team && timeline ? "lab-calendar-pan-header" : undefined}
           eventMinWidth={24}
           scrollTime={timeline && zoom === 0 ? "00:00:00" : "08:00:00"}
           footerScrollbarSticky={timeline}

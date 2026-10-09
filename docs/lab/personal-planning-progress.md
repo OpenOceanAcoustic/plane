@@ -177,3 +177,19 @@
 正式入口仍为 `http://192.168.137.90:8080`，刷新后使用个人规划工作项总览。三个匿名认证入口及实例接口正常，匿名资金及预算请求返回 401；主页面及实际加载的 **88 个静态资源**、配额详情模块与新构建逐字节一致，无静态请求失败或未知页面错误。既有可恢复 hydration 提示保持主入口 #418=41／#423=1、管理后台 0／0、Space 16／1，不宣称控制台完全无错误。正式只读接口验证 **1 条已有工作项**的 VC 配额与悬赏来源一致。未创建正式测试账号或更改已有工作项及资金；独立测试容器已清理。
 
 日志：`/tmp/lab-planner-bounty-metadata-green.log`、`/tmp/lab-peek-details-component-green.log`、`/tmp/lab-peek-details-real-browser-final.log`、`/tmp/lab-native-details-production-backup.log`、`/tmp/lab-native-details-production-restore.log`、`/tmp/lab-native-details-production-metadata.log` 和 `/tmp/lab-native-details-production-browser.log`。
+
+## 团队时间轴拖动浏览修复（2026-10-09）
+
+用户反馈团队排期不能拖动查看前后日期。实际页面使用 FullCalendar 人员时间轴。定向浏览器先复现：缩放后设置 `scrollLeft=200`，背景和日期表头左拖 200 像素均保持 200；默认周总览时间画布 `clientWidth=scrollWidth=965`，背景／表头左拖 240 像素后日期范围仍为上海 10 月 5 日至 12 日。原组件没有背景平移处理，总览同时没有可滚动的空间；空白拖动原先用于框选新排期。
+
+团队人员时间轴默认背景浏览，日期表头在浏览和框选模式均支持拖动。缩放时首先移动真实正文滚动容器并同步表头，拖出边界 80 像素后切换相邻日／周／月；总览直接切换相邻时段，每次手势最多一次。指针释放、取消、失焦、卸载、视图和缩放切换均清理捕获。触屏继续使用原生操作。新增“框选排期”动作保留本人行的新建拖选，其他成员行仍不能创建；时间块主体、拉伸手柄、详情及调整按钮保留原生操作。浏览只请求日期范围数据，不发送排期修改。
+
+验证：专用浏览器 **8 passed（13.9 秒）**，覆盖前后日期、正文和表头平移／同步、释放停止、默认本人背景不创建、显式框选权限、忙碌块只读保护、本人移动和拉伸及反复切换视图后没有重复处理器。补强后的框选模式表头浏览用例单独通过。既有时间轴／总览组件 **12 passed（37.1 秒）**，继续验证成员／项目筛选、私密投影、事项详情、颜色、文件夹、本人移动／拉伸／拆分以及月视图十五分钟精度。旧浏览器测试适配层补充现有共享金额组件的实际导出，以恢复完整 LabPanel 的测试编译；没有替换产品组件。
+
+Web 类型、变更 TypeScript 严格 Lint（0 警告／错误）、格式和 Git 空白检查通过；Web 全范围 Lint 0 错误、772 条既有警告。最终 Web 生产构建通过。没有后端、模型或迁移改动，未重复后端全量测试。
+
+前端更新前静态备份位于 `/mnt/repo/ly/dashboard‌/plane/.temp/lab-build/pre-team-pan-20261009-165749/client-mounted`，新构建保留旧哈希资源。仅重建正式 `ooa-plane-lab` 的 `proxy`，其余 **9 个服务容器身份不变**；10 个服务均运行。原有与财务共 **30 张表**的数量和完整记录指纹在更新前后保持一致，证据位于该目录的 `data-before.json`／`data-after.json`。未创建正式测试账号或修改任何排期、任务及资金。此前数据库、附件和独立认证密钥备份保持有效。
+
+正式入口 `http://192.168.137.90:8080` 的主页面、实际加载的 **88 个静态资源**及新增时间轴平移模块与最终构建逐字节一致。三个匿名认证入口、实例读取正常，匿名资金及项目 VC 预算接口仍返回 401；无静态请求失败或未知页面错误。既有可恢复 hydration 提示为主入口 #418=41／#423=1、管理后台 0／0、Space 16／1。
+
+日志：`/tmp/lab-calendar-pan-repro.log`、`/tmp/lab-calendar-pan-components-final.log`、`/tmp/lab-calendar-pan-existing-timeline.log`、`/tmp/lab-calendar-pan-mode-header.log`、`/tmp/lab-calendar-pan-web-types-final.log`、`/tmp/lab-calendar-pan-strict-lint.log`、`/tmp/lab-calendar-pan-format.log`、`/tmp/lab-calendar-pan-web-lint.log`、`/tmp/lab-calendar-pan-web-build.log` 和 `/tmp/lab-calendar-pan-production-browser.log`。临时浏览器服务与构建夹具在测试结束后清理。

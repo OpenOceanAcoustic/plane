@@ -192,6 +192,10 @@ async function fixture(page: Page, section: "team" | "workbench") {
 }
 
 async function selectLane(page: Page, lane: Locator) {
+  const selectionMode = page.getByRole("button", { name: "框选排期", exact: true });
+  if (await selectionMode.isVisible()) {
+    if ((await selectionMode.getAttribute("aria-pressed")) !== "true") await selectionMode.click();
+  }
   await lane.scrollIntoViewIfNeeded();
   const box = await lane.boundingBox();
   expect(box).not.toBeNull();
