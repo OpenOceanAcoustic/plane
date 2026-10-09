@@ -28,10 +28,14 @@ import type { LabWorkflow, LabWorkflowAction } from "./workflow-types";
 import { bountyWorkflowLayout } from "./workflow-layout";
 import type { BountyWorkflowNode } from "./workflow-layout";
 
-function BountyFlowNode({ data }: NodeProps<BountyWorkflowNode>) {
+function BountyFlowNode({ id, data }: NodeProps<BountyWorkflowNode>) {
   return (
     <div
-      className={`lab-bounty-node ${data.auxiliary ? "lab-bounty-node-auxiliary" : ""} rounded-lg border text-center text-13 ${data.state === "current" ? "border-accent-strong bg-accent-primary/10 text-accent-primary" : data.state === "completed" ? "border-subtle bg-layer-1 text-primary" : "border-subtle bg-surface-1 text-tertiary"}`}
+      className={`lab-workflow-node lab-bounty-node ${data.auxiliary ? "lab-bounty-node-auxiliary" : ""} rounded-lg border text-center text-13`}
+      data-workflow-state={data.state}
+      data-workflow-outcome={
+        id === "done" ? "complete" : id === "rework" ? "rework" : id === "rejected" ? "rejected" : undefined
+      }
     >
       {Object.entries({ left: Position.Left, right: Position.Right, top: Position.Top, bottom: Position.Bottom }).map(
         ([side, position]) => (

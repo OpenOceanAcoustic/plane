@@ -24,6 +24,8 @@ import type { LabStore } from "@plane/shared-state";
 import type { LabAnalyticsDomain, LabAnalyticsFilter, LabChart, LabChartDetails, LabChartRow } from "@plane/types";
 import { Button, LabDialog, LabSelect, labInputClass } from "@plane/ui";
 import { downloadLabExport, exportChartPng } from "./chart-export";
+// oxlint-disable-next-line import/no-unassigned-import -- local financial and task surfaces
+import "./finance-market.css";
 
 const COLORS = ["#3b82f6", "#10b981", "#f59e0b", "#8b5cf6", "#ef4444", "#06b6d4"];
 const DOMAINS = [
@@ -313,7 +315,8 @@ function ChartCard({
     <article
       ref={container}
       data-testid={`chart-${chart.id}`}
-      className="min-w-0 rounded-xl border border-subtle bg-surface-1 p-5"
+      data-tone={chart.domain === "vc" ? "purple" : chart.domain === "schedule" ? "indigo" : "emerald"}
+      className="lab-analytics-card min-w-0 rounded-lg border border-subtle bg-layer-2 p-5"
     >
       <header className="mb-2 flex flex-wrap items-center gap-2">
         <h3 className="mr-auto text-14 font-semibold">{chart.title}</h3>
@@ -456,8 +459,8 @@ export const LabAnalyticsPanel = observer(function LabAnalyticsPanel({
     setEnd(today);
   }
   return (
-    <section className="space-y-5" aria-label="实验室数据总览">
-      <div className="flex flex-wrap items-end gap-3 rounded-xl border border-subtle bg-layer-1 p-4">
+    <section className="lab-analytics space-y-5" aria-label="实验室数据总览">
+      <div className="lab-analytics-filters flex flex-wrap items-end gap-3 rounded-lg border border-subtle bg-layer-1 p-4">
         <label className="text-12 text-secondary">
           开始日期
           <input
@@ -527,15 +530,21 @@ export const LabAnalyticsPanel = observer(function LabAnalyticsPanel({
           <RefreshCw size={14} /> 刷新
         </Button>
       </div>
-      <div className="flex flex-wrap items-center gap-2">
-        <Button size="sm" variant={domain === "all" ? "primary" : "neutral-primary"} onClick={() => setDomain("all")}>
+      <div className="lab-analytics-tabs flex flex-wrap items-center gap-2">
+        <Button
+          size="sm"
+          variant={domain === "all" ? "accent-primary" : "neutral-primary"}
+          aria-pressed={domain === "all"}
+          onClick={() => setDomain("all")}
+        >
           全部图表
         </Button>
         {DOMAINS.map(({ key, label, Icon }) => (
           <Button
             key={key}
             size="sm"
-            variant={domain === key ? "primary" : "neutral-primary"}
+            variant={domain === key ? "accent-primary" : "neutral-primary"}
+            aria-pressed={domain === key}
             onClick={() => setDomain(key)}
           >
             <Icon size={14} />

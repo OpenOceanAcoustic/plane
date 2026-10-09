@@ -1,0 +1,72 @@
+/* Local accents use Plane's existing light and dark theme palette. */
+.lab-page,
+.lab-navigation-item {
+  --lab-section-bg: var(--label-indigo-bg);
+  --lab-section-text: var(--label-indigo-text);
+  --lab-section-border: var(--label-indigo-border);
+}
+
+.lab-page[data-lab-section="bounties"],
+.lab-navigation-item[data-lab-section="bounties"] {
+  --lab-section-bg: var(--label-purple-bg);
+  --lab-section-text: var(--label-purple-text);
+  --lab-section-border: var(--label-purple-border);
+}
+
+.lab-page[data-lab-section="finance"],
+.lab-navigation-item[data-lab-section="finance"] {
+  --lab-section-bg: var(--label-emerald-bg);
+  --lab-section-text: var(--label-emerald-text);
+  --lab-section-border: var(--label-emerald-border);
+}
+
+.lab-page[data-lab-section="tasks"],
+.lab-navigation-item[data-lab-section="tasks"] {
+  --lab-section-bg: var(--label-orange-bg);
+  --lab-section-text: var(--label-orange-text);
+  --lab-section-border: var(--label-orange-border);
+}
+
+.lab-page[data-lab-section="analytics"],
+.lab-navigation-item[data-lab-section="analytics"] {
+  --lab-section-bg: var(--label-pink-bg);
+  --lab-section-text: var(--label-pink-text);
+  --lab-section-border: var(--label-pink-border);
+}
+
+.lab-page-header {
+  background: color-mix(in srgb, var(--lab-section-bg) 22%, var(--background-color-surface-1));
+  border-bottom-color: color-mix(in srgb, var(--lab-section-border) 22%, var(--border-color-subtle));
+}
+
+.lab-page-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 9px;
+  background: var(--lab-section-bg);
+  color: var(--lab-section-text);
+}
+
+.lab-navigation-icon {
+  color: var(--lab-section-text);
+}
+
+.lab-navigation-item[aria-current="page"] > div::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 6px;
+  bottom: 6px;
+  width: 2px;
+  border-radius: 2px;
+  background: var(--text-color-accent-primary);
+}
+
+.lab-page-notice {
+  border: 1px solid color-mix(in srgb, var(--label-emerald-border) 25%, var(--border-color-subtle));
+  background: color-mix(in srgb, var(--label-emerald-bg) 45%, var(--background-color-surface-1));
+  color: var(--label-emerald-text);
+}

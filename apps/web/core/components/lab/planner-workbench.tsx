@@ -79,17 +79,17 @@ export const LabPlanningWorkbench = observer(function LabPlanningWorkbench({
         </div>
       </div>
       <div className="lab-planning-summary rounded-xl border border-subtle bg-layer-1">
-        <div>
+        <div data-summary="items">
           <ListTodo size={16} />
           <span>规划事项</span>
           <strong>{planner.items.length}</strong>
         </div>
-        <div>
+        <div data-summary="pending">
           <Clock3 size={16} />
           <span>待排事项</span>
           <strong>{pending}</strong>
         </div>
-        <div>
+        <div data-summary="scheduled">
           <CalendarCheck2 size={16} />
           <span>本周计划</span>
           <strong>

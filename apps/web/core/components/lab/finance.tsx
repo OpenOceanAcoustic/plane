@@ -12,10 +12,14 @@ import type { LabFinanceChosenAction } from "./finance-form";
 import { LabForecastDialog, LabFormulaEditor } from "./finance-formula";
 import { LabLedger } from "./ledger";
 import { LabRecordWorkflowView } from "./record-workflow";
+// oxlint-disable-next-line import/no-unassigned-import -- local financial and task surfaces
+import "./finance-market.css";
 
 function Money({ amount }: { amount: string | null | undefined }) {
   return (
-    <span className="font-mono whitespace-nowrap">{amount === null || amount === undefined ? "—" : `¥${amount}`}</span>
+    <span className="lab-finance-money font-mono whitespace-nowrap">
+      {amount === null || amount === undefined ? "—" : `¥${amount}`}
+    </span>
   );
 }
 function Records<T extends { id: string }>({
@@ -30,7 +34,7 @@ function Records<T extends { id: string }>({
   if (!rows.length)
     return <p className="rounded border border-dashed border-subtle p-6 text-center text-13 text-secondary">{empty}</p>;
   return (
-    <div className="overflow-x-auto rounded border border-subtle">
+    <div className="lab-finance-table overflow-x-auto rounded-lg border border-subtle">
       <table className="w-full text-left text-12">
         <thead className="bg-layer-1">
           <tr>
@@ -136,7 +140,7 @@ export const LabFinance = observer(function LabFinance({
       : []),
   ];
   return (
-    <div className="space-y-5">
+    <div className="lab-finance space-y-5">
       <div className="flex flex-wrap items-center gap-2">
         <select
           aria-label="资金项目"
@@ -205,7 +209,11 @@ export const LabFinance = observer(function LabFinance({
           <h2 className="text-14 font-semibold">项目 VC 预算</h2>
           <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
             {visibleBudgets.map((budget) => (
-              <article key={budget.project_id} className="rounded-lg border border-subtle bg-layer-1 p-3">
+              <article
+                key={budget.project_id}
+                data-tone="purple"
+                className="lab-finance-card lab-finance-vc rounded-lg border border-subtle bg-layer-2 p-4"
+              >
                 <h3 className="text-14 font-medium">{budget.project}</h3>
                 {budget.configured ? (
                   <>
@@ -213,15 +221,15 @@ export const LabFinance = observer(function LabFinance({
                     <dl className="mt-3 grid grid-cols-3 gap-2 text-13">
                       <div>
                         <dt className="text-secondary">预算</dt>
-                        <dd>{budget.budget} VC</dd>
+                        <dd className="lab-finance-figure">{budget.budget} VC</dd>
                       </div>
                       <div>
                         <dt className="text-secondary">已占用</dt>
-                        <dd>{budget.reserved} VC</dd>
+                        <dd className="lab-finance-figure lab-finance-reserved">{budget.reserved} VC</dd>
                       </div>
                       <div>
                         <dt className="text-secondary">剩余</dt>
-                        <dd>{budget.available} VC</dd>
+                        <dd className="lab-finance-figure lab-finance-available">{budget.available} VC</dd>
                       </div>
                     </dl>
                   </>
@@ -238,7 +246,7 @@ export const LabFinance = observer(function LabFinance({
           {budgetError instanceof Error ? budgetError.message : "项目 VC 预算加载失败"}
         </p>
       )}
-      <nav aria-label="资金账视图" className="flex flex-wrap gap-2">
+      <nav aria-label="资金账视图" className="lab-finance-tabs flex flex-wrap gap-2">
         {[
           { id: "accounts", label: "真实余额与到账" },
           { id: "forecasts", label: "预算与参考预测" },
@@ -250,7 +258,8 @@ export const LabFinance = observer(function LabFinance({
           <Button
             key={view.id}
             size="sm"
-            variant={tab === view.id ? "primary" : "neutral-primary"}
+            variant={tab === view.id ? "accent-primary" : "neutral-primary"}
+            aria-pressed={tab === view.id}
             onClick={() => setTab(view.id)}
           >
             {view.label}
@@ -270,9 +279,13 @@ export const LabFinance = observer(function LabFinance({
               <h2 className="text-14 font-semibold">实验室公共资金池</h2>
               <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
                 {data.public_summary.map((account) => (
-                  <article key={account.kind} className="rounded-lg border border-subtle bg-layer-1 p-3">
+                  <article
+                    key={account.kind}
+                    data-account-kind={account.kind}
+                    className="lab-finance-card lab-public-pool-card rounded-lg border border-subtle bg-layer-2 p-4"
+                  >
                     <h3 className="text-13">{account.label || accountKindLabels[account.kind]}</h3>
-                    <p className="mt-2 text-16">
+                    <p className="lab-finance-figure mt-2 text-18">
                       <Money amount={account.balance} />
                     </p>
                     <p className="mt-1 text-12 text-secondary">
@@ -290,10 +303,24 @@ export const LabFinance = observer(function LabFinance({
               empty="暂无可见资金账户。"
               columns={[
                 { label: "账户", cell: (row) => row.label },
-                { label: "资金类型", cell: (row) => accountKindLabels[row.kind] ?? row.kind },
+                {
+                  label: "资金类型",
+                  cell: (row) => (
+                    <span className="lab-finance-kind" data-account-kind={row.kind}>
+                      {accountKindLabels[row.kind] ?? row.kind}
+                    </span>
+                  ),
+                },
                 { label: "实际余额", cell: (row) => <Money amount={row.balance} /> },
                 { label: "已承诺", cell: (row) => <Money amount={row.committed} /> },
-                { label: "可承诺余额", cell: (row) => <Money amount={row.available} /> },
+                {
+                  label: "可承诺余额",
+                  cell: (row) => (
+                    <span className="lab-finance-available">
+                      <Money amount={row.available} />
+                    </span>
+                  ),
+                },
                 {
                   label: "办理",
                   cell: (row) =>
@@ -384,7 +411,11 @@ export const LabFinance = observer(function LabFinance({
             <h2 className="text-14 font-semibold">负责人事前阶段预算</h2>
             {!data.stages.length && <p className="text-13 text-secondary">暂无阶段预算。</p>}
             {data.stages.map((stage) => (
-              <article key={stage.id} className="rounded-lg border border-subtle p-4">
+              <article
+                key={stage.id}
+                data-tone="indigo"
+                className="lab-finance-card lab-finance-stage rounded-lg border border-subtle p-4"
+              >
                 <div className="flex flex-wrap items-center gap-3">
                   <h3 className="mr-auto text-14 font-semibold">{stage.name}</h3>
                   <span className="text-13">
@@ -400,7 +431,10 @@ export const LabFinance = observer(function LabFinance({
                 </p>
                 <ul className="mt-2 flex flex-wrap gap-2 text-12">
                   {stage.purposes.map((purpose) => (
-                    <li key={`${purpose.name}-${purpose.amount}`} className="rounded bg-layer-1 px-2 py-1">
+                    <li
+                      key={`${purpose.name}-${purpose.amount}`}
+                      className="lab-finance-purpose rounded bg-layer-1 px-2 py-1"
+                    >
                       {purpose.name} · <Money amount={purpose.amount} />
                     </li>
                   ))}

@@ -193,3 +193,17 @@ Web 类型、变更 TypeScript 严格 Lint（0 警告／错误）、格式和 Gi
 正式入口 `http://192.168.137.90:8080` 的主页面、实际加载的 **88 个静态资源**及新增时间轴平移模块与最终构建逐字节一致。三个匿名认证入口、实例读取正常，匿名资金及项目 VC 预算接口仍返回 401；无静态请求失败或未知页面错误。既有可恢复 hydration 提示为主入口 #418=41／#423=1、管理后台 0／0、Space 16／1。
 
 日志：`/tmp/lab-calendar-pan-repro.log`、`/tmp/lab-calendar-pan-components-final.log`、`/tmp/lab-calendar-pan-existing-timeline.log`、`/tmp/lab-calendar-pan-mode-header.log`、`/tmp/lab-calendar-pan-web-types-final.log`、`/tmp/lab-calendar-pan-strict-lint.log`、`/tmp/lab-calendar-pan-format.log`、`/tmp/lab-calendar-pan-web-lint.log`、`/tmp/lab-calendar-pan-web-build.log` 和 `/tmp/lab-calendar-pan-production-browser.log`。临时浏览器服务与构建夹具在测试结束后清理。
+
+## Plane 配色与页面层次（2026-10-09）
+
+个人规划、团队排期、任务表格、悬赏大厅、资金与奖励和数据总览增加局部色彩，使用 Plane 既有主题变量，适配浅色与深色。页面标题和导航增加彩色图标；规划统计卡片、状态列、账户类型、VC 配额及图表标题采用浅底与细边。主动作和当前流程节点沿用品牌色，VC 使用紫色，可用余额及完成状态使用绿色，待处理和风险事项使用橙色。保留任务类别色、时间块覆盖色、悬赏描边与实心星；隐藏排期仍显示中性忙碌。
+
+本次仅修改视觉样式与选中状态的可访问性属性，没有后端或迁移变更。规划、窄屏、文件夹排序、状态拖动和自定义配色的 9 项既有浏览器回归通过；资金即时额度和悬赏卡片 2 项、时间轴平移和重大悬赏流程各 1 项定向验证通过。重大流程初始化首次检查没有生成连线，未改代码的单独重跑通过，记录为夹具初始化偶发。人工检查桌面、390px 窄屏及深浅主题截图；没有新增说明小字。
+
+最终 Web 类型检查、11 个变更 TypeScript 文件严格 Lint（0 警告／错误）、16 个源码文件格式检查、Git 空白检查和 Web 生产构建通过。没有重复后端全量回归。
+
+升级前静态资源保留在 `.temp/lab-build/pre-visual-20261009-174824/client-mounted`，新构建保留旧哈希资源。正式 `ooa-plane-lab` 仅重建 `proxy`，其余 9 个服务身份不变，10 个服务均运行。更新前后 30 张业务表的数量及完整记录指纹一致，证据在备份目录的 `data-before.json`／`data-after.json`；此前数据库、附件和认证密钥备份继续保留。
+
+内网 `http://192.168.137.90:8080` 的三个匿名入口与实例 API 正常，匿名资金及项目 VC 预算接口保持 401。主页面、实际加载的 88 个静态资源和 2 个新增样式包与当前构建逐字节一致，没有静态请求失败或未知页面错误。既有可恢复 hydration 提示保持主入口 #418=41／#423=1、管理后台 0／0、Space 16／1。
+
+日志：`/tmp/lab-visual-workbench-tests.log`、`/tmp/lab-visual-web-types-final.log`、`/tmp/lab-visual-format-final.log`、`/tmp/lab-visual-web-build.log` 和 `/tmp/lab-visual-production-browser.log`。

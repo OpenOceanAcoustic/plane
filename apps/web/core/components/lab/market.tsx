@@ -4,6 +4,7 @@
  */
 
 import { useEffect, useState } from "react";
+import type { CSSProperties } from "react";
 import { observer } from "mobx-react";
 import { useSearchParams } from "react-router";
 import { v4 as uuidv4 } from "uuid";
@@ -23,6 +24,8 @@ import {
 import { LabBountyWorkflow } from "./workflow";
 import { LabBountyMaterials } from "./bounty-materials";
 import { LabBountyPublish } from "./bounty-publish";
+// oxlint-disable-next-line import/no-unassigned-import -- local financial and task surfaces
+import "./finance-market.css";
 
 const labels: Record<string, string> = {
   publication_review: "发布待复核",
@@ -36,6 +39,11 @@ const labels: Record<string, string> = {
   done: "完成",
   cancelled: "已取消",
 };
+const bountyCardStyle = (color?: string | null): CSSProperties =>
+  ({
+    ...labBountyOutline(color),
+    "--lab-market-category": color || "#8b5cf6",
+  }) as CSSProperties;
 
 export const LabMarket = observer(function LabMarket({ store }: { store: LabStore }) {
   const { mutate } = useSWRConfig();
@@ -135,7 +143,7 @@ export const LabMarket = observer(function LabMarket({ store }: { store: LabStor
     setReasonAction({ bounty, action, extra });
   };
   return (
-    <div className="flex flex-col gap-5">
+    <div className="lab-market flex flex-col gap-5">
       <div className="flex flex-wrap items-center gap-2">
         <Button disabled={!planner.projects.some((project) => project.lead)} onClick={() => setMode("publish")}>
           发布悬赏
@@ -162,7 +170,7 @@ export const LabMarket = observer(function LabMarket({ store }: { store: LabStor
         </select>
       </div>
       {store.todos.length > 0 && (
-        <section className="rounded-md border border-subtle bg-layer-1 p-4">
+        <section className="lab-market-todos rounded-lg border border-subtle bg-layer-1 p-4">
           <h2 className="mb-2 text-14 font-semibold">我的待办</h2>
           <div className="flex flex-wrap gap-2">
             {store.todos.map((todo) => (
@@ -179,7 +187,7 @@ export const LabMarket = observer(function LabMarket({ store }: { store: LabStor
           </div>
         </section>
       )}
-      <nav aria-label="悬赏筛选" className="flex gap-2">
+      <nav aria-label="悬赏筛选" className="lab-market-tabs flex gap-2">
         {(
           [
             { id: "open", name: "开放认领" },
@@ -190,7 +198,8 @@ export const LabMarket = observer(function LabMarket({ store }: { store: LabStor
           <Button
             key={tab.id}
             size="sm"
-            variant={view === tab.id ? "primary" : "neutral-primary"}
+            variant={view === tab.id ? "accent-primary" : "neutral-primary"}
+            aria-pressed={view === tab.id}
             onClick={() => setView(tab.id)}
           >
             {tab.name}
@@ -211,13 +220,15 @@ export const LabMarket = observer(function LabMarket({ store }: { store: LabStor
               key={bounty.id}
               type="button"
               onClick={() => openDetail(bounty.id)}
-              style={labBountyOutline(bounty.category_color)}
-              className={`rounded-lg border bg-surface-1 p-4 text-left ${detailId === bounty.id ? "ring-accent-primary ring-2" : ""}`}
+              style={bountyCardStyle(bounty.category_color)}
+              className={`lab-market-card rounded-lg border bg-surface-1 p-4 text-left ${detailId === bounty.id ? "ring-accent-primary ring-2" : ""}`}
               aria-label={`查看悬赏 ${bounty.title}`}
             >
               <div className="flex items-center gap-2 text-12">
                 <LabBountyBadge color={bounty.category_color} />
-                <span className="ml-auto text-secondary">{labels[bounty.status] ?? bounty.status}</span>
+                <span className="lab-bounty-status ml-auto" data-status={bounty.status}>
+                  {labels[bounty.status] ?? bounty.status}
+                </span>
               </div>
               <p className="mt-2 text-12 text-secondary">
                 {bounty.project}
@@ -226,7 +237,9 @@ export const LabMarket = observer(function LabMarket({ store }: { store: LabStor
               </p>
               <h2 className="mt-1 line-clamp-2 text-14 font-semibold">{bounty.title}</h2>
               <p className="mt-2 line-clamp-2 text-12 text-secondary">{bounty.public_summary || bounty.deliverable}</p>
-              <p className="mt-3 text-12">VC 配额 {bounty.budget}</p>
+              <p className="lab-bounty-quota mt-3 text-12">
+                VC 配额 <strong className="font-mono font-semibold">{bounty.budget}</strong>
+              </p>
               <p className="mt-1 text-12 text-accent-primary">
                 {(bounty.reward_estimate?.amount ?? bounty.estimated_reward)
                   ? `预计 ¥${bounty.reward_estimate?.amount ?? bounty.estimated_reward} · 公式 v${bounty.reward_estimate?.formula_version ?? bounty.reward_formula_version ?? "—"}`
@@ -263,8 +276,8 @@ export const LabMarket = observer(function LabMarket({ store }: { store: LabStor
               <article
                 key={bounty.id}
                 id={`bounty-${bounty.id}`}
-                className="scroll-mt-4 rounded-lg border bg-surface-1 p-5"
-                style={labBountyOutline(bounty.category_color)}
+                className="lab-market-card scroll-mt-4 rounded-lg border bg-surface-1 p-5"
+                style={bountyCardStyle(bounty.category_color)}
               >
                 <div className="flex items-start justify-between gap-3">
                   <div>
@@ -283,7 +296,9 @@ export const LabMarket = observer(function LabMarket({ store }: { store: LabStor
                     </h2>
                   </div>
                   <LabBountyBadge color={bounty.category_color} />
-                  <span className="rounded bg-layer-1 px-2 py-1 text-12">{labels[bounty.status] ?? bounty.status}</span>
+                  <span className="lab-bounty-status" data-status={bounty.status}>
+                    {labels[bounty.status] ?? bounty.status}
+                  </span>
                 </div>
                 <p className="mt-3 text-13">
                   VC 配额 {bounty.budget}

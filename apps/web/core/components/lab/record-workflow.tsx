@@ -13,7 +13,8 @@ type RecordNode = Node<{ label: string; state: "current" | "completed" | "upcomi
 function RecordFlowNode({ data }: NodeProps<RecordNode>) {
   return (
     <div
-      className={`min-w-40 rounded-lg border px-4 py-3 text-center text-13 ${data.state === "current" ? "border-accent-strong bg-accent-primary/10" : "border-subtle bg-surface-1"}`}
+      className="lab-workflow-node min-w-40 rounded-lg border px-4 py-3 text-center text-13"
+      data-workflow-state={data.state}
     >
       <Handle type="target" position={Position.Left} />
       <p className="font-medium">{data.label}</p>

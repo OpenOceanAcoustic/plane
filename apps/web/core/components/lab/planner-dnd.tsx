@@ -166,7 +166,9 @@ export function StatusColumn({
     <section
       ref={setNodeRef}
       aria-label={`${title}事项`}
-      className={`min-h-64 rounded-xl border p-3 transition-colors ${isOver ? "border-accent-strong bg-accent-primary/5" : "border-transparent bg-layer-1"}`}
+      data-status={status}
+      data-over={isOver}
+      className={`lab-planner-column min-h-64 rounded-xl border p-3 transition-colors ${isOver ? "border-accent-strong bg-accent-primary/5" : "border-transparent bg-layer-1"}`}
     >
       <h2 className="mb-3 flex items-center justify-between text-13 font-semibold">
         <span>{title}</span>
