@@ -26,7 +26,6 @@ from .planning_views import LabView
 
 SHANGHAI = ZoneInfo("Asia/Shanghai")
 STATUS_LABELS = {"todo": "待做", "active": "进行中", "review": "待验收", "done": "完成", "cancelled": "取消"}
-KIND_LABELS = {"project": "项目任务", "research": "科研", "study": "学习", "mentoring": "带教", "busy": "忙碌"}
 DETAIL_COLUMNS = [
     {"key": key, "label": label}
     for key, label in (
@@ -265,6 +264,7 @@ def schedule_charts(data, user, workspace, scope):
     )
     members = {member["id"]: member["name"] for member in calendar["members"]}
     totals, kinds = Counter(), Counter()
+    category_labels = {"busy": "忙碌", "uncategorized": "未分类"}
     intervals = defaultdict(list)
     hour_chart = data.add(
         chart(
@@ -318,7 +318,8 @@ def schedule_charts(data, user, workspace, scope):
         if right <= left:
             continue
         person = members.get(event["user_id"], "成员")
-        kind = event.get("kind", "busy")
+        kind = (event.get("category_id") or "uncategorized") if event.get("kind") else "busy"
+        category_labels[kind] = event.get("category_name") or category_labels.get(kind, "未分类")
         seconds = (right - left).total_seconds()
         kinds[kind] += seconds
         record = {
@@ -387,8 +388,7 @@ def schedule_charts(data, user, workspace, scope):
         for (member_id, day), ranges in intervals.items()
     ]
     kind_chart["rows"] = [
-        {"id": key, "label": KIND_LABELS.get(key, key), "hours": round(seconds / 3600, 4)}
-        for key, seconds in kinds.items()
+        {"id": key, "label": category_labels[key], "hours": round(seconds / 3600, 4)} for key, seconds in kinds.items()
     ]
     by_day = defaultdict(Counter)
     for (_, day), ranges in intervals.items():

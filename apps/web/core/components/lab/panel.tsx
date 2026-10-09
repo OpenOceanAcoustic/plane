@@ -3,25 +3,38 @@
  * SPDX-License-Identifier: AGPL-3.0-only
  */
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { observer } from "mobx-react";
 import { useParams } from "react-router";
 import { API_BASE_URL } from "@plane/constants";
 import { LabStore } from "@plane/shared-state";
-import type { LabItem } from "@plane/types";
 import { Button } from "@plane/ui";
 import { LabCalendar } from "./calendar";
 import { LabAnalyticsPanel } from "./analytics";
 import { LabMarket } from "./market";
-import { LabPlannerBoard } from "./planner";
+import { LabFinance } from "./finance";
+import { LabPlanningWorkbench } from "./planner-workbench";
 import { LabTaskTable } from "./task-table";
+import type { LabOpenProjectIssue } from "./item-details";
+import { labSections } from "./sections";
+// oxlint-disable-next-line import/no-unassigned-import -- scoped lab page accents
+import "./theme.css";
 
-export const LabPanel = observer(function LabPanel() {
+export const LabPanel = observer(function LabPanel({
+  openProjectIssue,
+  projectDetailsOpen = false,
+}: {
+  openProjectIssue?: LabOpenProjectIssue;
+  projectDetailsOpen?: boolean;
+}) {
   const { workspaceSlug = "", section = "planner" } = useParams();
   const store = useMemo(() => new LabStore(API_BASE_URL, workspaceSlug), [workspaceSlug]);
-  const [tab, setTab] = useState<"board" | "calendar">("board");
-  const [scheduled, setScheduled] = useState<LabItem>();
   const [refreshKey, setRefreshKey] = useState(0);
+  const previousDetailsOpen = useRef(projectDetailsOpen);
+  useEffect(() => {
+    if (previousDetailsOpen.current && !projectDetailsOpen) void store.execute(store.loadPlanner);
+    previousDetailsOpen.current = projectDetailsOpen;
+  }, [projectDetailsOpen, store]);
   useEffect(() => {
     void store.execute(store.loadPlanner);
     const refresh = () => {
@@ -34,20 +47,20 @@ export const LabPanel = observer(function LabPanel() {
       window.clearInterval(timer);
     };
   }, [store]);
-  const title =
-    (
-      {
-        planner: "个人规划",
-        team: "团队排期",
-        bounties: "悬赏大厅",
-        tasks: "任务表格",
-        analytics: "数据总览",
-      } as Record<string, string>
-    )[section] ?? "个人规划";
+  const currentSection = labSections.find((entry) => entry.key === section) ?? labSections[0];
+  const SectionIcon = currentSection.Icon;
   return (
-    <main className="flex h-full w-full flex-col overflow-auto bg-surface-1 text-primary">
-      <header className="flex flex-wrap items-center gap-3 border-b border-subtle px-6 py-4">
-        <h1 className="mr-auto text-18 font-semibold">{title}</h1>
+    <main
+      className="lab-page flex h-full w-full flex-col overflow-auto bg-surface-1 text-primary"
+      data-lab-section={currentSection.key}
+    >
+      <header className="lab-page-header flex flex-wrap items-center gap-3 border-b border-subtle px-6 py-4">
+        <h1 className="mr-auto flex items-center gap-3 text-18 font-semibold">
+          <span className="lab-page-icon" aria-hidden="true">
+            <SectionIcon size={19} />
+          </span>
+          {currentSection.name}
+        </h1>
         <Button
           size="sm"
           variant="neutral-primary"
@@ -65,73 +78,39 @@ export const LabPanel = observer(function LabPanel() {
       </header>
       <div className="flex flex-col gap-5 p-6">
         {store.error && (
-          <p role="alert" className="border-orange-300 bg-orange-50 text-orange-800 rounded border p-3 text-13">
+          <p
+            role="alert"
+            className="rounded border border-danger-subtle bg-danger-subtle/10 p-3 text-13 text-danger-primary"
+          >
             {store.error}
           </p>
         )}
         {store.notice && (
-          <p role="status" className="rounded bg-layer-1 p-3 text-13">
+          <p role="status" className="lab-page-notice rounded p-3 text-13">
             {store.notice}
           </p>
         )}
         {!store.planner && !store.error && <p className="text-13 text-tertiary">正在读取实验室规划…</p>}
         {store.planner && section === "planner" && (
-          <>
-            <nav className="flex items-center gap-2">
-              <Button
-                size="sm"
-                variant={tab === "board" ? "primary" : "neutral-primary"}
-                onClick={() => setTab("board")}
-              >
-                文件夹看板
-              </Button>
-              <Button
-                size="sm"
-                variant={tab === "calendar" ? "primary" : "neutral-primary"}
-                onClick={() => setTab("calendar")}
-              >
-                个人周历
-              </Button>
-              <a
-                className="ml-auto text-13 text-accent-primary"
-                href={`${API_BASE_URL}/api/workspaces/${workspaceSlug}/lab/planning-export/?format=csv`}
-              >
-                导出排期 CSV
-              </a>
-              <a
-                className="text-13 text-accent-primary"
-                href={`${API_BASE_URL}/api/workspaces/${workspaceSlug}/lab/planning-export/`}
-                target="_blank"
-                rel="noreferrer"
-              >
-                JSON
-              </a>
-            </nav>
-            {tab === "board" ? (
-              <LabPlannerBoard
-                store={store}
-                schedule={(item) => {
-                  setScheduled(item);
-                  setTab("calendar");
-                }}
-              />
-            ) : (
-              <LabCalendar store={store} scheduled={scheduled} clearScheduled={() => setScheduled(undefined)} />
-            )}
-          </>
+          <LabPlanningWorkbench store={store} openProjectIssue={openProjectIssue} />
         )}
         {store.planner &&
           section === "team" &&
           (store.planner.team_access ? (
-            <LabCalendar key="team" store={store} team clearScheduled={() => undefined} />
+            <LabCalendar
+              key="team"
+              store={store}
+              team
+              clearScheduled={() => undefined}
+              openProjectIssue={openProjectIssue}
+            />
           ) : (
-            <p className="text-13 text-secondary">
-              仅工作区管理员和项目负责人可以查看团队排期。请在个人周历维护本人安排。
-            </p>
+            <p className="text-13 text-secondary">暂无团队排期查看权限</p>
           ))}
         {store.planner && section === "bounties" && <LabMarket store={store} />}
         {store.planner && section === "tasks" && <LabTaskTable store={store} refreshKey={refreshKey} />}
         {store.planner && section === "analytics" && <LabAnalyticsPanel store={store} refreshKey={refreshKey} />}
+        {store.planner && section === "finance" && <LabFinance store={store} refreshKey={refreshKey} />}
       </div>
     </main>
   );

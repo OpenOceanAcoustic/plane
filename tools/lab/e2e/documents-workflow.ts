@@ -165,7 +165,7 @@ export async function verifyDocumentsWorkflow({
       .split("\n")
       .findLast((line) => line.startsWith("{"))!
   ) as { bounty: string; issue: string };
-  await page.goto("/browser-lab/lab/bounties");
+  await page.goto(`/browser-lab/lab/bounties?bounty_id=${workflowFixture.bounty}`);
   const bounty = page.locator(`#bounty-${workflowFixture.bounty}`);
   await expect(bounty).toBeVisible();
   await bounty.getByRole("button", { name: "查看流程图", exact: true }).click();

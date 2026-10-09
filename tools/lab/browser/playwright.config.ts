@@ -3,6 +3,8 @@
  * SPDX-License-Identifier: AGPL-3.0-only
  */
 import { defineConfig } from "@playwright/test";
+const port = Number(process.env.LAB_BROWSER_PORT ?? "3105");
+const baseURL = `http://127.0.0.1:${port}`;
 export default defineConfig({
   testDir: ".",
   testMatch: "*.spec.ts",
@@ -10,10 +12,10 @@ export default defineConfig({
   retries: 0,
   reporter: "list",
   timeout: 30000,
-  use: { baseURL: "http://127.0.0.1:3105", browserName: "chromium", trace: "off", screenshot: "off", video: "off" },
+  use: { baseURL, browserName: "chromium", trace: "off", screenshot: "off", video: "off" },
   webServer: {
     command: "node serve.mjs",
-    url: "http://127.0.0.1:3105",
+    url: baseURL,
     reuseExistingServer: false,
     timeout: 30000,
   },

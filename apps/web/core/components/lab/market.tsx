@@ -4,14 +4,28 @@
  */
 
 import { useEffect, useState } from "react";
+import type { CSSProperties } from "react";
 import { observer } from "mobx-react";
-import { Button } from "@plane/ui";
-import type { LabBounty, LabTask } from "@plane/types";
+import { useSearchParams } from "react-router";
+import { v4 as uuidv4 } from "uuid";
+import { useSWRConfig } from "swr";
+import { Button, LabBountyBadge, labBountyOutline } from "@plane/ui";
+import type { LabBounty } from "@plane/types";
 import type { LabStore } from "@plane/shared-state";
-import { LabDialog, LabField, labInputClass } from "@plane/ui";
-import { calendarInstant } from "./calendar-time";
-import { LabLedger } from "./ledger";
+import {
+  LabAmountInput,
+  LabDialog,
+  LabField,
+  labAmountError,
+  labDecimalText,
+  labDecimalUnits,
+  labInputClass,
+} from "@plane/ui";
 import { LabBountyWorkflow } from "./workflow";
+import { LabBountyMaterials } from "./bounty-materials";
+import { LabBountyPublish } from "./bounty-publish";
+// oxlint-disable-next-line import/no-unassigned-import -- local financial and task surfaces
+import "./finance-market.css";
 
 const labels: Record<string, string> = {
   publication_review: "发布待复核",
@@ -25,79 +39,130 @@ const labels: Record<string, string> = {
   done: "完成",
   cancelled: "已取消",
 };
+const bountyCardStyle = (color?: string | null): CSSProperties =>
+  ({
+    ...labBountyOutline(color),
+    "--lab-market-category": color || "#8b5cf6",
+  }) as CSSProperties;
 
 export const LabMarket = observer(function LabMarket({ store }: { store: LabStore }) {
-  const [mode, setMode] = useState<"stage" | "publish" | "claim" | "submit" | "accept" | "exception">();
+  const { mutate } = useSWRConfig();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const detailId = searchParams.get("bounty_id") ?? searchParams.get("bounty") ?? "";
+  const [view, setView] = useState<"open" | "mine" | "all">("open");
+  const [mode, setMode] = useState<"publish" | "claim" | "submit" | "accept" | "public-summary">();
   const [chosen, setChosen] = useState<LabBounty>();
-  const [stageId, setStageId] = useState("");
-  const [tasks, setTasks] = useState<LabTask[]>([]);
   const [projectFilter, setProjectFilter] = useState("");
   const [result, setResult] = useState("pass");
   const [acceptanceKey, setAcceptanceKey] = useState("");
+  const [plannedVc, setPlannedVc] = useState("");
+  const [acceptanceTargets, setAcceptanceTargets] = useState<Record<string, string>>({});
   const [workflowIds, setWorkflowIds] = useState<Set<string>>(new Set());
   const [reasonAction, setReasonAction] = useState<{
     bounty: LabBounty;
     action: string;
     extra: Record<string, string>;
   }>();
+  const [deleting, setDeleting] = useState<LabBounty>();
   useEffect(() => {
     void store.execute(store.loadMarket);
   }, [store]);
+  useEffect(() => {
+    if (detailId)
+      void store.execute(async () => {
+        await store.loadBountyDetail(detailId);
+      });
+  }, [detailId, store]);
+  const openDetail = (id: string) => {
+    setSearchParams((current) => {
+      const next = new URLSearchParams(current);
+      next.set("bounty_id", id);
+      next.delete("bounty");
+      return next;
+    });
+  };
   const planner = store.planner;
   if (!planner) return null;
   const close = () => {
     setMode(undefined);
     setChosen(undefined);
+    setPlannedVc("");
+    setAcceptanceTargets({});
   };
+  const claimLimit = chosen
+    ? (chosen.claim_available ??
+      labDecimalText(
+        (labDecimalUnits(chosen.budget) ?? 0n) -
+          chosen.allocations
+            .filter((row) => row.approved)
+            .reduce((total, row) => total + (labDecimalUnits(row.planned) ?? 0n), 0n)
+      ))
+    : undefined;
+  const claimError = labAmountError(plannedVc, { limit: claimLimit, min: "0.01", unit: "VC" });
+  const acceptanceInvalid =
+    !["rework", "reject"].includes(result) &&
+    !!chosen?.allocations.some(
+      (row) =>
+        row.approved &&
+        !!labAmountError(acceptanceTargets[row.id] ?? row.planned, {
+          limit: row.planned,
+          min: row.awarded,
+          unit: "VC",
+        })
+    );
   async function act(bounty: LabBounty, action: string, body: unknown = {}) {
     await store.execute(async () => {
       await store.request(`bounties/${bounty.id}/${action}/`, "POST", body);
       await store.loadMarket();
+      await store.loadPlanner();
     });
   }
   async function finish(action: () => Promise<void>) {
     await store.execute(async () => {
       await action();
       await store.loadMarket();
+      await store.loadPlanner();
       close();
     });
   }
-  const stage = store.stages.find((row) => row.id === stageId);
-  const publishProject = planner.projects.find((project) => project.id === stage?.project_id);
-  const people = Array.from(
-    new Map(planner.projects.flatMap((project) => project.members).map((member) => [member.id, member])).values()
-  );
+  async function refreshOnFailure(action: () => Promise<void>) {
+    try {
+      await action();
+    } catch (failure) {
+      if (chosen) {
+        try {
+          setChosen(await store.loadBountyDetail(chosen.id));
+        } catch {
+          // Retain the original action failure if the balance refresh is unavailable.
+        }
+      }
+      throw failure;
+    }
+  }
   const actionReason = (bounty: LabBounty, action: string, extra: Record<string, string> = {}) => {
     setReasonAction({ bounty, action, extra });
   };
   return (
-    <div className="flex flex-col gap-5">
+    <div className="lab-market flex flex-col gap-5">
       <div className="flex flex-wrap items-center gap-2">
-        <Button variant="neutral-primary" onClick={() => setMode("stage")}>
-          冻结阶段预算 B
+        <Button disabled={!planner.projects.some((project) => project.lead)} onClick={() => setMode("publish")}>
+          发布悬赏
         </Button>
-        <Button
-          onClick={() => {
-            setStageId(store.stages[0]?.id ?? "");
-            setTasks([]);
-            setMode("publish");
-          }}
-        >
-          发布团队悬赏
-        </Button>
-        {planner.team_access && (
-          <Button variant="neutral-primary" onClick={() => setMode("exception")}>
-            批准 WIP 例外
-          </Button>
-        )}
         <select
           aria-label="按项目查看"
           className={`${labInputClass} ml-auto max-w-48`}
           value={projectFilter}
           onChange={(event) => setProjectFilter(event.target.value)}
         >
-          <option value="">全部有权限项目</option>
-          {planner.projects.map((project) => (
+          <option value="">全实验室公开悬赏</option>
+          {Array.from(
+            new Map(
+              [
+                ...planner.projects,
+                ...store.bounties.map((bounty) => ({ id: bounty.project_id, name: bounty.project })),
+              ].map((project) => [project.id, project])
+            ).values()
+          ).map((project) => (
             <option key={project.id} value={project.id}>
               {project.name}
             </option>
@@ -105,67 +170,114 @@ export const LabMarket = observer(function LabMarket({ store }: { store: LabStor
         </select>
       </div>
       {store.todos.length > 0 && (
-        <section className="rounded-md border border-subtle bg-layer-1 p-4">
+        <section className="lab-market-todos rounded-lg border border-subtle bg-layer-1 p-4">
           <h2 className="mb-2 text-14 font-semibold">我的待办</h2>
           <div className="flex flex-wrap gap-2">
             {store.todos.map((todo) => (
-              <a
+              <button
                 key={todo.id}
-                href={`#bounty-${todo.id}`}
+                type="button"
+                onClick={() => openDetail(todo.id)}
                 className="rounded border border-subtle bg-surface-1 px-3 py-2 text-12"
               >
                 {todo.action} · {todo.title}
                 {todo.overdue ? " · 已逾期" : ""}
-              </a>
+              </button>
             ))}
           </div>
         </section>
       )}
-      <div className="flex flex-wrap gap-3">
-        {store.stages
-          .filter((row) => !projectFilter || row.project_id === projectFilter)
-          .map((row) => (
-            <div key={row.id} className="rounded-md border border-subtle px-4 py-3">
-              <p className="text-13 font-medium">
-                {row.project} · {row.name}
+      <nav aria-label="悬赏筛选" className="lab-market-tabs flex gap-2">
+        {(
+          [
+            { id: "open", name: "开放认领" },
+            { id: "mine", name: "我的参与" },
+            { id: "all", name: "全部悬赏" },
+          ] as const
+        ).map((tab) => (
+          <Button
+            key={tab.id}
+            size="sm"
+            variant={view === tab.id ? "accent-primary" : "neutral-primary"}
+            aria-pressed={view === tab.id}
+            onClick={() => setView(tab.id)}
+          >
+            {tab.name}
+          </Button>
+        ))}
+      </nav>
+      <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3" aria-label="悬赏工作项卡片">
+        {store.bounties
+          .filter(
+            (row) =>
+              (!projectFilter || row.project_id === projectFilter) &&
+              (view === "all" ||
+                (view === "open" && row.status === "open") ||
+                (view === "mine" && row.allocations.some((allocation) => allocation.user_id === planner.user_id)))
+          )
+          .map((bounty) => (
+            <button
+              key={bounty.id}
+              type="button"
+              onClick={() => openDetail(bounty.id)}
+              style={bountyCardStyle(bounty.category_color)}
+              className={`lab-market-card rounded-lg border bg-surface-1 p-4 text-left ${detailId === bounty.id ? "ring-accent-primary ring-2" : ""}`}
+              aria-label={`查看悬赏 ${bounty.title}`}
+            >
+              <div className="flex items-center gap-2 text-12">
+                <LabBountyBadge color={bounty.category_color} />
+                <span className="lab-bounty-status ml-auto" data-status={bounty.status}>
+                  {labels[bounty.status] ?? bounty.status}
+                </span>
+              </div>
+              <p className="mt-2 text-12 text-secondary">
+                {bounty.project}
+                {bounty.issue_key ? ` · ${bounty.issue_key}` : ""}
+                {bounty.major ? " · 重大任务" : ""}
               </p>
-              <p className="mt-1 text-12 text-secondary">
-                冻结 B {row.budget} · 已占用 {row.reserved} · 可用{" "}
-                {(Number(row.budget) - Number(row.reserved)).toFixed(2)}
+              <h2 className="mt-1 line-clamp-2 text-14 font-semibold">{bounty.title}</h2>
+              <p className="mt-2 line-clamp-2 text-12 text-secondary">{bounty.public_summary || bounty.deliverable}</p>
+              <p className="lab-bounty-quota mt-3 text-12">
+                VC 配额 <strong className="font-mono font-semibold">{bounty.budget}</strong>
               </p>
-            </div>
+              <p className="mt-1 text-12 text-accent-primary">
+                {(bounty.reward_estimate?.amount ?? bounty.estimated_reward)
+                  ? `预计 ¥${bounty.reward_estimate?.amount ?? bounty.estimated_reward} · 公式 v${bounty.reward_estimate?.formula_version ?? bounty.reward_formula_version ?? "—"}`
+                  : bounty.reward_estimate?.error || "预计奖励待负责人配置"}
+              </p>
+            </button>
           ))}
       </div>
-      <div className="flex gap-4 text-13">
-        <a
-          className="text-accent-primary"
-          href={`${store.apiBase}/api/workspaces/${store.slug}/lab/ledger/?format=csv${projectFilter ? `&project_id=${projectFilter}` : ""}`}
-        >
-          导出项目 VC CSV
-        </a>
-        <a
-          className="text-accent-primary"
-          target="_blank"
-          rel="noreferrer"
-          href={`${store.apiBase}/api/workspaces/${store.slug}/lab/ledger/${projectFilter ? `?project_id=${projectFilter}` : ""}`}
-        >
-          查看 VC JSON 与冲正记录
-        </a>
-      </div>
-      <p className="text-12 text-tertiary">
-        贡献仅按项目记录。成员确认分工后开工，独立验收后授予
-        VC；有效探索负结果可按约定验收。普通/重大验收期限为三个/五个工作日。
-      </p>
-      <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+      {detailId && (
+        <div className="flex items-center justify-between">
+          <h2 className="text-16 font-semibold">悬赏任务详情</h2>
+          <Button
+            size="sm"
+            variant="neutral-primary"
+            onClick={() =>
+              setSearchParams((current) => {
+                const next = new URLSearchParams(current);
+                next.delete("bounty_id");
+                next.delete("bounty");
+                return next;
+              })
+            }
+          >
+            关闭任务详情
+          </Button>
+        </div>
+      )}
+      <div className="grid grid-cols-1 gap-4">
         {store.bounties
-          .filter((row) => !projectFilter || row.project_id === projectFilter)
+          .filter((row) => row.id === detailId)
           .map((bounty) => {
             const mine = bounty.allocations.find((row) => row.user_id === planner.user_id);
             return (
               <article
                 key={bounty.id}
                 id={`bounty-${bounty.id}`}
-                className={`scroll-mt-4 rounded-lg border border-subtle bg-surface-1 p-5 ${workflowIds.has(bounty.id) ? "xl:col-span-2" : ""}`}
+                className="lab-market-card scroll-mt-4 rounded-lg border bg-surface-1 p-5"
+                style={bountyCardStyle(bounty.category_color)}
               >
                 <div className="flex items-start justify-between gap-3">
                   <div>
@@ -174,7 +286,7 @@ export const LabMarket = observer(function LabMarket({ store }: { store: LabStor
                       {bounty.major ? " · 重大任务" : ""}
                     </p>
                     <h2 className="text-16 font-semibold">
-                      {bounty.issue_id ? (
+                      {bounty.issue_id && bounty.access_level === "project" ? (
                         <a href={`/${store.slug}/projects/${bounty.project_id}/issues/${bounty.issue_id}`}>
                           {bounty.title}
                         </a>
@@ -183,11 +295,33 @@ export const LabMarket = observer(function LabMarket({ store }: { store: LabStor
                       )}
                     </h2>
                   </div>
-                  <span className="rounded bg-layer-1 px-2 py-1 text-12">{labels[bounty.status] ?? bounty.status}</span>
+                  <LabBountyBadge color={bounty.category_color} />
+                  <span className="lab-bounty-status" data-status={bounty.status}>
+                    {labels[bounty.status] ?? bounty.status}
+                  </span>
                 </div>
                 <p className="mt-3 text-13">
-                  团队 T {bounty.budget} VC · 已授予 {bounty.awarded}
+                  VC 配额 {bounty.budget}
+                  {bounty.awarded !== null ? ` · 已授予 ${bounty.awarded}` : ""}
                 </p>
+                {bounty.reward_estimate && (
+                  <p className="mt-2 text-13">
+                    预算预计奖励{" "}
+                    {bounty.reward_estimate.amount === null
+                      ? bounty.reward_estimate.error || "待配置"
+                      : `¥${bounty.reward_estimate.amount}`}{" "}
+                    · 公式 v{bounty.reward_estimate.formula_version ?? "—"}（参考）
+                  </p>
+                )}
+                {bounty.received_estimate && (
+                  <p className="mt-1 text-13">
+                    到账奖励测算{" "}
+                    {bounty.received_estimate.amount === null
+                      ? bounty.received_estimate.error || "待计算"
+                      : `¥${bounty.received_estimate.amount}`}{" "}
+                    · 公式 v{bounty.received_estimate.formula_version ?? "—"}（参考）
+                  </p>
+                )}
                 <dl className="mt-3 grid grid-cols-[64px_1fr] gap-2 text-13">
                   <dt className="text-tertiary">交付物</dt>
                   <dd className="whitespace-pre-wrap">{bounty.deliverable}</dd>
@@ -200,9 +334,7 @@ export const LabMarket = observer(function LabMarket({ store }: { store: LabStor
                     </>
                   )}
                 </dl>
-                {bounty.overdue && (
-                  <p className="text-orange-600 mt-2 text-12">验收已超过截止时间，请验收人处理；系统不会自动通过。</p>
-                )}
+                {bounty.overdue && <p className="text-orange-600 mt-2 text-12">验收已逾期，请验收人处理。</p>}
                 <div className="my-4 flex flex-col gap-2">
                   {bounty.allocations.map((allocation) => (
                     <div key={allocation.id} className="rounded bg-layer-1 p-3 text-12">
@@ -233,6 +365,28 @@ export const LabMarket = observer(function LabMarket({ store }: { store: LabStor
                   ))}
                 </div>
                 <div className="flex flex-wrap gap-2">
+                  {bounty.is_lead && (
+                    <Button
+                      size="sm"
+                      variant="neutral-primary"
+                      onClick={() => {
+                        setChosen(bounty);
+                        setMode("public-summary");
+                      }}
+                    >
+                      公开摘要设置
+                    </Button>
+                  )}
+                  {(bounty.can_delete ?? bounty.is_lead) && bounty.status !== "deleted" && (
+                    <Button
+                      size="sm"
+                      variant="neutral-primary"
+                      disabled={store.busy}
+                      onClick={() => setDeleting(bounty)}
+                    >
+                      删除悬赏
+                    </Button>
+                  )}
                   <Button
                     size="sm"
                     variant="neutral-primary"
@@ -247,18 +401,20 @@ export const LabMarket = observer(function LabMarket({ store }: { store: LabStor
                   >
                     {workflowIds.has(bounty.id) ? "收起流程" : "查看流程图"}
                   </Button>
-                  {bounty.status === "open" && !mine && !bounty.is_reviewer && !bounty.is_independent_reviewer && (
+                  {(bounty.can_claim ??
+                    (bounty.status === "open" && !mine && !bounty.is_reviewer && !bounty.is_independent_reviewer)) && (
                     <Button
                       size="sm"
                       onClick={() => {
                         setChosen(bounty);
+                        setPlannedVc("");
                         setMode("claim");
                       }}
                     >
                       申请认领
                     </Button>
                   )}
-                  {bounty.status === "open" && mine?.approved && !mine.confirmed && (
+                  {(bounty.can_confirm ?? (bounty.status === "open" && mine?.approved && !mine.confirmed)) && (
                     <Button size="sm" onClick={() => void act(bounty, "confirm")}>
                       确认交付约定
                     </Button>
@@ -268,7 +424,8 @@ export const LabMarket = observer(function LabMarket({ store }: { store: LabStor
                       团队开工
                     </Button>
                   )}
-                  {mine?.approved && !mine.closed && ["active", "rework", "partial"].includes(bounty.status) && (
+                  {(bounty.can_submit ??
+                    (mine?.approved && !mine.closed && ["active", "rework", "partial"].includes(bounty.status))) && (
                     <Button
                       size="sm"
                       onClick={() => {
@@ -285,7 +442,12 @@ export const LabMarket = observer(function LabMarket({ store }: { store: LabStor
                       onClick={() => {
                         setChosen(bounty);
                         setResult("pass");
-                        setAcceptanceKey(crypto.randomUUID());
+                        setAcceptanceKey(uuidv4());
+                        setAcceptanceTargets(
+                          Object.fromEntries(
+                            bounty.allocations.filter((row) => row.approved).map((row) => [row.id, row.planned])
+                          )
+                        );
                         setMode("accept");
                       }}
                     >
@@ -333,15 +495,15 @@ export const LabMarket = observer(function LabMarket({ store }: { store: LabStor
                     ))}
                   </details>
                 )}
+                {bounty.access_level !== "public" && <LabBountyMaterials store={store} bounty={bounty} />}
                 {workflowIds.has(bounty.id) && <LabBountyWorkflow store={store} bounty={bounty} />}
               </article>
             );
           })}
       </div>
-      <LabLedger key={projectFilter} store={store} projectId={projectFilter} />
       {store.bounties.length === 0 && (
         <p className="rounded border border-dashed border-subtle p-10 text-center text-13 text-tertiary">
-          负责人冻结阶段预算并发布悬赏后，成员可以认领分工。
+          暂无悬赏任务。
         </p>
       )}
       {reasonAction && (
@@ -370,163 +532,108 @@ export const LabMarket = observer(function LabMarket({ store }: { store: LabStor
           )}
         </LabDialog>
       )}
-      {mode === "stage" && (
+      {deleting && (
         <LabDialog
-          title="冻结阶段预算 B"
+          title="删除悬赏"
+          submitLabel="删除"
           busy={store.busy}
-          onClose={close}
-          onSubmit={(data) =>
-            finish(() =>
-              store.request("stages/", "POST", {
-                project_id: data.get("project_id"),
-                name: data.get("name"),
-                budget: data.get("budget"),
-              })
-            )
+          error={store.error}
+          onClose={() => setDeleting(undefined)}
+          onSubmit={(form) =>
+            store.execute(async () => {
+              await store.request(`bounties/${deleting.id}/detail/`, "DELETE", {
+                reason: form.get("reason"),
+              });
+              setDeleting(undefined);
+              setSearchParams((current) => {
+                const next = new URLSearchParams(current);
+                next.delete("bounty_id");
+                next.delete("bounty");
+                return next;
+              });
+              await store.loadMarket();
+              await store.loadPlanner();
+              await mutate(
+                (key) => Array.isArray(key) && key[0] === "lab-task-card-metadata" && key[1] === store.slug,
+                undefined,
+                { revalidate: true }
+              );
+            })
           }
         >
-          <LabField label="负责项目">
-            <select name="project_id" className={labInputClass} required>
-              <option value="">请选择</option>
-              {planner.projects
-                .filter((project) => project.lead)
-                .map((project) => (
-                  <option key={project.id} value={project.id}>
-                    {project.name}
-                  </option>
-                ))}
-            </select>
+          <p className="text-14 font-medium">{deleting.title}</p>
+          <LabField label="删除原因">
+            <textarea name="reason" className={labInputClass} required rows={3} />
           </LabField>
-          <LabField label="阶段（季度或里程碑）">
-            <input name="name" className={labInputClass} required maxLength={120} />
-          </LabField>
-          <LabField label="预算 B（VC）">
-            <input name="budget" type="number" min="0.01" step="0.01" className={labInputClass} required />
-          </LabField>
-          <label className="text-12">
-            <input type="checkbox" required /> 我确认此阶段预算冻结，发布任务 T 将占用 B。
-          </label>
         </LabDialog>
       )}
       {mode === "publish" && (
-        <LabDialog
-          title="发布团队任务卡"
-          busy={store.busy}
+        <LabBountyPublish
+          store={store}
+          initialProjectId={projectFilter}
           onClose={close}
-          onSubmit={(data) =>
+          onPublished={async () => {
+            await store.loadMarket();
+            await store.loadPlanner();
+            await mutate(
+              (key) => Array.isArray(key) && key[0] === "lab-task-card-metadata" && key[1] === store.slug,
+              undefined,
+              { revalidate: true }
+            );
+          }}
+        />
+      )}
+      {mode === "public-summary" && chosen && (
+        <LabDialog
+          title="公开任务摘要设置"
+          busy={store.busy}
+          error={store.error}
+          onClose={close}
+          onSubmit={(form) =>
             finish(() =>
-              store.request("bounties/", "POST", {
-                stage_id: stageId,
-                issue_id: data.get("issue_id"),
-                budget: data.get("budget"),
-                deliverable: data.get("deliverable"),
-                criteria: data.get("criteria"),
-                reviewer_id: data.get("reviewer_id"),
-                independent_reviewer_id: data.get("independent_reviewer_id") || null,
-                cash_commitment: data.get("cash_commitment") || 0,
-                person_days: data.get("person_days") || 0,
-                route_or_safety: data.get("route_or_safety") === "on",
+              store.request(`bounties/${chosen.id}/public-summary/`, "POST", {
+                public_summary: form.get("public_summary"),
+                public_deliverable: form.get("public_deliverable"),
+                public_criteria: form.get("public_criteria"),
+                enabled: form.get("enabled") === "on",
+                reason: form.get("reason"),
               })
             )
           }
         >
-          <LabField label="冻结阶段">
-            <select
-              className={labInputClass}
-              value={stageId}
-              onChange={(event) => {
-                setStageId(event.target.value);
-                setTasks([]);
-              }}
-              required
-            >
-              <option value="">请选择</option>
-              {store.stages
-                .filter((row) => planner.projects.find((project) => project.id === row.project_id)?.lead)
-                .map((row) => (
-                  <option key={row.id} value={row.id}>
-                    {row.project} · {row.name}
-                  </option>
-                ))}
-            </select>
+          <LabField label="全实验室公开摘要">
+            <textarea name="public_summary" className={labInputClass} required defaultValue={chosen.public_summary} />
           </LabField>
-          <LabField label="搜索已有团队任务">
-            <input
-              className={labInputClass}
-              onChange={(event) =>
-                void store.execute(async () => {
-                  setTasks(await store.request<LabTask[]>(`tasks/?q=${encodeURIComponent(event.target.value)}`));
-                })
-              }
-            />
+          <LabField label="全实验室公开交付要求">
+            <textarea name="public_deliverable" className={labInputClass} required />
           </LabField>
-          <LabField label="原生任务">
-            <select name="issue_id" className={labInputClass} required>
-              <option value="">请选择同项目顶层任务</option>
-              {tasks
-                .filter((task) => task.project_id === stage?.project_id)
-                .map((task) => (
-                  <option key={task.id} value={task.id}>
-                    {task.key} · {task.title}
-                  </option>
-                ))}
-            </select>
+          <LabField label="全实验室公开验收条件">
+            <textarea name="public_criteria" className={labInputClass} required />
           </LabField>
-          <LabField label="团队预算 T（VC）">
-            <input name="budget" type="number" min="0.01" step="0.01" className={labInputClass} required />
-          </LabField>
-          <LabField label="交付物">
-            <textarea name="deliverable" className={labInputClass} required />
-          </LabField>
-          <LabField label="验收条件">
-            <textarea name="criteria" className={labInputClass} required />
-          </LabField>
-          <LabField label="指定独立验收人">
-            <select name="reviewer_id" className={labInputClass} required>
-              <option value="">请选择</option>
-              {publishProject?.members.map((member) => (
-                <option key={member.id} value={member.id}>
-                  {member.name}
-                </option>
-              ))}
-            </select>
-          </LabField>
-          <LabField label="重大任务复核人（达到重大门槛时必填）">
-            <select name="independent_reviewer_id" className={labInputClass}>
-              <option value="">请选择</option>
-              {publishProject?.members
-                .filter((member) => member.id !== planner.user_id)
-                .map((member) => (
-                  <option key={member.id} value={member.id}>
-                    {member.name}
-                  </option>
-                ))}
-            </select>
-          </LabField>
-          <div className="grid grid-cols-2 gap-3">
-            <LabField label="新现金承诺（元，仅判定重大）">
-              <input name="cash_commitment" type="number" min="0" step="0.01" className={labInputClass} />
-            </LabField>
-            <LabField label="预计人日">
-              <input name="person_days" type="number" min="0" step="0.01" className={labInputClass} />
-            </LabField>
-          </div>
-          <label className="text-13">
-            <input type="checkbox" name="route_or_safety" /> 涉及重大路线或安全事项
+          <label className="flex items-center gap-2 text-13">
+            <input name="enabled" type="checkbox" defaultChecked />
+            公开展示在全实验室大厅
           </label>
+          <LabField label="修改依据">
+            <textarea name="reason" className={labInputClass} required />
+          </LabField>
         </LabDialog>
       )}
       {mode === "claim" && chosen && (
         <LabDialog
           title="申请团队分工"
           busy={store.busy}
+          error={store.error}
+          submitDisabled={!!claimError}
           onClose={close}
           onSubmit={(data) =>
             finish(() =>
-              store.request(`bounties/${chosen.id}/claim/`, "POST", {
-                deliverable: data.get("deliverable"),
-                planned: data.get("planned"),
-              })
+              refreshOnFailure(() =>
+                store.request(`bounties/${chosen.id}/claim/`, "POST", {
+                  deliverable: data.get("deliverable"),
+                  planned: data.get("planned"),
+                })
+              )
             )
           }
         >
@@ -534,11 +641,14 @@ export const LabMarket = observer(function LabMarket({ store }: { store: LabStor
             <textarea name="deliverable" className={labInputClass} required />
           </LabField>
           <LabField label="计划 VC">
-            <input
+            <LabAmountInput
+              aria-label="计划 VC"
               name="planned"
-              type="number"
               min="0.01"
-              max={chosen.budget}
+              limit={claimLimit}
+              unit="VC"
+              value={plannedVc}
+              onValueChange={setPlannedVc}
               step="0.01"
               className={labInputClass}
               required
@@ -564,19 +674,25 @@ export const LabMarket = observer(function LabMarket({ store }: { store: LabStor
         <LabDialog
           title="独立验收与累计贡献"
           busy={store.busy}
+          error={store.error}
+          submitDisabled={acceptanceInvalid}
           onClose={close}
           onSubmit={(data) =>
             finish(() =>
-              store.request(`bounties/${chosen.id}/accept/`, "POST", {
-                request_key: acceptanceKey,
-                result,
-                reason: data.get("reason"),
-                targets: ["rework", "reject"].includes(result)
-                  ? {}
-                  : Object.fromEntries(
-                      chosen.allocations.filter((row) => row.approved).map((row) => [row.id, String(data.get(row.id))])
-                    ),
-              })
+              refreshOnFailure(() =>
+                store.request(`bounties/${chosen.id}/accept/`, "POST", {
+                  request_key: acceptanceKey,
+                  result,
+                  reason: data.get("reason"),
+                  targets: ["rework", "reject"].includes(result)
+                    ? {}
+                    : Object.fromEntries(
+                        chosen.allocations
+                          .filter((row) => row.approved)
+                          .map((row) => [row.id, String(data.get(row.id))])
+                      ),
+                })
+              )
             )
           }
         >
@@ -597,78 +713,20 @@ export const LabMarket = observer(function LabMarket({ store }: { store: LabStor
               .filter((row) => row.approved)
               .map((row) => (
                 <LabField key={row.id} label={`${row.name} 累计通过 VC（已授予 ${row.awarded} / 计划 ${row.planned}）`}>
-                  <input
+                  <LabAmountInput
+                    aria-label={`${row.name} 累计通过 VC（已授予 ${row.awarded} / 计划 ${row.planned}）`}
                     name={row.id}
-                    type="number"
                     min={row.awarded}
-                    max={row.planned}
+                    limit={row.planned}
+                    unit="VC"
                     step="0.01"
                     className={labInputClass}
-                    defaultValue={row.planned}
+                    value={acceptanceTargets[row.id] ?? row.planned}
+                    onValueChange={(value) => setAcceptanceTargets((previous) => ({ ...previous, [row.id]: value }))}
                     required
                   />
                 </LabField>
               ))}
-          <p className="text-12 text-tertiary">只记新增差额。重大任务还需独立复核。</p>
-        </LabDialog>
-      )}
-      {mode === "exception" && (
-        <LabDialog
-          title="批准有期限的 WIP 例外"
-          busy={store.busy}
-          onClose={close}
-          onSubmit={(data) =>
-            finish(() =>
-              store.request("wip-exceptions/", "POST", {
-                user_id: data.get("user_id"),
-                reason: data.get("reason"),
-                expires_at: calendarInstant(String(data.get("expires_at"))),
-                active_limit: data.get("active_limit"),
-                major_limit: data.get("major_limit"),
-              })
-            )
-          }
-        >
-          <LabField label="成员">
-            <select name="user_id" className={labInputClass} required>
-              <option value="">请选择他人</option>
-              {people
-                .filter((member) => member.id !== planner.user_id)
-                .map((member) => (
-                  <option key={member.id} value={member.id}>
-                    {member.name}
-                  </option>
-                ))}
-            </select>
-          </LabField>
-          <LabField label="批准原因">
-            <textarea name="reason" className={labInputClass} required />
-          </LabField>
-          <LabField label="截止时间（上海）">
-            <input name="expires_at" type="datetime-local" step={900} className={labInputClass} required />
-          </LabField>
-          <LabField label="进行中上限">
-            <input
-              name="active_limit"
-              type="number"
-              min={2}
-              max={10}
-              defaultValue={3}
-              className={labInputClass}
-              required
-            />
-          </LabField>
-          <LabField label="重大上限">
-            <input
-              name="major_limit"
-              type="number"
-              min={1}
-              max={5}
-              defaultValue={1}
-              className={labInputClass}
-              required
-            />
-          </LabField>
         </LabDialog>
       )}
     </div>

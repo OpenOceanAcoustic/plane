@@ -12,6 +12,8 @@ import type { EditorRefApi } from "@plane/editor";
 import type { TNameDescriptionLoader } from "@plane/types";
 import { EIssueServiceType } from "@plane/types";
 import { cn } from "@plane/utils";
+// components
+import { LabIssueDetails } from "@/components/lab/issue-details";
 // hooks
 import { useIssueDetail } from "@/hooks/store/use-issue-detail";
 import useKeypress from "@/hooks/use-keypress";
@@ -68,6 +70,7 @@ export const IssueView = observer(function IssueView(props: IIssueView) {
     setPeekIssue,
     isAnyModalOpen,
     issue: { getIssueById },
+    rootIssueStore,
   } = useIssueDetail();
   const { isAnyModalOpen: isAnyEpicModalOpen } = useIssueDetail(EIssueServiceType.EPICS);
   const issue = getIssueById(issueId);
@@ -75,6 +78,12 @@ export const IssueView = observer(function IssueView(props: IIssueView) {
   const removeRoutePeekId = () => {
     setPeekIssue(undefined);
     if (embedIssue && embedRemoveCurrentNotification) embedRemoveCurrentNotification();
+  };
+  const handleLabIssueDeleted = () => {
+    const nativeIssues = is_archived ? rootIssueStore.archivedIssues : rootIssueStore.projectIssues;
+    nativeIssues.removeIssueFromList(issueId);
+    rootIssueStore.issues.removeIssue(issueId);
+    removeRoutePeekId();
   };
 
   const toggleDeleteIssueModal = (value: boolean) => setIsDeleteIssueModalOpen(value);
@@ -138,6 +147,7 @@ export const IssueView = observer(function IssueView(props: IIssueView) {
       {issueId && (
         <div
           ref={issuePeekOverviewRef}
+          data-issue-peek-overview={issueId}
           className={peekOverviewIssueClassName}
           style={{
             boxShadow:
@@ -205,6 +215,15 @@ export const IssueView = observer(function IssueView(props: IIssueView) {
                       disabled={disabled || is_archived}
                     />
 
+                    <LabIssueDetails
+                      workspaceSlug={workspaceSlug}
+                      projectId={projectId}
+                      issueId={issueId}
+                      editable={!disabled && !is_archived}
+                      deletable={!disabled}
+                      onDeleted={handleLabIssueDeleted}
+                    />
+
                     <IssueActivity
                       workspaceSlug={workspaceSlug}
                       projectId={projectId}
@@ -237,6 +256,15 @@ export const IssueView = observer(function IssueView(props: IIssueView) {
                             issueServiceType={EIssueServiceType.ISSUES}
                           />
                         </div>
+
+                        <LabIssueDetails
+                          workspaceSlug={workspaceSlug}
+                          projectId={projectId}
+                          issueId={issueId}
+                          editable={!disabled && !is_archived}
+                          deletable={!disabled}
+                          onDeleted={handleLabIssueDeleted}
+                        />
 
                         <IssueActivity
                           workspaceSlug={workspaceSlug}

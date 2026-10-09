@@ -9,6 +9,7 @@ import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { GripVertical } from "lucide-react";
 import type { LabFolder, LabItem, LabStatus } from "@plane/types";
+import { labBountyOutline } from "@plane/ui";
 
 export const plannerCollisionDetection: CollisionDetection = (args) => {
   if (args.active.data.current?.type === "folder")
@@ -165,7 +166,9 @@ export function StatusColumn({
     <section
       ref={setNodeRef}
       aria-label={`${title}事项`}
-      className={`min-h-64 rounded-xl border p-3 transition-colors ${isOver ? "border-accent-strong bg-accent-primary/5" : "border-transparent bg-layer-1"}`}
+      data-status={status}
+      data-over={isOver}
+      className={`lab-planner-column min-h-64 rounded-xl border p-3 transition-colors ${isOver ? "border-accent-strong bg-accent-primary/5" : "border-transparent bg-layer-1"}`}
     >
       <h2 className="mb-3 flex items-center justify-between text-13 font-semibold">
         <span>{title}</span>
@@ -176,7 +179,15 @@ export function StatusColumn({
   );
 }
 
-export function DraggablePlanningCard({ item, children }: { item: LabItem; children: ReactNode }) {
+export function DraggablePlanningCard({
+  item,
+  children,
+  onOpen,
+}: {
+  item: LabItem;
+  children: ReactNode;
+  onOpen?: () => void;
+}) {
   const { attributes, listeners, setNodeRef, setActivatorNodeRef, transform, isDragging } = useDraggable({
     id: `item:${item.id}`,
     data: { type: "item", item },
@@ -184,8 +195,27 @@ export function DraggablePlanningCard({ item, children }: { item: LabItem; child
   return (
     <article
       ref={setNodeRef}
-      style={{ transform: CSS.Translate.toString(transform) }}
-      className={`shadow-sm relative rounded-lg border border-subtle bg-surface-1 p-3 ${isDragging ? "z-30 opacity-50" : ""}`}
+      tabIndex={onOpen ? 0 : undefined}
+      aria-label={item.title}
+      style={{
+        transform: CSS.Translate.toString(transform),
+        ...(item.bounty_id || item.is_bounty ? labBountyOutline(item.category_color) : {}),
+      }}
+      className={`lab-planner-card shadow-sm relative rounded-lg border border-subtle bg-surface-1 p-3 ${isDragging ? "z-30 opacity-50" : ""}`}
+      onClick={(event) => {
+        if (
+          !isDragging &&
+          event.target instanceof Element &&
+          !event.target.closest("a,button,input,select,textarea,summary")
+        )
+          onOpen?.();
+      }}
+      onKeyDown={(event) => {
+        if (event.target === event.currentTarget && ["Enter", " "].includes(event.key)) {
+          event.preventDefault();
+          onOpen?.();
+        }
+      }}
     >
       <button
         ref={setActivatorNodeRef}

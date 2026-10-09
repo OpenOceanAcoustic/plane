@@ -26,6 +26,7 @@ from plane.utils.cache import invalidate_cache_directly
 from plane.utils.path_validator import sanitize_filename
 from plane.bgtasks.storage_metadata_task import get_asset_object_metadata
 from plane.throttles.asset import AssetRateThrottle
+from .access import native_asset_access
 
 
 class UserAssetsV2Endpoint(BaseAPIView):
@@ -323,19 +324,7 @@ class WorkspaceFileAssetEndpoint(BaseAPIView):
         (WORKSPACE_LOGO, USER_AVATAR, USER_COVER) have project_id=None and are
         always allowed.
         """
-        if asset.project_id is None:
-            return True
-        # Scope the membership lookup to the asset's workspace as well as its
-        # project, mirroring allow_permission's PROJECT branch. This prevents a
-        # member of the same project in a different workspace from passing the
-        # check should an asset row ever be inconsistent (asset.workspace_id !=
-        # asset.project.workspace_id).
-        return ProjectMember.objects.filter(
-            member=request.user,
-            workspace_id=asset.workspace_id,
-            project_id=asset.project_id,
-            is_active=True,
-        ).exists()
+        return native_asset_access(request.user, asset)
 
     @allow_permission([ROLE.ADMIN, ROLE.MEMBER, ROLE.GUEST], level="WORKSPACE")
     def post(self, request, slug):
@@ -521,9 +510,7 @@ class StaticFileAssetEndpoint(BaseAPIView):
         # same-origin XSS when assets are served on the application's origin.
         storage = S3Storage(request=request)
         asset_mime_type = (asset.attributes.get("type") or "").split(";")[0].strip().lower()
-        disposition = (
-            "attachment" if asset_mime_type in settings.SCRIPT_CAPABLE_MIME_TYPES else "inline"
-        )
+        disposition = "attachment" if asset_mime_type in settings.SCRIPT_CAPABLE_MIME_TYPES else "inline"
         # Generate a presigned URL to share an S3 object
         signed_url = storage.generate_presigned_url(
             object_name=asset.asset.name,
@@ -675,6 +662,9 @@ class ProjectAssetEndpoint(BaseAPIView):
     def get(self, request, slug, project_id, pk):
         # get the asset id
         asset = FileAsset.objects.get(workspace__slug=slug, project_id=project_id, pk=pk)
+
+        if not native_asset_access(request.user, asset):
+            return Response({"error": "You don't have access to this asset."}, status=status.HTTP_403_FORBIDDEN)
 
         # Check if the asset is uploaded
         if not asset.is_uploaded:
@@ -840,6 +830,15 @@ class DuplicateAssetEndpoint(BaseAPIView):
 
         if not original_asset:
             return Response({"error": "Asset not found"}, status=status.HTTP_404_NOT_FOUND)
+        if not native_asset_access(request.user, original_asset):
+            return Response({"error": "You don't have access to this asset."}, status=status.HTTP_403_FORBIDDEN)
+        if (
+            project_id
+            and not ProjectMember.objects.filter(
+                workspace=workspace, project_id=project_id, member=request.user, is_active=True, role__gte=15
+            ).exists()
+        ):
+            return Response({"error": "You don't have access to this project."}, status=status.HTTP_403_FORBIDDEN)
 
         sanitized_name = sanitize_filename(original_asset.attributes.get("name")) or "unnamed"
         destination_key = f"{workspace.id}/{uuid.uuid4().hex}-{sanitized_name}"
@@ -882,6 +881,9 @@ class WorkspaceAssetDownloadEndpoint(BaseAPIView):
                 status=status.HTTP_404_NOT_FOUND,
             )
 
+        if not native_asset_access(request.user, asset):
+            return Response({"error": "You don't have access to this asset."}, status=status.HTTP_403_FORBIDDEN)
+
         storage = S3Storage(request=request)
         signed_url = storage.generate_presigned_url(
             object_name=asset.asset.name,
@@ -909,6 +911,9 @@ class ProjectAssetDownloadEndpoint(BaseAPIView):
                 {"error": "The requested asset could not be found."},
                 status=status.HTTP_404_NOT_FOUND,
             )
+
+        if not native_asset_access(request.user, asset):
+            return Response({"error": "You don't have access to this asset."}, status=status.HTTP_403_FORBIDDEN)
 
         storage = S3Storage(request=request)
         signed_url = storage.generate_presigned_url(

@@ -2,7 +2,7 @@ name: OpenOceanAcoustic lab validation
 
 on:
   push:
-    branches: [feat/lab-planning-bounty-auth]
+    branches: [feat/lab-planning-bounty-auth, feat/personal-planning-workbench, feat/planning-resource-timeline]
   pull_request:
     branches: [ooa/main]
   workflow_dispatch:
@@ -147,6 +147,7 @@ jobs:
       - name: Calendar and established-session contracts
         run: |
           node tools/lab/test-calendar.mjs
+          node tools/lab/test-planning-store.mjs
           node tools/lab/test-fields-gantt.mjs
           node tools/lab/test-workflow.mjs
           pnpm --filter live test tests/extensions/lab-session-guard.test.ts

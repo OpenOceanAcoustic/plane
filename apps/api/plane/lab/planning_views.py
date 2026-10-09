@@ -22,20 +22,26 @@ from rest_framework.views import APIView
 
 from plane.db.models import Project, ProjectMember, State
 from .auth import audit, lock
-from .models import Folder, PersonalItem, ProjectFlow, TimeBlock, WorkspacePolicy
-from .permissions import can_view_team, issue_access, project_ids, readable_issues, workspace_member
+from .models import Folder, PersonalCategory, PersonalItem, ProjectFlow, TimeBlock, WorkspacePolicy
+from .categories import category_data, category_name, default_categories, hex_color, item_category
+from .permissions import can_view_team, project_ids, readable_issues, workspace_member
 from .planning import (
     STATUSES,
+    block_color,
     block_times,
     calendar_events,
     check_block_revision,
     configure_flow,
     default_folders,
     item_data,
+    planning_projection_context,
+    item_schedules,
     overlaps,
     own_item,
     set_status,
 )
+from .bounty_access import planning_issue_access
+from .bounties import publishable_issues
 
 
 class LabContentNegotiation(DefaultContentNegotiation):
@@ -51,10 +57,23 @@ class LabView(APIView):
         if isinstance(exc, ModelValidationError):
             return Response({"error": "字段或记录 ID 格式无效"}, status=400)
         if isinstance(exc, IntegrityError) and "lab_" in str(exc):
-            return Response(
-                {"error": "操作超过 WIP 上限、违反独立验收流程，或试图修改冻结预算/历史账本。请联系负责人处理例外。"},
-                status=409,
-            )
+            detail = str(exc)
+            if "lab_bounty_workflow:" in detail:
+                if "before start" in detail or "team start confirmation" in detail:
+                    message = "悬赏尚未开工，请在悬赏详情完成认领批准和本人确认，再由负责人办理「团队开工」。"
+                else:
+                    message = "悬赏须经独立验收才能完成，请在悬赏详情办理验收。"
+            elif "lab_wip_limit:" in detail:
+                message = "任务已达到并行上限（默认共2项，其中重大1项）。请先完成现有任务，或由负责人批准WIP例外。"
+            elif "lab_ledger_immutable:" in detail:
+                message = "VC账目不能直接修改或删除，请追加冲正记录。"
+            elif "lab_stage_frozen:" in detail:
+                message = "阶段VC预算已冻结，不能直接修改。"
+            elif "lab_financial_history:" in detail:
+                message = "历史资金记录不可覆盖或删除，请追加更正或冲正。"
+            else:
+                message = "操作与当前数据约束冲突，请刷新后重试。"
+            return Response({"error": message}, status=409)
         return super().handle_exception(exc)
 
     def initial(self, request, *args, **kwargs):
@@ -67,30 +86,47 @@ class PlannerView(LabView):
     def get(self, request, slug):
         allowed = set(project_ids(request.user, self.workspace))
         folders = default_folders(request.user, self.workspace)
-        items = [
-            item_data(row, request.user, allowed)
-            for row in PersonalItem.objects.filter(user=request.user, workspace=self.workspace).select_related(
-                "issue__project", "issue__state"
+        categories = list(default_categories(request.user, self.workspace))
+        defaults = {row.legacy_key: str(row.id) for row in categories if row.legacy_key}
+        rows = list(
+            PersonalItem.objects.filter(user=request.user, workspace=self.workspace).select_related(
+                "issue__project", "issue__state", "category"
             )
-        ]
+        )
+        readable_issue_ids = set(
+            readable_issues(request.user, self.workspace)
+            .filter(id__in=[row.issue_id for row in rows if row.issue_id], is_draft=False, deleted_at__isnull=True)
+            .values_list("id", flat=True)
+        )
+        flows = {flow.project_id: flow for flow in ProjectFlow.objects.filter(project_id__in=allowed)}
+        context = planning_projection_context(request.user, self.workspace, rows, readable_issue_ids=readable_issue_ids)
+        items = [item_data(row, request.user, allowed, **context) for row in rows]
+        items = [item for item in items if item]
+        schedules = item_schedules([item["id"] for item in items])
+        for item in items:
+            item["schedule"] = schedules[item["id"]]
+        members = {}
+        for member in ProjectMember.objects.filter(
+            project_id__in=allowed, is_active=True, role__gte=15, member__is_active=True
+        ).select_related("member"):
+            members.setdefault(member.project_id, []).append(
+                {"id": str(member.member_id), "name": member.member.display_name}
+            )
+        states = {}
+        for state in State.objects.filter(project_id__in=allowed):
+            states.setdefault(state.project_id, []).append(
+                {"id": str(state.id), "name": state.name, "group": state.group}
+            )
         projects = []
         for project in Project.objects.filter(id__in=allowed):
-            flow = ProjectFlow.objects.filter(project=project).first()
+            flow = flows.get(project.id)
             projects.append(
                 {
                     "id": str(project.id),
                     "name": project.name,
                     "lead": project.project_lead_id == request.user.id,
-                    "members": [
-                        {"id": str(member.member_id), "name": member.member.display_name}
-                        for member in ProjectMember.objects.filter(
-                            project=project, is_active=True, role__gte=15, member__is_active=True
-                        ).select_related("member")
-                    ],
-                    "states": [
-                        {"id": str(state.id), "name": state.name, "group": state.group}
-                        for state in State.objects.filter(project=project)
-                    ],
+                    "members": members.get(project.id, []),
+                    "states": states.get(project.id, []),
                     "mapping": {
                         key: str(getattr(flow, key + "_id")) if getattr(flow, key + "_id", None) else None
                         for key in STATUSES
@@ -102,7 +138,11 @@ class PlannerView(LabView):
                 "user_id": str(request.user.id),
                 "team_access": can_view_team(request.user, self.membership),
                 "folders": [{"id": str(f.id), "name": f.name, "position": f.position} for f in folders],
-                "items": [item for item in items if item],
+                "categories": [category_data(row) for row in categories],
+                "default_category_id": defaults.get("research") or (str(categories[0].id) if categories else None),
+                "default_project_category_id": defaults.get("project")
+                or (str(categories[0].id) if categories else None),
+                "items": items,
                 "projects": projects,
                 "timezone": "Asia/Shanghai",
                 "week_start": 1,
@@ -162,9 +202,62 @@ class FolderDetailView(LabView):
         return Response(status=204)
 
 
+class CategoryView(LabView):
+    def get(self, request, slug):
+        return Response([category_data(row) for row in default_categories(request.user, self.workspace)])
+
+    @transaction.atomic
+    def post(self, request, slug):
+        rows = default_categories(request.user, self.workspace)
+        name, color = category_name(request.data.get("name")), hex_color(request.data.get("color"))
+        if rows.filter(name=name).exists():
+            raise ValidationError("同名类别已存在")
+        position = rows.aggregate(value=Max("position"))["value"]
+        row = PersonalCategory.objects.create(
+            user=request.user,
+            workspace=self.workspace,
+            name=name,
+            color=color,
+            position=(position + 1 if position is not None else 0),
+        )
+        audit("planning.category_created", obj=row, actor=request.user, workspace=self.workspace)
+        return Response(category_data(row), status=201)
+
+
+class CategoryDetailView(LabView):
+    @transaction.atomic
+    def patch(self, request, slug, pk):
+        lock(f"lab-categories:{self.workspace.id}:{request.user.id}")
+        row = get_object_or_404(PersonalCategory, id=pk, user=request.user, workspace=self.workspace)
+        name = category_name(request.data.get("name", row.name))
+        color = hex_color(request.data.get("color", row.color))
+        if (
+            PersonalCategory.objects.filter(user=request.user, workspace=self.workspace, name=name)
+            .exclude(id=row.id)
+            .exists()
+        ):
+            raise ValidationError("同名类别已存在")
+        row.name, row.color = name, color
+        row.save(update_fields=["name", "color"])
+        audit("planning.category_updated", obj=row, actor=request.user, workspace=self.workspace)
+        return Response(category_data(row))
+
+    @transaction.atomic
+    def delete(self, request, slug, pk):
+        lock(f"lab-categories:{self.workspace.id}:{request.user.id}")
+        row = get_object_or_404(PersonalCategory, id=pk, user=request.user, workspace=self.workspace)
+        audit("planning.category_deleted", obj=row, actor=request.user, workspace=self.workspace)
+        row.delete()
+        return Response(status=204)
+
+
 class TaskSearchView(LabView):
     def get(self, request, slug):
         rows = readable_issues(request.user, self.workspace).filter(is_draft=False, archived_at__isnull=True)
+        if request.query_params.get("publishable") == "1":
+            rows = publishable_issues(request.user, self.workspace)
+        if "issue_id" in request.query_params:
+            rows = rows.filter(id=request.query_params["issue_id"])
         if request.query_params.get("project_id"):
             project = get_object_or_404(
                 Project,
@@ -192,6 +285,14 @@ class TaskSearchView(LabView):
         )
 
 
+class TaskDeleteView(LabView):
+    def delete(self, request, slug, pk):
+        from .issue_deletion import delete_issue
+
+        delete_issue(request.user, self.workspace, pk, reason=request.data.get("reason", ""))
+        return Response(status=204)
+
+
 class ItemView(LabView):
     def post(self, request, slug):
         data = request.data
@@ -200,12 +301,17 @@ class ItemView(LabView):
             if data.get("folder_id")
             else None
         )
-        issue = issue_access(request.user, self.workspace, data["issue_id"]) if data.get("issue_id") else None
+        issue = planning_issue_access(request.user, self.workspace, data["issue_id"]) if data.get("issue_id") else None
         title = str(data.get("title", "")).strip()
-        kind = data.get("kind", "research")
-        if not issue and (not title or len(title) > 255 or kind not in ("research", "study", "mentoring")):
+        kind = "research" if "category_id" in data else data.get("kind", "research")
+        if not issue and (
+            not title
+            or len(title) > 255
+            or ("category_id" not in data and kind not in ("research", "study", "mentoring"))
+        ):
             raise ValidationError("请填写事项名称和类型")
         with transaction.atomic():
+            lock(f"lab-categories:{self.workspace.id}:{request.user.id}")
             lock(f"lab-planner:{self.workspace.id}:{request.user.id}")
             if issue and PersonalItem.objects.filter(user=request.user, workspace=self.workspace, issue=issue).exists():
                 raise ValidationError("任务已在本人规划中，请移动到需要的文件夹")
@@ -217,6 +323,7 @@ class ItemView(LabView):
                 title=title,
                 description=str(data.get("description", "")),
                 kind="project" if issue else kind,
+                category=item_category(request.user, self.workspace, data, "project" if issue else kind),
                 public=data.get("public") is True,
             )
         return Response({"id": str(item.id)}, status=201)
@@ -225,8 +332,13 @@ class ItemView(LabView):
 class ItemDetailView(LabView):
     @transaction.atomic
     def patch(self, request, slug, pk):
+        lock(f"lab-categories:{self.workspace.id}:{request.user.id}")
         item = own_item(request.user, self.workspace, pk)
         data = request.data
+        if item.issue_id:
+            planning_issue_access(request.user, self.workspace, item.issue_id)
+        if "category_id" in data:
+            item.category = item_category(request.user, self.workspace, data, item.kind)
         if "folder_id" in data:
             item.folder = (
                 get_object_or_404(Folder, id=data["folder_id"], user=request.user, workspace=self.workspace)
@@ -238,6 +350,8 @@ class ItemDetailView(LabView):
                 if data["kind"] not in ("research", "study", "mentoring"):
                     raise ValidationError("个人事项类型无效")
                 item.kind = data["kind"]
+                if "category_id" not in data:
+                    item.category = item_category(request.user, self.workspace, data, item.kind)
             if "title" in data:
                 title = str(data["title"]).strip()
                 if not title or len(title) > 255:
@@ -301,9 +415,9 @@ class CalendarView(LabView):
     def post(self, request, slug):
         item = own_item(request.user, self.workspace, request.data.get("item_id"))
         if item.issue_id:
-            issue_access(request.user, self.workspace, item.issue_id)
+            planning_issue_access(request.user, self.workspace, item.issue_id)
         start, end = block_times(request.data)
-        block = TimeBlock.objects.create(item=item, start=start, end=end)
+        block = TimeBlock.objects.create(item=item, start=start, end=end, color=block_color(request.data))
         return Response({"id": str(block.id), "revision": block.revision, "overlap": overlaps(block)}, status=201)
 
 
@@ -315,7 +429,7 @@ class BlockDetailView(LabView):
         )
         check_block_revision(block, request.data)
         if block.item.issue_id:
-            issue_access(request.user, self.workspace, block.item.issue_id)
+            planning_issue_access(request.user, self.workspace, block.item.issue_id)
         if "split_at" in request.data:
             try:
                 split = parse_datetime(request.data["split_at"])
@@ -324,7 +438,7 @@ class BlockDetailView(LabView):
                     raise ValueError()
             except (ValueError, TypeError, AttributeError):
                 raise ValidationError("拆分点须位于时间块内且按十五分钟对齐")
-            following = TimeBlock.objects.create(item=block.item, start=split, end=block.end)
+            following = TimeBlock.objects.create(item=block.item, start=split, end=block.end, color=block.color)
             block.end = split
             block.revision += 1
             block.save(update_fields=["end", "revision"])
@@ -345,8 +459,9 @@ class BlockDetailView(LabView):
                 }
             )
         block.start, block.end = block_times(request.data)
+        block.color = block_color(request.data, block.color)
         block.revision += 1
-        block.save(update_fields=["start", "end", "revision"])
+        block.save(update_fields=["start", "end", "color", "revision"])
         audit("planning.block_update", obj=block, actor=request.user, workspace=self.workspace)
         return Response({"id": str(block.id), "revision": block.revision, "overlap": overlaps(block)})
 
@@ -365,14 +480,18 @@ class PlanningExportView(LabView):
     def get(self, request, slug):
         allowed = set(project_ids(request.user, self.workspace))
         items = []
-        for row in (
+        rows = list(
             PersonalItem.objects.filter(user=request.user, workspace=self.workspace)
-            .select_related("issue__project", "issue__state")
+            .select_related("issue__project", "issue__state", "category")
             .prefetch_related("blocks")
-        ):
-            data = item_data(row, request.user, allowed)
+        )
+        context = planning_projection_context(request.user, self.workspace, rows)
+        for row in rows:
+            data = item_data(row, request.user, allowed, **context)
             if data:
-                data["blocks"] = [{"start": b.start.isoformat(), "end": b.end.isoformat()} for b in row.blocks.all()]
+                data["blocks"] = [
+                    {"start": b.start.isoformat(), "end": b.end.isoformat(), "color": b.color} for b in row.blocks.all()
+                ]
                 items.append(data)
         if request.query_params.get("format") != "csv":
             return Response(items)

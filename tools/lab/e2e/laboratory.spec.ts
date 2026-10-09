@@ -11,6 +11,8 @@ import { expect, test } from "@playwright/test";
 import { verifyDocumentsWorkflow } from "./documents-workflow";
 import { verifyFieldsAndGantt } from "./fields-gantt";
 import { verifyAnalytics } from "./analytics";
+import { verifyFinance } from "./finance";
+import { verifyPlannerNativePeek } from "./planner-peek";
 
 const project = process.env.LAB_E2E_PROJECT;
 function milestone(label: string): void {
@@ -44,7 +46,20 @@ function dynamicCode(uri: string): string {
 }
 
 test("SSH bootstrap, TOTP login, project cover upload, original layouts and personal schedule", async ({ page }) => {
-  test.setTimeout(420000);
+  test.setTimeout(600000);
+  const saveLabDialog = async (path: string, method: "POST" | "PATCH") => {
+    const saved = page.waitForResponse(
+      (response) =>
+        new URL(response.url()).pathname === `/api/workspaces/browser-lab/lab/${path}` &&
+        response.request().method() === method,
+      { timeout: 30000 }
+    );
+    await page.getByRole("dialog").getByRole("button", { name: "保存", exact: true }).click();
+    const response = await saved;
+    expect([200, 201]).toContain(response.status());
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+    return response;
+  };
   // Keep bearer tokens and provisioning secrets in memory; no traces, screenshots or CLI output.
   if (project !== "ooa-plane-e2e") throw new Error("SSH bootstrap requires an isolated ooa-plane-e2e project");
   const output = execFileSync("sh", [resolve("backend.sh"), "bootstrap", "--workspace", "browser-lab"], {
@@ -116,6 +131,36 @@ test("SSH bootstrap, TOTP login, project cover upload, original layouts and pers
   milestone("native project and cover persisted");
   await page.goto("/browser-lab/lab/planner");
   await expect(page.getByRole("heading", { name: "个人规划", exact: true })).toBeVisible();
+  const boardPane = page.getByRole("region", { name: "文件夹看板区域", exact: true });
+  const calendarPane = page.getByRole("region", { name: "个人周历区域", exact: true });
+  await expect(page.getByRole("button", { name: "综合", exact: true })).toHaveAttribute("aria-pressed", "true");
+  await expect(boardPane).toBeVisible();
+  await expect(calendarPane).toBeVisible();
+  const boardBounds = await boardPane.boundingBox(),
+    calendarBounds = await calendarPane.boundingBox();
+  expect(calendarBounds!.x).toBeGreaterThan(boardBounds!.x + boardBounds!.width - 1);
+  expect(Math.abs(calendarBounds!.y - boardBounds!.y)).toBeLessThan(2);
+  // A real FullCalendar selection mirror has no saved block. This used to
+  // throw inside eventContent and replace the entire application with its error page.
+  const calendarErrors: string[] = [];
+  const recordCalendarError = (error: Error) => calendarErrors.push(error.message);
+  page.on("pageerror", recordCalendarError);
+  const emptyGrid = calendarPane.locator(".lab-calendar");
+  await calendarPane.getByRole("button", { name: "周", exact: true }).click();
+  await expect(calendarPane.getByRole("button", { name: "周", exact: true })).toHaveAttribute("aria-pressed", "true");
+  await emptyGrid.scrollIntoViewIfNeeded();
+  const gridBounds = await emptyGrid.boundingBox();
+  expect(gridBounds).not.toBeNull();
+  await page.mouse.move(gridBounds!.x + 200, gridBounds!.y + 250);
+  await page.mouse.down();
+  await page.mouse.move(gridBounds!.x + 200, gridBounds!.y + 310, { steps: 12 });
+  await page.waitForTimeout(100);
+  await page.mouse.up();
+  await expect(page.getByRole("dialog", { name: "安排个人时间", exact: true })).toBeVisible();
+  expect(calendarErrors).toEqual([]);
+  page.off("pageerror", recordCalendarError);
+  await page.getByRole("dialog").getByRole("button", { name: "取消", exact: true }).click();
+  milestone("combined workbench and blank calendar selection verified");
   // Keyboard sorting persists, using the same accessible handle as pointer dragging.
   const foldersSorted = page.waitForResponse(
     (response) => response.url().endsWith("/lab/folders/") && response.request().method() === "PUT",
@@ -146,9 +191,24 @@ test("SSH bootstrap, TOTP login, project cover upload, original layouts and pers
   await expect(dialog.getByLabel("选择任务").locator("option")).toHaveCount(2);
   await dialog.getByLabel("选择任务").selectOption(fixture.issue);
   await dialog.getByLabel("文件夹").selectOption({ label: "A" });
-  await dialog.getByRole("button", { name: "保存", exact: true }).click();
-  await expect(page.locator("article").filter({ hasText: "Original project task" })).toBeVisible();
+  const itemCreated = await saveLabDialog("items/", "POST");
+  const reference = (await itemCreated.json()) as { id: string };
+  const sourceCard = boardPane.locator("article").filter({ hasText: "Original project task" });
+  await expect(sourceCard).toBeVisible();
+  await expect(sourceCard).toContainText("Browser acoustics");
+  await expect(sourceCard).toContainText("E2E-1");
+  await expect(sourceCard.getByRole("link", { name: "Original project task", exact: true })).toHaveAttribute(
+    "href",
+    `/browser-lab/projects/${fixture.project}/issues/${fixture.issue}`
+  );
+  await verifyPlannerNativePeek(page, fixture);
+  milestone("planner native side overview and persisted priority verified");
+  const statusUpdated = page.waitForResponse(
+    (response) => response.url().endsWith(`/lab/items/${reference.id}/`) && response.request().method() === "PATCH",
+    { timeout: 30000 }
+  );
   await page.getByLabel("Original project task状态", { exact: true }).selectOption("active");
+  expect((await statusUpdated).status()).toBe(200);
   await expect(page.getByLabel("Original project task状态", { exact: true })).toHaveValue("active");
   const source = await page.getByRole("button", { name: "拖动 Original project task", exact: true }).boundingBox();
   const target = await page.getByRole("button", { name: "拖动排序文件夹 B", exact: true }).boundingBox();
@@ -193,18 +253,57 @@ test("SSH bootstrap, TOTP login, project cover upload, original layouts and pers
   await expect(page.getByText("Original project task", { exact: true }).first()).toBeVisible();
   milestone("native kanban and gantt loaded");
   await page.goto("/browser-lab/lab/planner");
+  await page.getByRole("button", { name: "管理类别", exact: true }).click();
+  await page.getByRole("button", { name: "新增类别", exact: true }).click();
+  dialog = page.getByRole("dialog");
+  await dialog.getByLabel("类别名称", { exact: true }).fill("现场实验");
+  await dialog.getByLabel("自定义类别颜色", { exact: true }).fill("#123abc");
+  const categoryCreated = await saveLabDialog("categories/", "POST");
+  const categoryId = ((await categoryCreated.json()) as { id: string }).id;
+  const ownCategories = await (await page.request.get("/api/workspaces/browser-lab/lab/categories/")).json();
+  expect(ownCategories).toEqual(
+    expect.arrayContaining([expect.objectContaining({ id: categoryId, name: "现场实验" })])
+  );
   await page.getByRole("button", { name: "个人事项", exact: true }).click();
   dialog = page.getByRole("dialog");
   await dialog.getByLabel("事项名称").fill("科研学习排期");
-  await dialog.getByRole("button", { name: "保存", exact: true }).click();
+  await dialog.getByLabel("事项类别", { exact: true }).selectOption(categoryId);
+  await saveLabDialog("items/", "POST");
   await page.getByRole("button", { name: "安排科研学习排期", exact: true }).click();
   dialog = page.getByRole("dialog");
   const shanghaiDate = await page.evaluate(() => new Date(Date.now() + 8 * 3600000).toISOString().slice(0, 10));
   await dialog.getByLabel("开始（上海）", { exact: true }).fill(`${shanghaiDate}T09:00`);
   await dialog.getByLabel("结束（上海）", { exact: true }).fill(`${shanghaiDate}T10:00`);
-  await dialog.getByRole("button", { name: "保存", exact: true }).click();
+  const scheduled = await saveLabDialog("calendar/", "POST");
+  const scheduledBlock = (await scheduled.json()) as { id: string };
   await expect(page.getByRole("heading", { name: "个人周历", exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: /^科研学习排期 / }).first()).toBeVisible();
+  const firstBlock = page.getByRole("button", { name: /^科研学习排期 / }).first();
+  await expect(firstBlock).toHaveCSS("--fc-event-color", "#123abc");
+  await expect(page.getByRole("list", { name: "排期类别颜色" })).toContainText("现场实验");
+  await page.getByRole("button", { name: "管理类别", exact: true }).click();
+  await page.getByRole("button", { name: "编辑类别现场实验", exact: true }).click();
+  dialog = page.getByRole("dialog");
+  await dialog.getByLabel("类别名称", { exact: true }).fill("海试实验");
+  await dialog.getByRole("button", { name: "取色 #0e7490", exact: true }).click();
+  await saveLabDialog(`categories/${categoryId}/`, "PATCH");
+  await expect(firstBlock).toHaveCSS("--fc-event-color", "#0e7490");
+  await expect(page.locator("article").filter({ hasText: "科研学习排期" })).toContainText("海试实验");
+  await firstBlock.click();
+  dialog = page.getByRole("dialog", { name: "事项详情", exact: true });
+  await expect(dialog.getByRole("heading", { name: "科研学习排期", exact: true })).toBeVisible();
+  await dialog.getByRole("button", { name: "调整时间块", exact: true }).click();
+  dialog = page.getByRole("dialog", { name: "调整时间块", exact: true });
+  await dialog.getByLabel("自定义排期颜色", { exact: true }).fill("#be185d");
+  await saveLabDialog(`calendar/${scheduledBlock.id}/`, "PATCH");
+  await expect(page.getByRole("button", { name: /^科研学习排期 / }).first()).toHaveCSS("--fc-event-color", "#be185d");
+  const savedColors = await (await page.request.get("/api/workspaces/browser-lab/lab/calendar/")).json();
+  expect(savedColors.events.find((event: { title: string }) => event.title === "科研学习排期").color).toBe("#be185d");
+  await page.reload();
+  await expect(page.getByRole("button", { name: /^科研学习排期 / }).first()).toHaveCSS("--fc-event-color", "#be185d");
+  const personalCard = page.locator("article").filter({ hasText: "科研学习排期" });
+  await expect(personalCard).toContainText("私人事项");
+  await expect(personalCard).toContainText("本周计划 1 小时");
   milestone("personal time block created");
   // Drag and resize save real dates in fifteen-minute increments.
   let calendarEvent = page.getByRole("button", { name: /^科研学习排期 / });
@@ -224,6 +323,7 @@ test("SSH bootstrap, TOTP login, project cover upload, original layouts and pers
   const moveBody = moveResponse.request().postDataJSON() as { start: string; end: string };
   expect(new Date(moveBody.start).getTime() % 900000).toBe(0);
   expect(new Date(moveBody.end).getTime() - new Date(moveBody.start).getTime()).toBe(3600000);
+  await expect(page.getByRole("button", { name: "刷新", exact: true })).toBeEnabled();
   milestone("calendar pointer move persisted");
   await expect(page.getByRole("dialog")).toHaveCount(0);
   calendarEvent = page.getByRole("button", { name: /^科研学习排期 / });
@@ -248,6 +348,7 @@ test("SSH bootstrap, TOTP login, project cover upload, original layouts and pers
   expect(new Date(resizeBody.end).getTime() % 900000).toBe(0);
   expect(resizeBody.start).toBe(moveBody.start);
   expect(new Date(resizeBody.end).getTime() - new Date(resizeBody.start).getTime()).toBeGreaterThan(3600000);
+  await expect(page.getByRole("button", { name: "刷新", exact: true })).toBeEnabled();
   milestone("calendar resize persisted");
   // FullCalendar switches real views and splits the same backend block.
   await page.getByRole("button", { name: "月", exact: true }).click();
@@ -259,10 +360,19 @@ test("SSH bootstrap, TOTP login, project cover upload, original layouts and pers
     .getByRole("button", { name: /^科研学习排期 / })
     .first()
     .click();
-  dialog = page.getByRole("dialog");
+  dialog = page.getByRole("dialog", { name: "事项详情", exact: true });
+  await dialog.getByRole("button", { name: "调整时间块", exact: true }).click();
+  dialog = page.getByRole("dialog", { name: "调整时间块", exact: true });
   await dialog.getByRole("button", { name: "拆分时间块", exact: true }).click();
-  await dialog.getByRole("button", { name: "保存", exact: true }).click();
+  await saveLabDialog(`calendar/${scheduledBlock.id}/`, "PATCH");
   await expect(page.getByRole("button", { name: /^科研学习排期 / })).toHaveCount(2);
+  const refreshedPlanner = await (await page.request.get("/api/workspaces/browser-lab/lab/planner/")).json();
+  const refreshedItem = refreshedPlanner.items.find((item: { title: string }) => item.title === "科研学习排期");
+  expect(refreshedItem.schedule.total_count).toBe(2);
+  const expectedHours = new Intl.NumberFormat("zh-CN", { maximumFractionDigits: 2 }).format(
+    refreshedItem.schedule.week_minutes / 60
+  );
+  await expect(personalCard).toContainText(`本周计划 ${expectedHours} 小时`);
   await page.goto("/browser-lab/lab/team");
   await expect(page.getByRole("button", { name: "人员时间轴", exact: true })).toHaveAttribute("aria-pressed", "true");
   await expect(page.getByRole("button", { name: /^科研学习排期 / }).first()).toBeVisible();
@@ -278,6 +388,8 @@ test("SSH bootstrap, TOTP login, project cover upload, original layouts and pers
   milestone("native documents, attachment and bounty flow verified");
   await verifyAnalytics(page, fixture);
   milestone("twelve analytics charts and exports verified");
+  await verifyFinance(page, fixture);
+  milestone("real cash, manual rewards, offline payments and bounty markers verified");
   // Public bootstrap endpoints cannot recreate an administrator after the SSH invitation was consumed.
   expect((await page.request.post("/api/instances/admins/sign-up/", { data: {} })).status()).toBe(403);
 });

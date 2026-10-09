@@ -17,7 +17,10 @@ export class LabStore {
   busy = false;
   error = "";
   notice = "";
+  private plannerRequestId = 0;
   private calendarRequestId = 0;
+  private marketRequestId = 0;
+  private deletedBountyIds = new Set<string>();
 
   constructor(
     readonly apiBase: string,
@@ -40,7 +43,19 @@ export class LabStore {
       headers,
       ...(body === undefined ? {} : { body: JSON.stringify(body) }),
     });
-    if (response.status === 204) return undefined as T;
+    if (response.status === 204) {
+      const removed = method === "DELETE" ? /^bounties\/([^/]+)\/detail\/$/.exec(path) : null;
+      if (removed) {
+        const id = decodeURIComponent(removed[1]!);
+        runInAction(() => {
+          this.deletedBountyIds.add(id);
+          ++this.marketRequestId;
+          this.bounties = this.bounties.filter((row) => row.id !== id);
+          this.todos = this.todos.filter((row) => row.id !== id);
+        });
+      }
+      return undefined as T;
+    }
     const data = (await response.json()) as T & { error?: string; detail?: string };
     if (!response.ok)
       throw new Error(
@@ -56,8 +71,10 @@ export class LabStore {
   }
 
   async loadPlanner() {
+    const requestId = ++this.plannerRequestId;
     const planner = await this.request<LabPlanner>("planner/");
     runInAction(() => {
+      if (requestId !== this.plannerRequestId) return;
       this.planner = planner;
     });
   }
@@ -76,14 +93,29 @@ export class LabStore {
   }
 
   async loadMarket() {
-    const stages = await this.request<LabStage[]>("stages/");
-    const bounties = await this.request<LabBounty[]>("bounties/");
-    const todos = await this.request<LabTodo[]>("inbox/");
+    const requestId = ++this.marketRequestId;
+    const [stages, bounties, todos] = await Promise.all([
+      this.request<LabStage[]>("stages/"),
+      this.request<LabBounty[]>("bounties/"),
+      this.request<LabTodo[]>("inbox/"),
+    ]);
     runInAction(() => {
+      if (requestId !== this.marketRequestId) return;
       this.stages = stages;
-      this.bounties = bounties;
-      this.todos = todos;
+      this.bounties = bounties.filter((row) => row.status !== "deleted" && !this.deletedBountyIds.has(row.id));
+      this.todos = todos.filter((row) => !this.deletedBountyIds.has(row.id));
     });
+  }
+
+  async loadBountyDetail(id: string) {
+    const bounty = await this.request<LabBounty>(`bounties/${encodeURIComponent(id)}/detail/`);
+    runInAction(() => {
+      if (bounty.status === "deleted" || this.deletedBountyIds.has(id)) return;
+      const index = this.bounties.findIndex((row) => row.id === id);
+      if (index >= 0) this.bounties[index] = bounty;
+      else this.bounties.push(bounty);
+    });
+    return bounty;
   }
 
   async execute(action: () => Promise<void>) {

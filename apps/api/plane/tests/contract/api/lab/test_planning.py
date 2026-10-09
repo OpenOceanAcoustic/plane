@@ -7,6 +7,57 @@ from plane.db.models import ProjectMember, Issue
 pytestmark = [pytest.mark.django_db(transaction=True), pytest.mark.contract]
 
 
+def test_calendar_manual_color_survives_moves_and_splits_without_exposing_private_details(laboratory):
+    lab = laboratory
+    client, lead, base = lab["client"](lab["member"]), lab["client"](lab["lead"]), lab["base"]
+    item = client.post(base + "items/", {"title": "颜色排期", "kind": "study"}, format="json").json()["id"]
+    times = {"start": "2026-10-08T09:00:00+08:00", "end": "2026-10-08T11:00:00+08:00"}
+    block = client.post(base + "calendar/", {"item_id": item, "color": "#c2410c", **times}, format="json")
+    assert block.status_code == 201
+    path = base + f"calendar/{block.json()['id']}/"
+    query = "calendar/?start=2026-10-08T00:00:00%2B08:00&end=2026-10-09T00:00:00%2B08:00"
+    assert client.get(base + query).json()["events"][0]["color"] == "#c2410c"
+    assert client.patch(path, {"expected_revision": 1, **times}, format="json").status_code == 200
+    assert (
+        client.patch(path, {"expected_revision": 2, "split_at": "2026-10-08T10:00:00+08:00"}, format="json").status_code
+        == 200
+    )
+    events = client.get(base + query).json()["events"]
+    assert len(events) == 2 and all(event["color"] == "#c2410c" for event in events)
+    busy = lead.get(base + query + "&team=1").json()["events"]
+    assert len(busy) == 2 and all(event["title"] == "忙碌" and "color" not in event for event in busy)
+    assert (
+        client.patch(
+            path,
+            {"expected_revision": 3, "color": "", "start": times["start"], "end": "2026-10-08T10:00:00+08:00"},
+            format="json",
+        ).status_code
+        == 200
+    )
+    restored = next(event for event in client.get(base + query).json()["events"] if event["id"] == block.json()["id"])
+    assert restored["color"] == ""
+
+
+@pytest.mark.parametrize("color", [None, "red", "#ff00", 1, {}, ["#1d4ed8"]])
+def test_calendar_rejects_invalid_colors_without_changing_the_block(laboratory, color):
+    lab = laboratory
+    client, base = lab["client"](lab["member"]), lab["base"]
+    item = client.post(base + "items/", {"title": "色彩校验", "kind": "research"}, format="json").json()["id"]
+    times = {"start": "2026-10-08T09:00:00+08:00", "end": "2026-10-08T10:00:00+08:00"}
+    assert client.post(base + "calendar/", {"item_id": item, "color": color, **times}, format="json").status_code == 400
+    block = client.post(base + "calendar/", {"item_id": item, **times}, format="json").json()
+    assert (
+        client.patch(
+            base + f"calendar/{block['id']}/", {"expected_revision": 1, "color": color, **times}, format="json"
+        ).status_code
+        == 400
+    )
+    query = "calendar/?start=2026-10-08T00:00:00%2B08:00&end=2026-10-09T00:00:00%2B08:00"
+    event = client.get(base + query).json()["events"][0]
+    assert event["revision"] == 1 and event["color"] == ""
+    assert len(client.get(base + query).json()["events"]) == 1
+
+
 def test_default_folders_deletion_and_cross_view_issue_identity(laboratory):
     lab = laboratory
     client = lab["client"](lab["member"])
@@ -227,6 +278,7 @@ def test_concurrent_calendar_saves_accept_only_one_revision(laboratory):
                 base + f"calendar/{block['id']}/",
                 {
                     "expected_revision": 1,
+                    "color": "#1d4ed8" if hour == "11" else "#c2410c",
                     "start": f"2026-10-08T{hour}:00:00+08:00",
                     "end": f"2026-10-08T{hour}:30:00+08:00",
                 },
@@ -242,6 +294,7 @@ def test_concurrent_calendar_saves_accept_only_one_revision(laboratory):
         "events"
     ]
     assert len(events) == 1 and events[0]["revision"] == 2
+    assert events[0]["color"] == ("#1d4ed8" if events[0]["start"].startswith("2026-10-08T03:") else "#c2410c")
 
 
 def test_task_picker_project_filter_enforces_scope_before_returning_results(laboratory):

@@ -4,7 +4,10 @@
  */
 import { expect, test } from "@playwright/test";
 
-test("StrictMode preserves a one-use fragment until binding, without sending it in page URLs", async ({ page }) => {
+test("StrictMode preserves a one-use fragment until binding, without sending it in page URLs", async ({
+  page,
+  baseURL,
+}) => {
   let enrolled = false,
     confirmed = false;
   const pageRequests: string[] = [];
@@ -37,7 +40,7 @@ test("StrictMode preserves a one-use fragment until binding, without sending it 
   });
   await page.goto("/register#one-use-invitation");
   await expect(page.getByRole("button", { name: "开始绑定" })).toBeVisible();
-  await expect(page).toHaveURL("http://127.0.0.1:3105/register");
+  await expect(page).toHaveURL(new URL("/register", baseURL).href);
   await page.getByLabel("用户名", { exact: true }).fill("alice");
   await page.getByLabel("显示姓名").fill("成员");
   await page.getByLabel("联系邮箱").fill("alice@example.org");

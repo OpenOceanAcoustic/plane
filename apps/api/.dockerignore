@@ -1,0 +1,10 @@
+# Keep runtime credentials and generated test/cache files outside API images.
+.env
+.env.*
+!.env.example
+.pytest_cache
+.ruff_cache
+**/__pycache__
+**/*.pyc
+plane/logs
+plane/static-assets/collected-static

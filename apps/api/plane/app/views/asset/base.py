@@ -13,6 +13,7 @@ from ..base import BaseAPIView, BaseViewSet
 from plane.app.permissions import WorkspaceMemberPermission
 from plane.db.models import FileAsset, Workspace
 from plane.app.serializers import FileAssetSerializer
+from .access import native_asset_access
 
 
 class FileAssetEndpoint(BaseAPIView):
@@ -25,8 +26,9 @@ class FileAssetEndpoint(BaseAPIView):
 
     def get(self, request, workspace_id, asset_key):
         asset_key = str(workspace_id) + "/" + asset_key
-        files = FileAsset.objects.filter(asset=asset_key)
-        if files.exists():
+        files = FileAsset.objects.filter(asset=asset_key, workspace_id=workspace_id)
+        files = [asset for asset in files if native_asset_access(request.user, asset)]
+        if files:
             serializer = FileAssetSerializer(files, context={"request": request}, many=True)
             return Response({"data": serializer.data, "status": True}, status=status.HTTP_200_OK)
         else:

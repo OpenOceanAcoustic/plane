@@ -5,27 +5,25 @@
 
 import { useState } from "react";
 import { observer } from "mobx-react";
+import { v4 as uuidv4 } from "uuid";
 import type { LabStore } from "@plane/shared-state";
+import type { LabLedgerEntry } from "@plane/types";
 import { Button, LabDialog, LabField, labInputClass } from "@plane/ui";
 
-type Entry = {
-  id: string;
-  created_at: string;
-  delta: string;
-  bounty_id: string;
-  task: { title: string; project: string };
-  participant: { name: string };
-  actor: string;
-  reason: string;
-  reverses: string | null;
-};
-
-export const LabLedger = observer(function LabLedger({ store, projectId }: { store: LabStore; projectId: string }) {
-  const [entries, setEntries] = useState<Entry[]>();
-  const [chosen, setChosen] = useState<Entry>();
+export const LabLedger = observer(function LabLedger({
+  store,
+  projectId,
+  onSaved,
+}: {
+  store: LabStore;
+  projectId: string;
+  onSaved?: () => Promise<void>;
+}) {
+  const [entries, setEntries] = useState<LabLedgerEntry[]>();
+  const [chosen, setChosen] = useState<LabLedgerEntry>();
   const [requestKey, setRequestKey] = useState("");
   async function load() {
-    setEntries(await store.request<Entry[]>(`ledger/${projectId ? `?project_id=${projectId}` : ""}`));
+    setEntries(await store.request<LabLedgerEntry[]>(`ledger/${projectId ? `?project_id=${projectId}` : ""}`));
   }
   return (
     <section className="rounded-lg border border-subtle p-4">
@@ -67,20 +65,18 @@ export const LabLedger = observer(function LabLedger({ store, projectId }: { sto
                     {entry.reverses ? "（冲正）" : ""}
                   </td>
                   <td>
-                    {Number(entry.delta) > 0 &&
-                      !entries.some((row) => row.reverses === entry.id) &&
-                      store.bounties.find((row) => row.id === entry.bounty_id)?.is_lead && (
-                        <Button
-                          size="sm"
-                          variant="neutral-primary"
-                          onClick={() => {
-                            setChosen(entry);
-                            setRequestKey(crypto.randomUUID());
-                          }}
-                        >
-                          冲正
-                        </Button>
-                      )}
+                    {entry.can_reverse && (
+                      <Button
+                        size="sm"
+                        variant="neutral-primary"
+                        onClick={() => {
+                          setChosen(entry);
+                          setRequestKey(uuidv4());
+                        }}
+                      >
+                        冲正
+                      </Button>
+                    )}
                   </td>
                 </tr>
               ))}
@@ -102,6 +98,7 @@ export const LabLedger = observer(function LabLedger({ store, projectId }: { sto
               });
               await store.loadMarket();
               await load();
+              await onSaved?.();
               setChosen(undefined);
             })
           }

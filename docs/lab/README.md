@@ -85,7 +85,7 @@ sh backend.sh purge
 
 原生新建工作区立即启用 WIP 策略，初始化或运行 migrate 时会回填旧工作区的缺漏。旧数据已超额时允许逐项收尾，禁止新增或替换事项。原生任务和指派在同一事务写入；超额请求拒绝后不会残留新任务或丢失原有指派。
 
-提交成果后独立验收。部分通过填累计 VC，再次验收只授予差额；有效探索负结果达到原约定条件可全部通过。重大验收复核完成前不记账。验收逾期进入站内待办，不自动通过。账本保存任务和人员快照；负责人更正使用冲正记录。现金承诺只用于重大判断，首版不计算或支付现金。不要将累计金额当成增量填写。
+提交成果后独立验收。部分通过填累计 VC，再次验收只授予差额；有效探索负结果达到原约定条件可全部通过。重大验收复核完成前不记账。验收逾期进入站内待办，不自动通过。账本保存任务和人员快照；负责人更正使用冲正记录。现金承诺继续参与重大任务判断；“资金与奖励”另提供项目自定义参考预测、真实分池、负责人累计最终核准、付款安排及线下支付登记。不要将累计金额当成增量填写。
 
 个人排期与项目账本提供 CSV/JSON 导出。项目删除后管理员可通过历史账本或数据库备份核查；账本不因用户/任务删除而删除。保留上游数据删除策略时应额外遵守实验室项目关闭后至少五年的账本保留要求，不清空 lab 记录。
 
@@ -103,6 +103,7 @@ docker compose -f docker-compose-test.yml -f compose.lab-test.yml run --rm api-t
 
 ```bash
 node tools/lab/test-calendar.mjs
+node tools/lab/test-planning-store.mjs
 pnpm --filter live test tests/extensions/lab-session-guard.test.ts
 pnpm exec playwright install chromium
 pnpm exec playwright test --config tools/lab/browser/playwright.config.ts
@@ -136,3 +137,7 @@ python3 tools/lab/backup.py restore-verify /ABSOLUTE/BACKUP_DIRECTORY /SEPARATE/
 每次备份使用新目录。恢复验证生成独立临时 Compose 项目，检查数据库记录数、附件逐文件校验和凭据解密，之后只删除本次临时卷，绝不覆盖运行数据。建议每月备份、每季度恢复演练，将认证密钥另存到受控离线位置。真正灾难恢复时，在停机和确认目标卷后恢复 dump、附件、配置及匹配密钥，并删除恢复的旧会话；不要直接覆盖运行中的实例。当前 HTTP 内网地址用于部署验证；团队正式使用时配置 HTTPS，并将访问来源、cookie、各 base URL 同步改为正式域名。
 
 贡献更正只追加冲正记录，不自动占用成员 WIP。需要复验时，负责人在任务卡点击“更正后重新验收”，填写原因；该动作检查 WIP，验收继续按累计差额入账，重大任务仍须第二人复核。
+
+个人规划的并排工作台、增强卡片、筛选和团队共享说明见 [个人规划使用说明](personal-planning-guide.md)。
+
+项目自定义奖励公式、资金分池、最终核准及悬赏公开认领说明见 [资金与悬赏使用说明](finance-guide.md)；接口契约见 [Finance API](finance-api.md)，实施与验证记录见 [交付记录](finance-progress.md)。

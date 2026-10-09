@@ -23,8 +23,11 @@ import type { LabStore } from "@plane/shared-state";
 import { LabFieldsStore } from "@plane/shared-state";
 import { Button, labInputClass } from "@plane/ui";
 import { LabFieldEditor, LabFieldManager } from "./field-manager";
+import { LabIssueDeleteDialog } from "./issue-delete-dialog";
 import type { LabCustomField, LabTaskRow } from "./fields-types";
 import { csvText, downloadText, fieldValueText } from "./fields-types";
+// oxlint-disable-next-line import/no-unassigned-import -- local financial and task surfaces
+import "./finance-market.css";
 
 type Config = { fields: LabCustomField[]; members: { id: string; name: string }[] };
 export const LabTaskTable = observer(function LabTaskTable({
@@ -44,6 +47,7 @@ export const LabTaskTable = observer(function LabTaskTable({
   const [visibility, setVisibility] = useState<VisibilityState>({ start_date: false });
   const [configs, setConfigs] = useState<Record<string, Config>>({});
   const [manage, setManage] = useState(false);
+  const [deleting, setDeleting] = useState<LabTaskRow>();
   const loadGeneration = useRef(0);
   const load = useCallback(async () => {
     const generation = ++loadGeneration.current;
@@ -106,6 +110,25 @@ export const LabTaskTable = observer(function LabTaskTable({
       },
       { accessorKey: "start_date", header: "开始日期" },
       { accessorKey: "target_date", header: "截止日期" },
+      {
+        id: "actions",
+        header: "操作",
+        enableSorting: false,
+        enableColumnFilter: false,
+        enableGrouping: false,
+        cell: ({ row }) =>
+          row.original.can_delete_issue === true ? (
+            <Button
+              size="sm"
+              variant="danger"
+              aria-label={`删除工作项${row.original.title}`}
+              disabled={store.busy}
+              onClick={() => setDeleting(row.original)}
+            >
+              删除
+            </Button>
+          ) : null,
+      },
       ...currentFields.map(
         (field): ColumnDef<LabTaskRow> => ({
           id: `field_${field.id}`,
@@ -131,7 +154,7 @@ export const LabTaskTable = observer(function LabTaskTable({
         })
       ),
     ],
-    [currentFields, configs, fieldsStore, store.slug]
+    [currentFields, configs, fieldsStore, store]
   );
   const table = useReactTable({
     data: fieldsStore.tasks,
@@ -154,8 +177,20 @@ export const LabTaskTable = observer(function LabTaskTable({
     defaultColumn: { filterFn: "includesString" },
   });
   return (
-    <div className="flex flex-col gap-4">
-      <div className="flex flex-wrap items-center gap-3">
+    <div className="lab-task-table flex flex-col gap-4">
+      {deleting && (
+        <LabIssueDeleteDialog
+          key={deleting.id}
+          store={store}
+          task={deleting}
+          onClose={() => setDeleting(undefined)}
+          onDeleted={async () => {
+            await load();
+            await store.loadPlanner();
+          }}
+        />
+      )}
+      <div className="lab-task-toolbar flex flex-wrap items-center gap-3">
         <select
           aria-label="项目筛选"
           className={`${labInputClass} max-w-52`}
@@ -188,7 +223,7 @@ export const LabTaskTable = observer(function LabTaskTable({
           <option value="">不分组</option>
           {table
             .getAllLeafColumns()
-            .filter((column) => !["key", "title"].includes(column.id))
+            .filter((column) => column.getCanGroup() && !["key", "title"].includes(column.id))
             .map((column) => (
               <option key={column.id} value={column.id}>
                 {String(column.columnDef.header)}
@@ -213,7 +248,7 @@ export const LabTaskTable = observer(function LabTaskTable({
           size="sm"
           variant="neutral-primary"
           onClick={() => {
-            const visible = table.getVisibleLeafColumns();
+            const visible = table.getVisibleLeafColumns().filter((column) => column.id !== "actions");
             downloadText(
               csvText([
                 visible.map((column) => column.columnDef.header),
@@ -227,7 +262,7 @@ export const LabTaskTable = observer(function LabTaskTable({
         </Button>
       </div>
       {manage && <LabFieldManager store={store} projectId={projectId} changed={() => void store.execute(load)} />}
-      <div className="overflow-auto rounded-lg border border-subtle">
+      <div className="lab-task-table-surface overflow-auto rounded-lg border border-subtle">
         <table className="w-full border-collapse text-left text-13">
           <thead className="bg-layer-1">
             {table.getHeaderGroups().map((group) => (
@@ -259,7 +294,11 @@ export const LabTaskTable = observer(function LabTaskTable({
           </thead>
           <tbody>
             {table.getRowModel().rows.map((row) => (
-              <tr key={row.id} className="border-b border-subtle hover:bg-layer-1">
+              <tr
+                key={row.id}
+                data-grouped={row.getIsGrouped() || undefined}
+                className="border-b border-subtle hover:bg-layer-1"
+              >
                 {row.getVisibleCells().map((cell) => (
                   <td key={cell.id} className="p-3 align-top">
                     {cell.getIsGrouped() ? (

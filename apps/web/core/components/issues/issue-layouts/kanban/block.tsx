@@ -19,10 +19,11 @@ import { Tooltip } from "@plane/propel/tooltip";
 import type { TIssue, IIssueDisplayProperties, IIssueMap } from "@plane/types";
 import { EIssueServiceType } from "@plane/types";
 // ui
-import { ControlLink, DropIndicator } from "@plane/ui";
+import { ControlLink, DropIndicator, LabBountyBadge, labBountyOutline } from "@plane/ui";
 import { cn, generateWorkItemLink } from "@plane/utils";
 // components
 import RenderIfVisible from "@/components/core/render-if-visible-HOC";
+import { useLabTaskCardMetadata } from "@/components/lab/use-task-card-metadata";
 import { HIGHLIGHT_CLASS, getIssueBlockId } from "@/components/issues/issue-layouts/utils";
 import { IssueIdentifier } from "@/components/issues/issue-detail/issue-identifier";
 // hooks
@@ -170,6 +171,7 @@ export const KanbanIssueBlock = observer(function KanbanIssueBlock(props: IssueB
   const handleIssuePeekOverview = (issue: TIssue) => handleRedirection(workspaceSlug, issue, isMobile);
 
   const issue = issuesMap[issueId];
+  const taskCardMetadata = useLabTaskCardMetadata(workspaceSlug, isEpic ? null : issue?.project_id).get(issueId);
 
   const { setIsDragging: setIsKanbanDragging } = useKanbanView();
 
@@ -269,6 +271,7 @@ export const KanbanIssueBlock = observer(function KanbanIssueBlock(props: IssueB
           )}
           onClick={() => handleIssuePeekOverview(issue)}
           disabled={!!issue?.tempId}
+          style={taskCardMetadata?.bounty_id ? labBountyOutline(taskCardMetadata.color) : undefined}
         >
           <RenderIfVisible
             classNames="space-y-2"
@@ -278,6 +281,15 @@ export const KanbanIssueBlock = observer(function KanbanIssueBlock(props: IssueB
             verticalOffset={200}
             defaultValue={shouldRenderByDefault}
           >
+            {taskCardMetadata?.bounty_id ? (
+              <LabBountyBadge color={taskCardMetadata.color} />
+            ) : taskCardMetadata?.color ? (
+              <span
+                aria-label="自定义类别颜色"
+                className="block h-1 w-8 rounded"
+                style={{ backgroundColor: taskCardMetadata.color }}
+              />
+            ) : null}
             <KanbanIssueDetailsBlock
               cardRef={cardRef}
               issue={issue}

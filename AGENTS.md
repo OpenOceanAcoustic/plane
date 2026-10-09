@@ -23,6 +23,13 @@
 - **Testing**: All features require unit tests, use existing test framework per package
 - **Components**: Build in `@plane/ui` with Storybook for isolated development
 
+## Product UI copy
+
+- Do not display explanatory small print that narrates management policies, workflow steps, permission rules, implementation details, or audit behavior. This includes page introductions, informational banners, form descriptions, and footnotes. Put these explanations in user documentation instead.
+- Keep business screens focused on headings, field labels, parameter definitions, data, and actions. Retain concise validation errors, current statuses, operation results, and confirmations relevant to the action being taken.
+- Keep empty states brief and factual; do not use them to explain an entire workflow or management policy.
+- This rule applies regardless of text size. Do not reintroduce removed explanations in subtitles, tooltips, or another part of the interface.
+
 ## Backend tests (Docker)
 
 The Django/pytest suite for `apps/api` runs in an isolated stack defined by `docker-compose-test.yml` at the repo root.

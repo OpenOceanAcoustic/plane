@@ -40,3 +40,6 @@ export * from "./oauth";
 export * from "./lab-auth";
 
 export * from "./lab-form";
+export * from "./lab-color-picker";
+export * from "./lab-bounty-badge";
+export * from "./lab-amount-input";

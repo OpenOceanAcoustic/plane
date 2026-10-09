@@ -36,6 +36,7 @@ case "${1:-help}" in
   access) shift; "${compose[@]}" exec -T api python manage.py lab_access "$@" ;;
   check)
     node tools/lab/test-calendar.mjs
+    node tools/lab/test-planning-store.mjs
     node tools/lab/test-fields-gantt.mjs
     node tools/lab/test-workflow.mjs
     pnpm turbo run check:types check:lint --filter=web --filter=admin --filter=space --filter=@plane/ui --filter=@plane/shared-state --filter=@plane/types --concurrency=1

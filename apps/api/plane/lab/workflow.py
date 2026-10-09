@@ -2,14 +2,14 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 
 from django.db.models import Q
-from django.shortcuts import get_object_or_404
 from rest_framework.exceptions import APIException
 from rest_framework.response import Response
 
 from . import bounties
-from .models import Audit, Bounty
-from .permissions import collaboration_projects, issue_access, require_lead
+from .models import Audit
+from .permissions import require_lead
 from .planning_views import LabView
+from .bounty_access import access_level, bounty_access, planning_issue_access
 
 
 NODES = (
@@ -27,6 +27,7 @@ NODES = (
     ("rejected", "不通过", 750, 260),
     ("cancelled", "取消并释放预算", 250, 390),
     ("reversal", "贡献更正与冲正", 500, 390),
+    ("deleted", "删除悬赏", 750, 390),
 )
 EDGES = (
     ("publication", "publication_review"),
@@ -52,6 +53,9 @@ EDGES = (
     ("active", "cancelled"),
     ("claim", "cancelled"),
     ("reversal", "acceptance"),
+    ("publication", "deleted"),
+    ("active", "deleted"),
+    ("done", "deleted"),
 )
 AUDIT_LABELS = {
     "bounty.published": "发布团队任务",
@@ -64,6 +68,7 @@ AUDIT_LABELS = {
     "bounty.accepted": "验收记账",
     "bounty.acceptance_review": "重大验收复核",
     "bounty.cancelled": "取消悬赏",
+    "bounty.deleted": "删除悬赏",
     "bounty.reopened": "重新打开验收",
     "ledger.reversed": "贡献冲正",
 }
@@ -78,6 +83,7 @@ AUDIT_NODES = {
     "bounty.accepted": "acceptance",
     "bounty.acceptance_review": "major_review",
     "bounty.cancelled": "cancelled",
+    "bounty.deleted": "deleted",
     "bounty.reopened": "acceptance",
     "ledger.reversed": "reversal",
 }
@@ -116,7 +122,7 @@ def actions_for(bounty, user, allocations, ledger):
 
     lead = permitted(lambda: require_lead(user, bounty.stage.project))
     editable = bool(bounty.issue_id) and permitted(
-        lambda: issue_access(user, bounty.stage.workspace, bounty.issue_id, edit=True)
+        lambda: planning_issue_access(user, bounty.stage.workspace, bounty.issue_id)
     )
     mine = next((row for row in allocations if row.user_id == user.id), None)
     reviewer = permitted(lambda: bounties.reviewer_allowed(user, bounty))
@@ -124,15 +130,29 @@ def actions_for(bounty, user, allocations, ledger):
     if bounty.status == "publication_review" and independent:
         add("publication-review", "复核发布", "publication_review")
     if bounty.status == "open":
-        if not mine and editable and user.id not in (bounty.reviewer_id, bounty.independent_reviewer_id):
+        if (
+            not mine
+            and bounty.issue_id
+            and not bounty.issue.archived_at
+            and user.id not in (bounty.reviewer_id, bounty.independent_reviewer_id)
+            and bounties.claim_available(bounty) > 0
+        ):
             add("claim", "申请认领", "claim")
         if lead:
             for row in allocations:
                 if not row.approved and row.user and row.user.is_active:
                     add("approve", f"批准 {row.user_name} 的认领", "claim", {"allocation_id": str(row.id)})
             approved = [row for row in allocations if row.approved]
-            ready = bool(approved) and all(row.confirmed and row.user and row.user.is_active for row in approved)
-            add("start", "团队开工", "active", enabled=ready, reason="" if ready else "需要批准分工并由所有参与者确认")
+            reason = (
+                "尚无已批准的执行人，请先批准认领"
+                if not approved
+                else "执行人已停用，请调整分工"
+                if any(not row.user or not row.user.is_active for row in approved)
+                else "还有执行人未确认交付约定"
+                if any(not row.confirmed for row in approved)
+                else ""
+            )
+            add("start", "团队开工", "active", enabled=not reason, reason=reason)
         if mine and mine.approved and not mine.confirmed and editable:
             add("confirm", "确认交付约定", "confirm")
     if mine and mine.approved and not mine.closed and editable and bounty.status in ("active", "rework", "partial"):
@@ -143,7 +163,7 @@ def actions_for(bounty, user, allocations, ledger):
         pending = next((row for row in bounty.acceptances.all() if not row.approved_at), None)
         if pending:
             add("acceptance-review", "复核验收", "major_review", {"acceptance_id": str(pending.id)})
-    if lead and bounty.status not in ("done", "cancelled", "rejected"):
+    if lead and bounty.status not in ("done", "cancelled", "rejected", "deleted"):
         add("cancel", "取消并释放未授予预算", "cancelled")
     if lead and bounty.status in ("done", "active", "partial", "rework"):
         if any(row.closed and bounties.total(row.ledger.all(), "delta") < row.planned for row in allocations):
@@ -163,17 +183,13 @@ def actions_for(bounty, user, allocations, ledger):
 
 class BountyWorkflowView(LabView):
     def get(self, request, slug, pk):
-        bounty = get_object_or_404(
-            Bounty.objects.select_related("stage__workspace", "stage__project", "issue").prefetch_related(
-                "allocations__user", "allocations__ledger", "acceptances", "ledger"
-            ),
-            id=pk,
-            stage__workspace=self.workspace,
-            stage__project_id__in=collaboration_projects(request.user, self.workspace),
-        )
+        bounty = bounty_access(request.user, self.workspace, pk)
+        public = access_level(request.user, bounty) == "public"
         allocations = list(bounty.allocations.all())
-        ledger = list(bounty.ledger.all())
-        acceptances = list(bounty.acceptances.all())
+        if public:
+            allocations = [row for row in allocations if row.user_id == request.user.id]
+        ledger = [] if public else list(bounty.ledger.all())
+        acceptances = [] if public else list(bounty.acceptances.all())
         current = {
             "publication_review": "publication_review",
             "active": "active",
@@ -184,6 +200,7 @@ class BountyWorkflowView(LabView):
             "rework": "rework",
             "rejected": "rejected",
             "cancelled": "cancelled",
+            "deleted": "deleted",
         }.get(bounty.status, "claim")
         if bounty.status == "open" and any(row.approved for row in allocations):
             current = "confirm"
@@ -198,6 +215,11 @@ class BountyWorkflowView(LabView):
             .filter(Q(action__startswith="bounty.") | Q(action="ledger.reversed"))
             .order_by("created_at", "id")
         )
+        if public:
+            audits = audits.filter(
+                Q(action__in=("bounty.published", "bounty.publication_review"))
+                | Q(object_id__in=[row.id for row in allocations])
+            )
         history = [
             {
                 "id": str(row.id),
@@ -205,7 +227,7 @@ class BountyWorkflowView(LabView):
                 "node_id": AUDIT_NODES.get(row.action, "publication"),
                 "actor": row.actor_name,
                 "created_at": row.created_at.isoformat(),
-                "reason": str(row.details.get("reason", "")),
+                "reason": "" if public else str(row.details.get("reason", "")),
                 "result": row.details.get("result"),
             }
             for row in audits

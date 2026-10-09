@@ -10,6 +10,14 @@ async function planningServer(page: Page) {
   const planner: LabPlanner = {
     user_id: "member",
     team_access: false,
+    categories: [
+      { id: "project", name: "项目任务", color: "#1d4ed8", position: 0 },
+      { id: "research", name: "科研", color: "#7c3aed", position: 1 },
+      { id: "study", name: "学习", color: "#15803d", position: 2 },
+      { id: "mentoring", name: "带教", color: "#c2410c", position: 3 },
+    ],
+    default_category_id: "research",
+    default_project_category_id: "project",
     folders: ["A", "B", "C", "D"].map((name, position) => ({ id: name, name, position })),
     items: [],
     projects: [],
@@ -25,14 +33,20 @@ async function planningServer(page: Page) {
     const method = route.request().method();
     const body = method === "GET" ? undefined : route.request().postDataJSON();
     let result: unknown = {};
-    if (path === "planner/") result = planner;
-    else if (path === "folders/" && method === "PUT") {
+    if (path === "planner/") {
+      for (const item of planner.items) {
+        const category = planner.categories?.find((row) => row.id === item.category_id);
+        item.category_name = category?.name ?? null;
+        item.category_color = category?.color ?? null;
+      }
+      result = planner;
+    } else if (path === "folders/" && method === "PUT") {
       planner.folders = body.ids.map((id: string, position: number) => ({
         ...planner.folders.find((folder) => folder.id === id),
         position,
       }));
     } else if (path === "items/" && method === "POST") {
-      planner.items.push({ id: "personal", ...body, issue_id: null, status: "todo" } as LabItem);
+      planner.items.push({ id: "personal", ...body, issue_id: null, status: "todo", kind: "research" } as LabItem);
       result = { id: "personal" };
     } else if (path?.startsWith("folders/")) {
       const id = path.split("/")[1];
@@ -42,8 +56,19 @@ async function planningServer(page: Page) {
         for (const item of planner.items) if (item.folder_id === id) item.folder_id = null;
       }
     } else if (path === "items/personal/") Object.assign(planner.items[0]!, body);
-    else if (path === "calendar/" && method === "GET") result = { events, members: [{ id: "member", name: "成员" }] };
-    else if (path === "calendar/" && method === "POST") {
+    else if (path === "calendar/" && method === "GET") {
+      for (const event of events) {
+        const category = planner.categories?.find(
+          (row) => row.id === (planner.items.find((item) => item.id === event.item_id)?.category_id ?? event.kind)
+        );
+        if (event.kind) {
+          event.category_id = category?.id;
+          event.category_name = category?.name;
+          event.category_color = category?.color;
+        }
+      }
+      result = { events, members: [{ id: "member", name: "成员" }] };
+    } else if (path === "calendar/" && method === "POST") {
       expect(body.item_id).toBe("personal");
       events.push({
         id: "block",
@@ -53,6 +78,7 @@ async function planningServer(page: Page) {
         revision: 1,
         item_id: "personal",
         kind: "research",
+        color: body.color ?? "",
         start: body.start,
         end: body.end,
       });
@@ -79,6 +105,7 @@ async function planningServer(page: Page) {
       } else {
         event.start = body.start;
         event.end = body.end;
+        if (body.color !== undefined) event.color = body.color;
         result = { id: event.id, revision: event.revision, overlap: false };
       }
     }
@@ -98,8 +125,76 @@ async function createScheduledItem(page: Page) {
   await dialog.getByLabel("开始（上海）").fill("2026-10-08T09:00");
   await dialog.getByLabel("结束（上海）").fill("2026-10-08T11:00");
   await dialog.getByRole("button", { name: "保存", exact: true }).click();
-  await expect(page.getByRole("button", { name: "科研规划 09:00–11:00", exact: true })).toBeVisible();
+  const block = page.locator('[data-lab-calendar-event="block"]');
+  await expect(block).toBeVisible();
+  await expect(block).toContainText("科研规划");
+  await expect(block).toContainText("09:00–11:00");
 }
+
+test("schedule colors default by category and manual overrides survive saving, splitting and reload", async ({
+  page,
+}) => {
+  const { events } = await planningServer(page);
+  await createScheduledItem(page);
+  const block = page.locator('[data-lab-calendar-event="block"]');
+  await expect(block).toHaveCSS("--fc-event-color", "#7c3aed");
+  await page.getByRole("button", { name: "事项时间轴", exact: true }).click();
+  await expect(block).toBeVisible();
+  await page.getByRole("button", { name: "日历", exact: true }).click();
+  await expect(block).toHaveCSS("--fc-event-color", "#7c3aed");
+  await block.getByRole("button", { name: "调整 科研规划 的排期", exact: true }).click();
+  const dialog = page.getByRole("dialog");
+  await dialog.getByRole("button", { name: "取色 #c2410c", exact: true }).click();
+  await dialog.getByRole("button", { name: "保存", exact: true }).click();
+  await expect(block).toHaveCSS("--fc-event-color", "#c2410c");
+  expect(events[0]!.color).toBe("#c2410c");
+  await page.getByRole("button", { name: "事项时间轴", exact: true }).click();
+  await block.getByRole("button", { name: "调整 科研规划 的排期", exact: true }).click();
+  await expect(dialog.getByLabel("自定义排期颜色", { exact: true })).toHaveValue("#c2410c");
+  await dialog.getByLabel("结束（上海）").fill("2026-10-08T11:15");
+  await dialog.getByRole("button", { name: "保存", exact: true }).click();
+  expect(events[0]!.color).toBe("#c2410c");
+  await page.getByRole("button", { name: "日历", exact: true }).click();
+  await expect(block).toHaveCSS("--fc-event-color", "#c2410c");
+  await page.reload();
+  await expect(block).toHaveCSS("--fc-event-color", "#c2410c");
+  await block.getByRole("button", { name: "调整 科研规划 的排期", exact: true }).click();
+  await dialog.getByRole("button", { name: "拆分时间块", exact: true }).click();
+  await dialog.getByLabel("拆分时间（上海）").fill("2026-10-08T10:00");
+  await dialog.getByRole("button", { name: "保存", exact: true }).click();
+  await expect(page.locator('[data-lab-calendar-event="following"]')).toHaveCSS("--fc-event-color", "#c2410c");
+  await block.getByRole("button", { name: "调整 科研规划 的排期", exact: true }).click();
+  await dialog.getByRole("checkbox", { name: "跟随事项类别", exact: true }).check();
+  await dialog.getByRole("button", { name: "保存", exact: true }).click();
+  await expect(block).toHaveCSS("--fc-event-color", "#7c3aed");
+});
+
+test("calendar categories have distinct colors and opaque busy blocks use a neutral color", async ({ page }) => {
+  const { events } = await planningServer(page);
+  for (const kind of ["project", "research", "study", "mentoring", undefined]) {
+    events.push({
+      id: kind ?? "busy",
+      kind,
+      user_id: "member",
+      title: kind ?? "忙碌",
+      editable: false,
+      start: "2026-10-08T09:00:00+08:00",
+      end: "2026-10-08T10:00:00+08:00",
+    });
+  }
+  await page.goto("/planner");
+  await Promise.all(
+    [
+      ["project", "#1d4ed8"],
+      ["research", "#7c3aed"],
+      ["study", "#15803d"],
+      ["mentoring", "#c2410c"],
+      ["busy", "#64748b"],
+    ].map(([id, color]) =>
+      expect(page.locator(`[data-lab-calendar-event="${id}"]`)).toHaveCSS("--fc-event-color", color!)
+    )
+  );
+});
 
 test("keyboard folder ordering, pointer moves and calendar splitting preserve the original item", async ({ page }) => {
   const { planner, events } = await planningServer(page);
@@ -136,9 +231,13 @@ test("keyboard folder ordering, pointer moves and calendar splitting preserve th
   await page.getByRole("button", { name: "月", exact: true }).click();
   await expect(page.getByRole("button", { name: "月", exact: true })).toHaveAttribute("aria-pressed", "true");
   await page.getByRole("button", { name: "周", exact: true }).click();
-  const editableBlock = page.getByRole("button", { name: "科研规划 09:00–11:00", exact: true });
+  const editableBlock = page.locator('[data-lab-calendar-event="block"]');
   await editableBlock.focus();
   await page.keyboard.press("Enter");
+  await page
+    .getByRole("dialog", { name: "事项详情", exact: true })
+    .getByRole("button", { name: "调整时间块", exact: true })
+    .click();
   const dialog = page.getByRole("dialog");
   await dialog.getByRole("button", { name: "拆分时间块", exact: true }).click();
   await dialog.getByLabel("拆分时间（上海）").fill("2026-10-08T10:00");
@@ -149,14 +248,14 @@ test("keyboard folder ordering, pointer moves and calendar splitting preserve th
     ["personal", 1],
   ]);
   expect(planner.items[0]!.folder_id).toBe("B");
-  await expect(page.getByRole("button", { name: "科研规划 09:00–10:00", exact: true })).toBeVisible();
-  await expect(page.getByRole("button", { name: "科研规划 10:00–11:00", exact: true })).toBeVisible();
+  await expect(editableBlock).toContainText("09:00–10:00");
+  await expect(page.locator('[data-lab-calendar-event="following"]')).toContainText("10:00–11:00");
 });
 
 test("a stale calendar edit reports conflict and reopening uses the refreshed revision", async ({ page }) => {
   const { events } = await planningServer(page);
   await createScheduledItem(page);
-  await page.getByRole("button", { name: "科研规划 09:00–11:00", exact: true }).click();
+  await page.getByRole("button", { name: "调整 科研规划 的排期", exact: true }).click();
   // A concurrent client changed the server after this form was opened.
   events[0]!.revision = 2;
   events[0]!.end = "2026-10-08T04:00:00.000Z";
@@ -166,12 +265,12 @@ test("a stale calendar edit reports conflict and reopening uses the refreshed re
   await expect(dialog.getByRole("alert")).toContainText("排期已被修改");
   expect(events[0]!.end).toBe("2026-10-08T04:00:00.000Z");
   await dialog.getByRole("button", { name: "取消", exact: true }).click();
-  await page.getByRole("button", { name: "科研规划 09:00–12:00", exact: true }).click();
+  await page.getByRole("button", { name: "调整 科研规划 的排期", exact: true }).click();
   await dialog.getByLabel("结束（上海）").fill("2026-10-08T13:00");
   await dialog.getByRole("button", { name: "保存", exact: true }).click();
   await expect(dialog).toHaveCount(0);
   expect(events[0]!.revision).toBe(3);
-  await expect(page.getByRole("button", { name: "科研规划 09:00–13:00", exact: true })).toBeVisible();
+  await expect(page.locator('[data-lab-calendar-event="block"]')).toContainText("09:00–13:00");
 });
 
 test("folder actions close their menu and deleting a renamed folder retains scheduled items", async ({ page }) => {
@@ -239,7 +338,7 @@ test("native planning fields have exact labels independent of their select optio
   const dialog = page.getByRole("dialog");
   await dialog.getByRole("textbox", { name: "事项名称", exact: true }).fill("学习命名验证");
   await dialog.getByRole("textbox", { name: "说明", exact: true }).fill("原始事项说明");
-  const kind = dialog.getByRole("combobox", { name: "类型", exact: true });
+  const kind = dialog.getByRole("combobox", { name: "事项类别", exact: true });
   await expect(kind).toBeVisible();
   await kind.selectOption("study");
   await expect(kind).toHaveValue("study");
@@ -247,6 +346,97 @@ test("native planning fields have exact labels independent of their select optio
   await expect(folder.locator("option")).toHaveCount(5);
   await folder.selectOption("B");
   await dialog.getByRole("button", { name: "保存", exact: true }).click();
-  await expect.poll(() => planner.items[0]?.kind).toBe("study");
+  await expect.poll(() => planner.items[0]?.category_id).toBe("study");
   expect(planner.items[0]!.folder_id).toBe("B");
+});
+
+for (const insecureOrigin of [false, true]) {
+  test(`blank calendar selection opens a form without crashing on ${insecureOrigin ? "LAN HTTP" : "localhost"}`, async ({
+    page,
+    baseURL,
+  }) => {
+    const errors: string[] = [];
+    page.on("pageerror", (error) => errors.push(error.message));
+    if (insecureOrigin) {
+      // Exercise the deployed non-loopback HTTP browser context with isolated assets/data.
+      await page.route("http://planning.lab.test/**", async (route) => {
+        const url = new URL(route.request().url());
+        const response = await route.fetch({ url: new URL(`${url.pathname}${url.search}`, baseURL).href });
+        await route.fulfill({ response });
+      });
+    }
+    await planningServer(page);
+    await page.goto(insecureOrigin ? "http://planning.lab.test/planner" : "/planner");
+    expect(await page.evaluate(() => window.isSecureContext)).toBe(!insecureOrigin);
+    const calendar = page.locator(".lab-calendar");
+    await calendar.scrollIntoViewIfNeeded();
+    const box = await calendar.boundingBox();
+    expect(box).not.toBeNull();
+    await page.mouse.move(box!.x + 200, box!.y + 250);
+    await page.mouse.down();
+    await page.mouse.move(box!.x + 200, box!.y + 310, { steps: 12 });
+    await page.clock.runFor(50);
+    await page.mouse.up();
+    await page.waitForTimeout(200);
+    expect(errors, "Selecting a new time block must not reach Plane's error boundary").toEqual([]);
+    await expect(page.getByRole("dialog", { name: "安排个人时间" })).toBeVisible();
+    await expect(page.getByLabel("开始（上海）", { exact: true })).not.toHaveValue("");
+    await expect(page.locator(".lab-calendar")).toBeVisible();
+  });
+}
+
+test("reopening an event captured before its own save refresh uses the latest revision for splitting", async ({
+  page,
+}) => {
+  const { events } = await planningServer(page);
+  await createScheduledItem(page);
+  let releaseRefresh: (() => void) | undefined;
+  let refreshRequested: (() => void) | undefined;
+  const refreshGate = new Promise<void>((resolve) => {
+    releaseRefresh = resolve;
+  });
+  const requested = new Promise<void>((resolve) => {
+    refreshRequested = resolve;
+  });
+  let holdRefresh = true;
+  await page.route("**/lab/calendar/?*", async (route) => {
+    if (route.request().method() === "GET" && holdRefresh) {
+      refreshRequested?.();
+      await refreshGate;
+      holdRefresh = false;
+    }
+    await route.fallback();
+  });
+  await page.getByRole("button", { name: "调整 科研规划 的排期", exact: true }).click();
+  let dialog = page.getByRole("dialog", { name: "调整时间块", exact: true });
+  await dialog.getByLabel("结束（上海）", { exact: true }).fill("2026-10-08T12:00");
+  await dialog.getByRole("button", { name: "保存", exact: true }).click();
+  await requested;
+  await expect(dialog).toHaveCount(0);
+  expect(events[0]!.revision).toBe(2);
+  // The save succeeded, but its GET refresh is held. The visible event still
+  // carries revision 1, and opening its read-only details is allowed.
+  await page.locator('[data-lab-calendar-event="block"]').click();
+  const details = page.getByRole("dialog", { name: "事项详情", exact: true });
+  await expect(details).toBeVisible();
+  await expect(details.getByRole("button", { name: "调整时间块", exact: true })).toBeDisabled();
+  const refreshed = page.waitForResponse(
+    (response) => response.request().method() === "GET" && response.url().includes("/lab/calendar/?")
+  );
+  releaseRefresh?.();
+  await refreshed;
+  await expect(page.locator('[data-lab-calendar-event="block"]')).toContainText("09:00–12:00");
+  await expect(details.getByRole("button", { name: "调整时间块", exact: true })).toBeEnabled();
+  await details.getByRole("button", { name: "调整时间块", exact: true }).click();
+  dialog = page.getByRole("dialog", { name: "调整时间块", exact: true });
+  await expect(dialog.getByLabel("结束（上海）", { exact: true })).toHaveValue("2026-10-08T12:00");
+  await dialog.getByRole("button", { name: "拆分时间块", exact: true }).click();
+  dialog = page.getByRole("dialog", { name: "拆分时间块", exact: true });
+  await dialog.getByLabel("拆分时间（上海）", { exact: true }).fill("2026-10-08T10:00");
+  await dialog.getByRole("button", { name: "保存", exact: true }).click();
+  await expect(dialog).toHaveCount(0);
+  expect(events.map((event) => [event.id, event.revision])).toEqual([
+    ["block", 3],
+    ["following", 1],
+  ]);
 });

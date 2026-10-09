@@ -7,10 +7,15 @@ from .document_urls import document_patterns
 from .field_urls import field_patterns
 from .gantt_urls import gantt_patterns
 from .workflow_urls import workflow_patterns
+from .bounty_urls import bounty_patterns
+from .lifecycle_workflow import lifecycle_patterns
+from .finance_urls import finance_patterns
 from .auth_views import LabAuthView
 from .planning_views import (
     BlockDetailView,
     CalendarView,
+    CategoryView,
+    CategoryDetailView,
     FlowView,
     FolderDetailView,
     FolderView,
@@ -19,6 +24,7 @@ from .planning_views import (
     PlannerView,
     PlanningExportView,
     TaskSearchView,
+    TaskDeleteView,
 )
 from .bounty_views import (
     BountyActionView,
@@ -41,6 +47,9 @@ business_patterns = [
     path("analytics/", AnalyticsView.as_view()),
     path("analytics/drilldown/", AnalyticsDrilldownView.as_view()),
     *workflow_patterns,
+    *bounty_patterns,
+    *lifecycle_patterns,
+    *finance_patterns,
     *document_patterns,
     *field_patterns,
     *gantt_patterns,
@@ -55,9 +64,12 @@ business_patterns = [
     path("planning-export/", PlanningExportView.as_view()),
     path("folders/", FolderView.as_view()),
     path("folders/<uuid:pk>/", FolderDetailView.as_view()),
+    path("categories/", CategoryView.as_view()),
+    path("categories/<uuid:pk>/", CategoryDetailView.as_view()),
     path("items/", ItemView.as_view()),
     path("items/<uuid:pk>/", ItemDetailView.as_view()),
     path("tasks/", TaskSearchView.as_view()),
+    path("tasks/<uuid:pk>/", TaskDeleteView.as_view()),
     path("flows/<uuid:pk>/", FlowView.as_view()),
     path("calendar/", CalendarView.as_view()),
     path("calendar/<uuid:pk>/", BlockDetailView.as_view()),
