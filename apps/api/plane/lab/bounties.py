@@ -17,7 +17,7 @@ from plane.db.models import IssueAssignee, ProjectMember, WorkspaceMember
 from .auth import audit, lock
 from .models import Acceptance, Allocation, Bounty, Ledger, PersonalItem, ProjectFlow, Stage, WorkspacePolicy
 from .permissions import issue_access, require_lead, workspace_member
-from .bounty_models import BountyPublication
+from .bounty_models import BountyMaterial, BountyPublication, BountyTaskAccess
 from .bounty_access import access_level, grant_allocation, planning_issue_access
 
 
@@ -177,6 +177,8 @@ def publication_review(user, bounty_id, reason):
 def update_public_summary(user, bounty_id, data):
     bounty = locked_bounty(bounty_id)
     require_lead(user, bounty.stage.project)
+    if bounty.status == "deleted":
+        raise ValidationError("悬赏已删除")
     reason = str(data.get("reason", "")).strip()
     if not reason:
         raise ValidationError("修改公开摘要须填写原因")
@@ -256,6 +258,8 @@ def approve_claim(user, bounty_id, allocation_id):
 @transaction.atomic
 def confirm_claim(user, bounty_id):
     bounty = locked_bounty(bounty_id)
+    if bounty.status == "deleted":
+        raise ValidationError("悬赏已删除")
     allocation = get_object_or_404(Allocation, bounty=bounty, user=user, approved=True)
     planning_issue_access(user, bounty.stage.workspace, bounty.issue_id)
     if bounty.status != "open" and not allocation.confirmed:
@@ -478,7 +482,7 @@ def review_acceptance(user, bounty_id, acceptance_id, reason):
 def cancel(user, bounty_id, reason):
     bounty = locked_bounty(bounty_id)
     require_lead(user, bounty.stage.project)
-    if bounty.status in ("done", "cancelled", "rejected") or not str(reason).strip():
+    if bounty.status in ("done", "cancelled", "rejected", "deleted") or not str(reason).strip():
         raise ValidationError("已结案任务不可取消；取消须填写原因")
     bounty.status = "cancelled"
     bounty.reserved = total(Ledger.objects.filter(bounty=bounty), "delta")
@@ -488,6 +492,44 @@ def cancel(user, bounty_id, reason):
         bounty.issue.state = ProjectFlow.objects.get(project=bounty.stage.project).todo
         bounty.issue.save(update_fields=["state", "completed_at"])
     audit("bounty.cancelled", bounty, user, bounty.stage.workspace, reason=str(reason))
+
+
+@transaction.atomic
+def delete(user, bounty_id, reason):
+    bounty = locked_bounty(bounty_id)
+    require_lead(user, bounty.stage.project)
+    if bounty.status == "deleted":
+        return
+    reason = str(reason or "").strip()
+    if not reason:
+        raise ValidationError("请填写删除原因")
+    previous_status = bounty.status
+    previous_reserved = bounty.reserved
+    bounty.status = "deleted"
+    bounty.reserved = total(Ledger.objects.filter(bounty=bounty), "delta")
+    # Retain the immutable source UUID while allowing a new publication of the
+    # original native work item. Its assignments, planning and state are intact.
+    bounty.issue = None
+    bounty.save(update_fields=["status", "reserved", "issue"])
+    Allocation.objects.filter(bounty=bounty).update(closed=True)
+    now = timezone.now()
+    grants = BountyTaskAccess.objects.filter(allocation__bounty=bounty, revoked_at__isnull=True).update(revoked_at=now)
+    materials = BountyMaterial.objects.filter(bounty=bounty, revoked_at__isnull=True).update(revoked_at=now)
+    BountyPublication.objects.filter(bounty=bounty).update(enabled=False)
+    audit(
+        "bounty.deleted",
+        bounty,
+        user,
+        bounty.stage.workspace,
+        reason=reason,
+        previous_status=previous_status,
+        previous_reserved=str(previous_reserved),
+        retained_vc=str(bounty.reserved),
+        released_vc=str(previous_reserved - bounty.reserved),
+        grants_revoked=grants,
+        materials_revoked=materials,
+        issue_id=str(bounty.issue_id_snapshot),
+    )
 
 
 @transaction.atomic
@@ -518,7 +560,7 @@ def reverse(user, ledger_id, data):
         participant_snapshot=entry.participant_snapshot,
         request_key=key,
     )
-    if bounty.status in ("rejected", "cancelled"):
+    if bounty.status in ("rejected", "cancelled", "deleted"):
         bounty.reserved = total(Ledger.objects.filter(bounty=bounty), "delta")
         bounty.save(update_fields=["reserved"])
     # Accounting corrections must succeed even when participants have full WIP.

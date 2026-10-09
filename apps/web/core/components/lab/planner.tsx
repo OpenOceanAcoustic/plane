@@ -14,8 +14,9 @@ import { TOAST_TYPE, setToast } from "@plane/propel/toast";
 import type { LabFolder, LabItem, LabStatus, LabTask } from "@plane/types";
 import type { LabStore } from "@plane/shared-state";
 import { LabDialog, LabField, LabSelect, labInputClass } from "@plane/ui";
-import { LabItemDetails } from "./item-details";
+import { LabItemDetails, labCanOpenProjectIssue } from "./item-details";
 import type { LabOpenProjectIssue } from "./item-details";
+import { LabTaskOverview } from "./task-overview";
 // oxlint-disable-next-line import/no-unassigned-import -- responsive board density shared with workbench
 import "./planner-workbench.css";
 import {
@@ -332,7 +333,19 @@ export const LabPlannerBoard = observer(function LabPlannerBoard({
               {items
                 .filter((item) => item.status === status.key)
                 .map((item) => (
-                  <DraggablePlanningCard key={item.id} item={item}>
+                  <DraggablePlanningCard
+                    key={item.id}
+                    item={item}
+                    onOpen={() => {
+                      if (labCanOpenProjectIssue(item) && openProjectIssue)
+                        openProjectIssue({
+                          issue_id: item.issue_id,
+                          project_id: item.project_id,
+                          archived: item.archived,
+                        });
+                      else setViewing(item);
+                    }}
+                  >
                     <div className="lab-planner-card-meta mb-2 pr-5 text-tertiary">
                       {item.issue_id ? (
                         <span className="flex items-center gap-1">
@@ -357,14 +370,14 @@ export const LabPlannerBoard = observer(function LabPlannerBoard({
                       {item.issue_id ? (
                         <a
                           href={
-                            item.bounty_id && item.can_edit_issue === false
+                            item.bounty_id && !labCanOpenProjectIssue(item)
                               ? `/${store.slug}/lab/bounties?bounty_id=${encodeURIComponent(item.bounty_id)}`
                               : `/${store.slug}/projects/${item.project_id}/issues/${item.issue_id}`
                           }
                           className="hover:text-accent-primary"
                           onClick={(event) => {
                             if (
-                              item.can_edit_issue !== false &&
+                              labCanOpenProjectIssue(item) &&
                               openProjectIssue &&
                               item.project_id &&
                               !event.ctrlKey &&
@@ -376,6 +389,9 @@ export const LabPlannerBoard = observer(function LabPlannerBoard({
                                 project_id: item.project_id,
                                 archived: item.archived,
                               });
+                            } else if (item.bounty_id && !event.ctrlKey && !event.metaKey) {
+                              event.preventDefault();
+                              setViewing(item);
                             }
                           }}
                         >
@@ -666,16 +682,39 @@ export const LabPlannerBoard = observer(function LabPlannerBoard({
           </LabField>
         </LabDialog>
       )}
-      {viewing && (
-        <LabItemDetails
+      {viewing && viewing.bounty_id && !labCanOpenProjectIssue(viewing) ? (
+        <LabTaskOverview
+          key={viewing.id}
+          store={store}
           item={viewing}
-          folderName={planner.folders.find((folder) => folder.id === viewing.folder_id)?.name}
           onClose={() => setViewing(undefined)}
           onSchedule={() => {
             setViewing(undefined);
             schedule(viewing);
           }}
         />
+      ) : (
+        viewing && (
+          <LabItemDetails
+            key={viewing.id}
+            item={viewing}
+            folderName={planner.folders.find((folder) => folder.id === viewing.folder_id)?.name}
+            onClose={() => setViewing(undefined)}
+            onSchedule={() => {
+              setViewing(undefined);
+              schedule(viewing);
+            }}
+            onEdit={
+              !viewing.issue_id
+                ? () => {
+                    setViewing(undefined);
+                    setEditing(viewing);
+                    setDialog("item");
+                  }
+                : undefined
+            }
+          />
+        )
       )}
       {dialog === "mapping" && (
         <LabDialog

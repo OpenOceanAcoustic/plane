@@ -67,7 +67,10 @@ def item_data(
         bounty = (
             bounties_by_issue.get(issue.id)
             if bounties_by_issue is not None
-            else Bounty.objects.select_related("stage__workspace", "issue__project").filter(issue=issue).first()
+            else Bounty.objects.select_related("stage__workspace", "issue__project")
+            .filter(issue=issue)
+            .exclude(status="deleted")
+            .first()
         )
         granted = (
             issue.id in granted_issue_ids
@@ -104,6 +107,7 @@ def item_data(
                 }
             ),
             "id": str(item.id),
+            "can_open_issue": readable,
             "issue_id": str(issue.id),
             "project_id": str(issue.project_id),
             "project_name": issue.project.name,
@@ -132,6 +136,7 @@ def item_data(
         "priority": None,
         "target_date": None,
         "can_edit_issue": True,
+        "can_open_issue": False,
     }
 
 
@@ -178,7 +183,7 @@ def planning_projection_context(user, workspace, items, *, readable_issue_ids=No
     }
     bounties_by_issue = {
         row.issue_id: row
-        for row in Bounty.objects.filter(issue_id__in=issues).select_related(
+        for row in Bounty.objects.filter(issue_id__in=issues).exclude(status="deleted").select_related(
             "stage__workspace",
             "issue__project",
         )
@@ -192,6 +197,7 @@ def planning_projection_context(user, workspace, items, *, readable_issue_ids=No
             allocation__bounty__issue__deleted_at__isnull=True,
             allocation__bounty__issue__is_draft=False,
         )
+        .exclude(allocation__bounty__status="deleted")
         .filter(Q(requires_project_membership=False) | Q(allocation__bounty__issue_id__in=readable_issue_ids))
         .values_list("allocation__bounty__issue_id", flat=True)
     )
@@ -452,7 +458,9 @@ def calendar_events(user, workspace, start, end, *, team=False, user_id=None, pr
             )
             if details.get("issue_id"):
                 event.update({"issue_id": details["issue_id"], "project_id": details["project_id"]})
-            for key in ("bounty_id", "bounty_status", "bounty_detail_url", "can_edit_issue", "issue_key"):
+            for key in (
+                "bounty_id", "bounty_status", "bounty_detail_url", "can_edit_issue", "can_open_issue", "issue_key"
+            ):
                 if key in details:
                     event[key] = details[key]
         if event["editable"]:

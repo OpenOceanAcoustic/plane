@@ -6,6 +6,7 @@
 import { useState } from "react";
 import { observer } from "mobx-react";
 import useSWR from "swr";
+import { v4 as uuidv4 } from "uuid";
 import { Background, Controls, Handle, MiniMap, Position, ReactFlow } from "@xyflow/react";
 import type { Node, NodeProps } from "@xyflow/react";
 // oxlint-disable-next-line import/no-unassigned-import -- React Flow requires its local component stylesheet.
@@ -124,7 +125,7 @@ export const LabBountyWorkflow = observer(function LabBountyWorkflow({
                 onClick={() => {
                   setChosen(action);
                   setResult("pass");
-                  setRequestKey(crypto.randomUUID());
+                  setRequestKey(uuidv4());
                 }}
               >
                 {action.label}

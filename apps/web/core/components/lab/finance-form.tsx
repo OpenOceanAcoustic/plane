@@ -1,5 +1,6 @@
 /** Copyright (c) 2026 OpenOceanAcoustic and contributors. SPDX-License-Identifier: AGPL-3.0-only */
 import { useState } from "react";
+import { v4 as uuidv4 } from "uuid";
 import type { LabFinanceOverview } from "@plane/types";
 import type { LabStore } from "@plane/shared-state";
 import { Button, LabDialog, LabField, labInputClass } from "@plane/ui";
@@ -90,11 +91,11 @@ export function LabFinanceActionDialog({
   onClose: () => void;
   onSaved: () => Promise<void>;
 }) {
-  const [requestKey] = useState(() => crypto.randomUUID());
+  const [requestKey] = useState(() => uuidv4());
   const [upgraded, setUpgraded] = useState(false);
-  const [purposes, setPurposes] = useState([crypto.randomUUID()]);
-  const [shares, setShares] = useState([crypto.randomUUID()]);
-  const [history, setHistory] = useState([crypto.randomUUID()]);
+  const [purposes, setPurposes] = useState(() => [uuidv4()]);
+  const [shares, setShares] = useState(() => [uuidv4()]);
+  const [history, setHistory] = useState(() => [uuidv4()]);
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
   const [allocationSource, setAllocationSource] = useState(chosen.body?.from_account_id ?? "");
@@ -572,11 +573,7 @@ export function LabFinanceActionDialog({
                 </Button>
               </div>
             ))}
-            <Button
-              size="sm"
-              variant="neutral-primary"
-              onClick={() => setPurposes((rows) => [...rows, crypto.randomUUID()])}
-            >
+            <Button size="sm" variant="neutral-primary" onClick={() => setPurposes((rows) => [...rows, uuidv4()])}>
               添加用途条目
             </Button>
           </fieldset>
@@ -635,11 +632,7 @@ export function LabFinanceActionDialog({
                 </Button>
               </div>
             ))}
-            <Button
-              size="sm"
-              variant="neutral-primary"
-              onClick={() => setShares((rows) => [...rows, crypto.randomUUID()])}
-            >
+            <Button size="sm" variant="neutral-primary" onClick={() => setShares((rows) => [...rows, uuidv4()])}>
               添加成员参数
             </Button>
           </fieldset>
@@ -697,11 +690,7 @@ export function LabFinanceActionDialog({
                   </Button>
                 </div>
               ))}
-              <Button
-                size="sm"
-                variant="neutral-primary"
-                onClick={() => setHistory((rows) => [...rows, crypto.randomUUID()])}
-              >
+              <Button size="sm" variant="neutral-primary" onClick={() => setHistory((rows) => [...rows, uuidv4()])}>
                 添加历史资格
               </Button>
             </fieldset>

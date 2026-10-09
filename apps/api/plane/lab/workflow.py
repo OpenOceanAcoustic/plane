@@ -27,6 +27,7 @@ NODES = (
     ("rejected", "不通过", 750, 260),
     ("cancelled", "取消并释放预算", 250, 390),
     ("reversal", "贡献更正与冲正", 500, 390),
+    ("deleted", "删除悬赏", 750, 390),
 )
 EDGES = (
     ("publication", "publication_review"),
@@ -52,6 +53,9 @@ EDGES = (
     ("active", "cancelled"),
     ("claim", "cancelled"),
     ("reversal", "acceptance"),
+    ("publication", "deleted"),
+    ("active", "deleted"),
+    ("done", "deleted"),
 )
 AUDIT_LABELS = {
     "bounty.published": "发布团队任务",
@@ -64,6 +68,7 @@ AUDIT_LABELS = {
     "bounty.accepted": "验收记账",
     "bounty.acceptance_review": "重大验收复核",
     "bounty.cancelled": "取消悬赏",
+    "bounty.deleted": "删除悬赏",
     "bounty.reopened": "重新打开验收",
     "ledger.reversed": "贡献冲正",
 }
@@ -78,6 +83,7 @@ AUDIT_NODES = {
     "bounty.accepted": "acceptance",
     "bounty.acceptance_review": "major_review",
     "bounty.cancelled": "cancelled",
+    "bounty.deleted": "deleted",
     "bounty.reopened": "acceptance",
     "ledger.reversed": "reversal",
 }
@@ -148,7 +154,7 @@ def actions_for(bounty, user, allocations, ledger):
         pending = next((row for row in bounty.acceptances.all() if not row.approved_at), None)
         if pending:
             add("acceptance-review", "复核验收", "major_review", {"acceptance_id": str(pending.id)})
-    if lead and bounty.status not in ("done", "cancelled", "rejected"):
+    if lead and bounty.status not in ("done", "cancelled", "rejected", "deleted"):
         add("cancel", "取消并释放未授予预算", "cancelled")
     if lead and bounty.status in ("done", "active", "partial", "rework"):
         if any(row.closed and bounties.total(row.ledger.all(), "delta") < row.planned for row in allocations):
@@ -185,6 +191,7 @@ class BountyWorkflowView(LabView):
             "rework": "rework",
             "rejected": "rejected",
             "cancelled": "cancelled",
+            "deleted": "deleted",
         }.get(bounty.status, "claim")
         if bounty.status == "open" and any(row.approved for row in allocations):
             current = "confirm"

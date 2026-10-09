@@ -5,6 +5,19 @@
 
 export type LabStatus = "todo" | "active" | "review" | "done";
 export type LabAcceptanceResult = "pass" | "partial" | "rework" | "reject" | "negative";
+export type LabLedgerEntry = {
+  id: string;
+  created_at: string;
+  delta: string;
+  bounty_id: string;
+  allocation_id: string;
+  task: { id?: string; title: string; project: string; project_id?: string };
+  participant: { id?: string; name: string };
+  actor: string;
+  reason: string;
+  reverses: string | null;
+  can_reverse: boolean;
+};
 export type LabBountyStatus =
   | "draft"
   | "publication_review"
@@ -16,7 +29,8 @@ export type LabBountyStatus =
   | "rework"
   | "rejected"
   | "done"
-  | "cancelled";
+  | "cancelled"
+  | "deleted";
 export type LabFolder = { id: string; name: string; position: number };
 export type LabCategory = { id: string; name: string; color: string; position: number };
 export type LabItemSchedule = {
@@ -135,6 +149,7 @@ export type LabBounty = {
   project_id: string;
   project: string;
   issue_id: string | null;
+  issue_id_snapshot?: string;
   title: string;
   deliverable: string;
   criteria: string;
@@ -160,6 +175,7 @@ export type LabBounty = {
   category_name?: string | null;
   can_edit_issue?: boolean;
   can_claim?: boolean;
+  can_delete?: boolean;
   can_confirm?: boolean;
   can_submit?: boolean;
   can_manage_materials?: boolean;

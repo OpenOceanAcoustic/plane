@@ -1,6 +1,7 @@
 /** Copyright (c) 2026 OpenOceanAcoustic and contributors. SPDX-License-Identifier: AGPL-3.0-only */
 import { useEffect, useState } from "react";
 import useSWR from "swr";
+import { v4 as uuidv4 } from "uuid";
 import type { LabFinanceOverview, LabFormulaParameter, LabRewardFormula } from "@plane/types";
 import type { LabStore } from "@plane/shared-state";
 import { Button, LabDialog, LabField, labInputClass } from "@plane/ui";
@@ -39,7 +40,7 @@ export function LabFormulaEditor({
           unit: parameter.unit,
           source: parameter.source,
           default: parameter.default,
-          id: crypto.randomUUID(),
+          id: uuidv4(),
         }))
       );
     }
@@ -191,10 +192,7 @@ export function LabFormulaEditor({
           size="sm"
           variant="neutral-primary"
           onClick={() =>
-            setParameters((rows) => [
-              ...rows,
-              { id: crypto.randomUUID(), name: "", scope: "task", unit: "", source: "" },
-            ])
+            setParameters((rows) => [...rows, { id: uuidv4(), name: "", scope: "task", unit: "", source: "" }])
           }
         >
           添加数值参数

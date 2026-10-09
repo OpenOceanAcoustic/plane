@@ -21,7 +21,13 @@ def has_project_access(user, bounty):
 
 
 def task_granted(user, bounty):
-    if not bounty.issue_id or bounty.issue.deleted_at or bounty.issue.is_draft or not user.is_active:
+    if (
+        bounty.status == "deleted"
+        or not bounty.issue_id
+        or bounty.issue.deleted_at
+        or bounty.issue.is_draft
+        or not user.is_active
+    ):
         return False
     grant = BountyTaskAccess.objects.filter(
         allocation__bounty=bounty, allocation__user=user, allocation__approved=True, revoked_at__isnull=True
@@ -32,7 +38,7 @@ def task_granted(user, bounty):
 def publicly_visible(bounty):
     return bool(
         bounty.published_at
-        and bounty.status not in ("draft", "publication_review")
+        and bounty.status not in ("draft", "publication_review", "deleted")
         and bounty.issue_id
         and not bounty.issue.deleted_at
         and not bounty.issue.is_draft
@@ -61,6 +67,7 @@ def accessible_bounties(user, workspace):
     ).values("allocation__bounty_id")
     return (
         Bounty.objects.filter(stage__workspace=workspace)
+        .exclude(status="deleted")
         .filter(
             Q(stage__project_id__in=projects)
             | Q(id__in=grants)

@@ -6,6 +6,8 @@
 import { useEffect, useState } from "react";
 import { observer } from "mobx-react";
 import { useSearchParams } from "react-router";
+import { v4 as uuidv4 } from "uuid";
+import { useSWRConfig } from "swr";
 import { Button, LabBountyBadge, labBountyOutline } from "@plane/ui";
 import type { LabBounty, LabTask } from "@plane/types";
 import type { LabStore } from "@plane/shared-state";
@@ -29,6 +31,7 @@ const labels: Record<string, string> = {
 };
 
 export const LabMarket = observer(function LabMarket({ store }: { store: LabStore }) {
+  const { mutate } = useSWRConfig();
   const [searchParams, setSearchParams] = useSearchParams();
   const detailId = searchParams.get("bounty_id") ?? searchParams.get("bounty") ?? "";
   const [view, setView] = useState<"open" | "mine" | "all">("open");
@@ -47,6 +50,7 @@ export const LabMarket = observer(function LabMarket({ store }: { store: LabStor
     action: string;
     extra: Record<string, string>;
   }>();
+  const [deleting, setDeleting] = useState<LabBounty>();
   useEffect(() => {
     void store.execute(store.loadMarket);
   }, [store]);
@@ -372,6 +376,16 @@ export const LabMarket = observer(function LabMarket({ store }: { store: LabStor
                       公开摘要设置
                     </Button>
                   )}
+                  {(bounty.can_delete ?? bounty.is_lead) && bounty.status !== "deleted" && (
+                    <Button
+                      size="sm"
+                      variant="neutral-primary"
+                      disabled={store.busy}
+                      onClick={() => setDeleting(bounty)}
+                    >
+                      删除悬赏
+                    </Button>
+                  )}
                   <Button
                     size="sm"
                     variant="neutral-primary"
@@ -426,7 +440,7 @@ export const LabMarket = observer(function LabMarket({ store }: { store: LabStor
                       onClick={() => {
                         setChosen(bounty);
                         setResult("pass");
-                        setAcceptanceKey(crypto.randomUUID());
+                        setAcceptanceKey(uuidv4());
                         setMode("accept");
                       }}
                     >
@@ -510,6 +524,41 @@ export const LabMarket = observer(function LabMarket({ store }: { store: LabStor
               {store.error}
             </p>
           )}
+        </LabDialog>
+      )}
+      {deleting && (
+        <LabDialog
+          title="删除悬赏"
+          submitLabel="删除"
+          busy={store.busy}
+          error={store.error}
+          onClose={() => setDeleting(undefined)}
+          onSubmit={(form) =>
+            store.execute(async () => {
+              await store.request(`bounties/${deleting.id}/detail/`, "DELETE", {
+                reason: form.get("reason"),
+              });
+              setDeleting(undefined);
+              setSearchParams((current) => {
+                const next = new URLSearchParams(current);
+                next.delete("bounty_id");
+                next.delete("bounty");
+                return next;
+              });
+              await store.loadMarket();
+              await store.loadPlanner();
+              await mutate(
+                (key) => Array.isArray(key) && key[0] === "lab-task-card-metadata" && key[1] === store.slug,
+                undefined,
+                { revalidate: true }
+              );
+            })
+          }
+        >
+          <p className="text-14 font-medium">{deleting.title}</p>
+          <LabField label="删除原因">
+            <textarea name="reason" className={labInputClass} required rows={3} />
+          </LabField>
         </LabDialog>
       )}
       {mode === "stage" && (

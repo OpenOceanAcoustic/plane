@@ -9,7 +9,7 @@ from io import StringIO
 from datetime import timedelta
 
 from django.db import transaction
-from django.db.models import Q
+from django.db.models import Exists, F, OuterRef, Q
 from django.http import HttpResponse
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
@@ -17,7 +17,7 @@ from django.utils.dateparse import parse_datetime
 from rest_framework.exceptions import APIException, NotFound, PermissionDenied, ValidationError
 from rest_framework.response import Response
 
-from plane.db.models import Project, WorkspaceMember
+from plane.db.models import Project, ProjectMember, WorkspaceMember
 from . import bounties
 from .auth import audit
 from .models import Bounty, Ledger, PersonalCategory, PersonalItem, Stage, WIPException, WorkspacePolicy
@@ -84,12 +84,14 @@ def bounty_data(row, user, reward_context=None):
             and not mine.closed
             and not public
         ),
-        "can_manage_materials": lead,
+        "can_manage_materials": lead and row.status != "deleted",
+        "can_delete": lead and row.status != "deleted",
         "id": str(row.id),
         "stage_id": str(row.stage_id),
         "project_id": str(row.stage.project_id_snapshot),
         "project": row.stage.project_name,
         "issue_id": str(row.issue_id) if row.issue_id else None,
+        "issue_id_snapshot": str(row.issue_id_snapshot),
         "title": row.title,
         "deliverable": publication.deliverable if public and publication else "" if public else row.deliverable,
         "criteria": publication.criteria if public and publication else "" if public else row.criteria,
@@ -200,6 +202,8 @@ class BountyView(LabView):
 class BountyActionView(LabView):
     def post(self, request, slug, pk, action):
         row = bounty_access(request.user, self.workspace, pk)
+        if row.status == "deleted":
+            raise ValidationError("悬赏已删除")
         data = request.data
         result = None
         if action == "claim":
@@ -232,6 +236,11 @@ class BountyActionView(LabView):
 class BountyDetailView(LabView):
     def get(self, request, slug, pk):
         return Response(bounty_data(bounty_access(request.user, self.workspace, pk), request.user))
+
+    def delete(self, request, slug, pk):
+        row = bounty_access(request.user, self.workspace, pk)
+        bounties.delete(request.user, row.id, request.data.get("reason", ""))
+        return Response(status=204)
 
 
 class TaskCardMetadataView(LabView):
@@ -276,7 +285,10 @@ class TaskCardMetadataView(LabView):
             ).select_related("category")
         }
         bounties_by_issue = {
-            row.issue_id: row for row in Bounty.objects.filter(issue_id__in=ids).select_related("stage__workspace")
+            row.issue_id: row
+            for row in Bounty.objects.filter(issue_id__in=ids)
+            .exclude(status="deleted")
+            .select_related("stage__workspace")
         }
         category = PersonalCategory.objects.filter(
             workspace=self.workspace, user=request.user, legacy_key="project"
@@ -320,8 +332,22 @@ class LedgerView(LabView):
         )
         if self.membership.role == 20:
             scope |= Q(bounty__stage__project__isnull=True) | Q(bounty__stage__project__deleted_at__isnull=False)
-        rows = Ledger.objects.filter(scope, bounty__stage__workspace_id_snapshot=self.workspace.id).order_by(
-            "created_at"
+        lead_projects = set(
+            ProjectMember.objects.filter(
+                workspace=self.workspace,
+                member=request.user,
+                is_active=True,
+                role__gte=15,
+                project__project_lead=request.user,
+            ).values_list("project_id", flat=True)
+        )
+        rows = (
+            Ledger.objects.filter(scope, bounty__stage__workspace_id_snapshot=self.workspace.id)
+            .annotate(
+                permission_project_id=F("bounty__stage__project_id"),
+                already_reversed=Exists(Ledger.objects.filter(reverses_id=OuterRef("pk"))),
+            )
+            .order_by("created_at")
         )
         if request.query_params.get("project_id"):
             rows = rows.filter(bounty__stage__project_id_snapshot=request.query_params["project_id"])
@@ -337,6 +363,9 @@ class LedgerView(LabView):
                 "actor": row.actor_name,
                 "reason": row.reason,
                 "reverses": str(row.reverses_id) if row.reverses_id else None,
+                "can_reverse": row.delta > 0
+                and row.permission_project_id in lead_projects
+                and not row.already_reversed,
             }
             for row in rows
         ]

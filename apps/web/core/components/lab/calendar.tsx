@@ -29,8 +29,9 @@ import { calendarInstant, localInput, SLOT_MS, weekDays } from "./calendar-time"
 import { useCalendarViewportHeight } from "./calendar-size";
 import { calendarFolderColors, useCalendarFolders } from "./calendar-folders";
 import { calendarColor, calendarContrast, calendarLegend } from "./calendar-colors";
-import { LabItemDetails } from "./item-details";
+import { LabItemDetails, labCanOpenProjectIssue } from "./item-details";
 import type { LabOpenProjectIssue } from "./item-details";
+import { LabTaskOverview } from "./task-overview";
 // oxlint-disable-next-line import/no-unassigned-import -- bundled FullCalendar layout styles
 import "@fullcalendar/react/skeleton.css";
 // oxlint-disable-next-line import/no-unassigned-import -- local theme, no CDN
@@ -196,9 +197,7 @@ export const LabCalendar = observer(function LabCalendar({
     setConfirmDelete(false);
   };
   const showItem = (item: LabItem, block?: LabEvent) => {
-    if (item.bounty_id && item.can_edit_issue === false)
-      window.location.assign(`/${store.slug}/lab/bounties?bounty_id=${encodeURIComponent(item.bounty_id)}`);
-    else if (item.issue_id && item.project_id && openProjectIssue)
+    if (labCanOpenProjectIssue(item) && openProjectIssue)
       openProjectIssue({ issue_id: item.issue_id, project_id: item.project_id, archived: item.archived });
     else setViewing({ item, block });
   };
@@ -695,19 +694,34 @@ export const LabCalendar = observer(function LabCalendar({
           </ul>
         )}
       </div>
-      {viewing && (
-        <LabItemDetails
+      {viewing && viewing.item.bounty_id && !labCanOpenProjectIssue(viewing.item) ? (
+        <LabTaskOverview
+          key={viewing.item.id}
+          store={store}
           item={viewing.item}
-          block={viewing.block}
-          folderName={folders.find((folder) => folder.id === viewing.item.folder_id)?.name}
           onClose={() => setViewing(undefined)}
           onSchedule={() => {
             setViewing(undefined);
             openNew(undefined, undefined, viewing.item.id);
           }}
           onAdjust={viewing.block?.editable ? () => adjust(viewing.block!) : undefined}
-          busy={store.busy}
         />
+      ) : (
+        viewing && (
+          <LabItemDetails
+            key={viewing.item.id}
+            item={viewing.item}
+            block={viewing.block}
+            folderName={folders.find((folder) => folder.id === viewing.item.folder_id)?.name}
+            onClose={() => setViewing(undefined)}
+            onSchedule={() => {
+              setViewing(undefined);
+              openNew(undefined, undefined, viewing.item.id);
+            }}
+            onAdjust={viewing.block?.editable ? () => adjust(viewing.block!) : undefined}
+            busy={store.busy}
+          />
+        )
       )}
       {choosingFolders && (
         <LabDialog

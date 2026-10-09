@@ -2,7 +2,7 @@
 import { createServer } from "node:http";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { createRequire } from "node:module";
-import { tmpdir } from "node:os";
+import { networkInterfaces, tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import type { AddressInfo } from "node:net";
 import { expect, test } from "@playwright/test";
@@ -141,12 +141,13 @@ function overview(): LabFinanceOverview {
 }
 let server: ReturnType<typeof createServer>;
 let origin = "";
+let httpOrigin = "";
 let directory = "";
 test.beforeAll(async () => {
   directory = await mkdtemp(join(tmpdir(), "lab-finance-browser-"));
   const require = createRequire(resolve("apps/web/package.json"));
   const { build } = require("esbuild") as typeof import("esbuild");
-  const source = `import React from 'react'; import { createRoot } from 'react-dom/client'; import { MemoryRouter } from 'react-router'; import { observer } from 'mobx-react'; import { LabStore } from '${resolve("packages/shared-state/src/lab.store.ts")}'; import { LabFinance } from '${resolve("apps/web/core/components/lab/finance.tsx")}'; import { LabMarket } from '${resolve("apps/web/core/components/lab/market.tsx")}'; import { LabPlannerBoard } from '${resolve("apps/web/core/components/lab/planner.tsx")}'; const config = window.labConfig; const store = new LabStore('', 'test'); store.planner = config.planner; const Count = observer(() => <output aria-label="规划事项数量">{store.planner?.items.length}</output>); const view = config.view; createRoot(document.getElementById('root')).render(<MemoryRouter initialEntries={[config.route || '/test/lab/bounties']}><Count />{view === 'market' ? <LabMarket store={store} /> : view === 'planner' ? <LabPlannerBoard store={store} schedule={() => {}} /> : <LabFinance store={store} />}</MemoryRouter>);`;
+  const source = `import React from 'react'; import { createRoot } from 'react-dom/client'; import { MemoryRouter } from 'react-router'; import { observer } from 'mobx-react'; import { LabStore } from '${resolve("packages/shared-state/src/lab.store.ts")}'; import { LabFinance } from '${resolve("apps/web/core/components/lab/finance.tsx")}'; import { LabMarket } from '${resolve("apps/web/core/components/lab/market.tsx")}'; import { LabPlannerBoard } from '${resolve("apps/web/core/components/lab/planner.tsx")}'; import { LabLedger } from '${resolve("apps/web/core/components/lab/ledger.tsx")}'; import { LabBountyWorkflow } from '${resolve("apps/web/core/components/lab/workflow.tsx")}'; const config = window.labConfig; const store = new LabStore('', 'test'); store.planner = config.planner; store.bounties = config.bounties; const Count = observer(() => <output aria-label="规划事项数量">{store.planner?.items.length}</output>); const view = config.view; createRoot(document.getElementById('root')).render(<MemoryRouter initialEntries={[config.route || '/test/lab/bounties']}><Count />{view === 'market' ? <LabMarket store={store} /> : view === 'planner' ? <LabPlannerBoard store={store} schedule={() => {}} /> : view === 'ledger' ? <LabLedger store={store} projectId="" /> : view === 'workflow' ? <LabBountyWorkflow store={store} bounty={config.bounties[0]} /> : <LabFinance store={store} />}</MemoryRouter>);`;
   await build({
     stdin: {
       contents: source,
@@ -177,8 +178,15 @@ test.beforeAll(async () => {
       );
     }
   });
-  await new Promise<void>((resolveListening) => server.listen(0, "127.0.0.1", resolveListening));
+  await new Promise<void>((resolveListening) => server.listen(0, "0.0.0.0", resolveListening));
   origin = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+  const httpHost =
+    process.env.LAB_BROWSER_HTTP_HOST ??
+    Object.values(networkInterfaces())
+      .flat()
+      .find((address) => address && address.family === "IPv4" && !address.internal)?.address;
+  if (!httpHost) throw new Error("An ordinary HTTP host is required for the finance browser regression tests");
+  httpOrigin = `http://${httpHost}:${(server.address() as AddressInfo).port}`;
 });
 test.afterAll(async () => {
   if (server) await new Promise<void>((resolveClosed) => server.close(() => resolveClosed()));
@@ -189,18 +197,20 @@ async function mount(
   page: import("@playwright/test").Page,
   view: string,
   route = "/test/lab/bounties",
-  customPlanner = planner
+  customPlanner = planner,
+  targetOrigin = origin,
+  customBounties: LabBounty[] = [bounty]
 ) {
   await page.addInitScript(
     (config) => {
       Object.assign(window, { labConfig: config });
     },
-    { planner: customPlanner, view, route }
+    { planner: customPlanner, view, route, bounties: customBounties }
   );
   page.on("pageerror", (error) => {
     console.error("component browser error:", error.message);
   });
-  await page.goto(origin);
+  await page.goto(targetOrigin);
 }
 async function common(page: import("@playwright/test").Page, bounties: LabBounty[] = [bounty]) {
   await page.route("**/auth/get-csrf-token/", (route) => route.fulfill({ json: { csrf_token: "test" } }));
@@ -226,6 +236,374 @@ async function common(page: import("@playwright/test").Page, bounties: LabBounty
     route.fulfill({ json: bounties.find((row) => route.request().url().includes(row.id)) ?? bounty })
   );
 }
+
+/* oxlint-disable no-await-in-loop -- The actions open and close the same dialog in sequence. */
+test("ordinary HTTP finance and project workflow actions open their business forms without crashing", async ({
+  page,
+}) => {
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  await common(page);
+  await page.route("**/lab/finance/overview/**", (route) => route.fulfill({ json: overview() }));
+  const flow = {
+    scope: "finance",
+    project_id: projectId,
+    title: "声学实验资金流程",
+    active_node_ids: ["award"],
+    nodes: [{ id: "award", label: "核准阶段金额", x: 0, y: 0, state: "current" }],
+    edges: [],
+    history: [],
+    actions: (
+      [
+        ["stage", "冻结阶段奖励预算"],
+        ["receipt", "登记真实到账"],
+        ["settlement", "核准最终执行奖励"],
+        ["commit", "安排现金支付"],
+        ["payment", "登记线下支付"],
+        ["risk-release", "释放原批次风险金"],
+      ] as const
+    ).map(([action, label]) => ({
+      id: action,
+      action,
+      label,
+      node_id: "award",
+      body: { stage_id: stageId },
+      enabled: true,
+      reason: "",
+    })),
+  };
+  await page.route("**/lab/finance/workflow/**", (route) => route.fulfill({ json: flow }));
+  await page.route("**/lab/projects/*/workflow/", (route) => route.fulfill({ json: { ...flow, scope: "project" } }));
+  await mount(page, "finance", `/test/lab/finance?project_id=${projectId}`, planner, httpOrigin);
+  expect(await page.evaluate(() => window.isSecureContext)).toBe(false);
+  await page.getByRole("button", { name: "资金与项目流程" }).click();
+  for (const scope of ["资金流程图", "项目流程图"]) {
+    const region = page.getByRole("region", { name: scope, exact: true });
+    for (const action of flow.actions) {
+      await region.getByRole("button", { name: action.label, exact: true }).click();
+      const dialog = page.getByRole("dialog");
+      await expect.poll(async () => errors.length + (await dialog.count())).toBeGreaterThan(0);
+      expect(errors).toEqual([]);
+      await expect(dialog).toHaveAccessibleName(action.label);
+      if (["receipt", "settlement"].includes(action.action))
+        await expect(dialog.getByLabel("阶段", { exact: true })).toHaveValue(stageId);
+      await dialog.getByRole("button", { name: "取消", exact: true }).click();
+      await expect(dialog).toHaveCount(0);
+    }
+  }
+});
+/* oxlint-enable no-await-in-loop */
+
+test("ordinary HTTP custom numeric parameter can be added and edited without crashing", async ({ page }) => {
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  await common(page);
+  await page.route("**/lab/finance/overview/**", (route) => route.fulfill({ json: overview() }));
+  await page.route("**/lab/finance/formulas/*/", (route) =>
+    route.fulfill({ json: { templates: [], versions: [formula] } })
+  );
+  await mount(page, "finance", `/test/lab/finance?project_id=${projectId}`, planner, httpOrigin);
+  expect(await page.evaluate(() => window.isSecureContext)).toBe(false);
+  await page.getByRole("button", { name: "项目奖励公式", exact: true }).click();
+  const dialog = page.getByRole("dialog");
+  await dialog.getByRole("button", { name: "添加数值参数" }).click();
+  const parameter = dialog.getByLabel("参数名（英文字母／数字／下划线）");
+  await expect.poll(async () => errors.length + (await parameter.count())).toBeGreaterThan(0);
+  expect(errors).toEqual([]);
+  await parameter.fill("performance");
+  await dialog.getByLabel("单位", { exact: true }).fill("倍");
+  await dialog.getByLabel("来源", { exact: true }).fill("阶段绩效核准");
+  await expect(parameter).toHaveValue("performance");
+});
+
+test("ordinary HTTP saved custom formula parameters load, keep their metadata and save a new version", async ({
+  page,
+}) => {
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  await common(page);
+  await page.route("**/lab/finance/overview/**", (route) => route.fulfill({ json: overview() }));
+  const custom = {
+    ...formula,
+    parameters: [{ name: "performance", scope: "task", unit: "倍", source: "阶段绩效核准", default: "1.25" }],
+  };
+  let saved: Record<string, unknown> | undefined;
+  await page.route("**/lab/finance/formulas/*/", (route) => {
+    if (route.request().method() === "POST") {
+      saved = route.request().postDataJSON() as Record<string, unknown>;
+      return route.fulfill({ json: { ...custom, version: 3 } });
+    }
+    return route.fulfill({ json: { templates: [], versions: [custom] } });
+  });
+  await mount(page, "finance", `/test/lab/finance?project_id=${projectId}`, planner, httpOrigin);
+  expect(await page.evaluate(() => window.isSecureContext)).toBe(false);
+  await page.getByRole("button", { name: "项目奖励公式", exact: true }).click();
+  const dialog = page.getByRole("dialog");
+  await expect(dialog.getByLabel("参数名（英文字母／数字／下划线）")).toHaveValue("performance");
+  await expect(dialog.getByLabel("默认数值（可选）")).toHaveValue("1.25");
+  await dialog.getByLabel("默认数值（可选）").fill("1.5");
+  await dialog.getByLabel("新版本原因").fill("阶段绩效系数修订");
+  await dialog.getByRole("button", { name: "保存新公式版本" }).click();
+  await expect(dialog).toHaveCount(0);
+  expect(saved?.parameters).toEqual([
+    { name: "performance", scope: "task", unit: "倍", source: "阶段绩效核准", default: "1.5" },
+  ]);
+  expect(errors).toEqual([]);
+});
+
+/* oxlint-disable no-await-in-loop -- Each action must close its dialog before the next action opens. */
+test("ordinary HTTP direct finance toolbar opens the same business form", async ({ page }) => {
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  await common(page);
+  await page.route("**/lab/finance/overview/**", (route) => route.fulfill({ json: overview() }));
+  await mount(page, "finance", "/test/lab/finance", planner, httpOrigin);
+  expect(await page.evaluate(() => window.isSecureContext)).toBe(false);
+  await page.getByLabel("办理资金事项").selectOption("settlement");
+  await expect.poll(async () => errors.length + (await page.getByRole("dialog").count())).toBeGreaterThan(0);
+  expect(errors).toEqual([]);
+  await expect(page.getByRole("dialog")).toHaveAccessibleName("核准最终执行奖励");
+  await page.getByRole("dialog").getByRole("button", { name: "取消", exact: true }).click();
+  const toolbar = page.getByLabel("办理资金事项");
+  const actions = await toolbar
+    .locator("option")
+    .evaluateAll((options) =>
+      options
+        .map((option) => ({ action: (option as HTMLOptionElement).value, label: option.textContent ?? "" }))
+        .filter((row) => row.action)
+    );
+  for (const action of actions) {
+    await toolbar.selectOption(action.action);
+    await expect(page.getByRole("dialog")).toHaveAccessibleName(action.label);
+    expect(errors).toEqual([]);
+    await page.getByRole("dialog").getByRole("button", { name: "取消", exact: true }).click();
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+  }
+});
+/* oxlint-enable no-await-in-loop */
+
+test("ordinary HTTP published team bounty can be deleted without removing personal planning references", async ({
+  page,
+}) => {
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  const managed = {
+    ...bounty,
+    is_lead: true,
+    access_level: "project" as const,
+    can_manage_materials: true,
+    can_delete: true,
+  };
+  const rows = [managed];
+  const retained: LabPlanner = {
+    ...planner,
+    items: [
+      {
+        id: "retained-planning-item",
+        title: managed.title,
+        status: "todo",
+        kind: "project",
+        public: true,
+        folder_id: null,
+        issue_id: managed.issue_id,
+        project_id: projectId,
+        project_name: managed.project,
+        issue_key: managed.issue_key,
+        priority: null,
+        target_date: null,
+        category_color: "#06b6d4",
+        category_name: "本人自定义",
+        bounty_id: bountyId,
+        schedule: { future_count: 0, next_start: null, next_end: null, week_minutes: 0, total_count: 0 },
+      },
+    ],
+  };
+  await common(page, rows);
+  await page.route("**/lab/planner/", (route) => route.fulfill({ json: retained }));
+  await page.route("**/lab/bounties/*/materials/**", (route) => route.fulfill({ json: { materials: [] } }));
+  let body: Record<string, unknown> | undefined;
+  await page.route("**/lab/bounties/*/detail/", (route) => {
+    if (route.request().method() === "DELETE") {
+      body = route.request().postDataJSON() as Record<string, unknown>;
+      rows.splice(0);
+      retained.items[0]!.bounty_id = null;
+      return route.fulfill({ status: 204 });
+    }
+    return route.fulfill({ json: managed });
+  });
+  await mount(page, "market", `/test/lab/bounties?bounty_id=${managed.id}`, retained, httpOrigin);
+  expect(await page.evaluate(() => window.isSecureContext)).toBe(false);
+  await expect(page.getByLabel("规划事项数量")).toHaveText("1");
+  await expect(page.getByRole("button", { name: `查看悬赏 ${managed.title}`, exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "删除悬赏", exact: true }).click();
+  const dialog = page.getByRole("dialog");
+  await expect(dialog).toHaveAccessibleName("删除悬赏");
+  await dialog.getByLabel("删除原因").fill("测试发布作废");
+  await dialog.getByRole("button", { name: "删除", exact: true }).click();
+  await expect(dialog).toHaveCount(0);
+  expect(body?.reason).toBe("测试发布作废");
+  await expect(page.getByRole("button", { name: `查看悬赏 ${managed.title}`, exact: true })).toHaveCount(0);
+  await expect(page.locator(`#bounty-${bountyId}`)).toHaveCount(0);
+  await expect(page.getByLabel("规划事项数量")).toHaveText("1");
+  expect(retained.items[0]?.category_color).toBe("#06b6d4");
+  expect(errors).toEqual([]);
+});
+
+test("ordinary HTTP task acceptance and workflow actions keep secure random request keys", async ({ page }) => {
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  const reviewed = { ...bounty, status: "review" as const, is_reviewer: true, access_level: "project" as const };
+  await common(page, [reviewed]);
+  await page.route("**/lab/bounties/*/materials/**", (route) => route.fulfill({ json: { materials: [] } }));
+  await mount(page, "market", `/test/lab/bounties?bounty_id=${bountyId}`, planner, httpOrigin);
+  expect(await page.evaluate(() => window.isSecureContext)).toBe(false);
+  await page.getByRole("button", { name: "独立验收", exact: true }).click();
+  await expect(page.getByRole("dialog")).toHaveAccessibleName("独立验收与累计贡献");
+  let acceptance: Record<string, unknown> | undefined;
+  await page.route("**/lab/bounties/*/accept/", (route) => {
+    acceptance = route.request().postDataJSON() as Record<string, unknown>;
+    return route.fulfill({ json: { ok: true } });
+  });
+  await page.getByRole("dialog").getByLabel("验收意见").fill("按约定交付验收通过");
+  await page.getByRole("dialog").getByRole("button", { name: "保存", exact: true }).click();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  expect(acceptance?.request_key).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
+  const cardRequestKey = acceptance?.request_key;
+  const workflow = {
+    current_node: "review",
+    nodes: [{ id: "review", label: "独立验收", x: 0, y: 0, state: "current" }],
+    edges: [],
+    history: [],
+    actions: [
+      {
+        id: "accept",
+        action: "accept",
+        label: "办理独立验收",
+        node_id: "review",
+        enabled: true,
+        reason: "",
+        body: {},
+      },
+    ],
+  };
+  await page.route("**/lab/bounties/*/workflow/", (route) => route.fulfill({ json: workflow }));
+  await mount(page, "workflow", "/test/lab/bounties", planner, httpOrigin, [reviewed]);
+  await page.getByRole("button", { name: "办理独立验收", exact: true }).click();
+  await expect(page.getByRole("dialog")).toHaveAccessibleName("办理独立验收");
+  await page.getByRole("dialog").getByLabel("处理意见").fill("流程节点独立验收通过");
+  await page.getByRole("dialog").getByRole("button", { name: "保存", exact: true }).click();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  expect(acceptance?.request_key).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
+  expect(acceptance?.request_key).not.toBe(cardRequestKey);
+  expect(acceptance?.reason).toBe("流程节点独立验收通过");
+  expect(acceptance?.result).toBe("pass");
+  expect(errors).toEqual([]);
+});
+
+test("ordinary HTTP VC correction opens and preserves the original contribution entry", async ({ page }) => {
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  const managed = { ...bounty, is_lead: true, access_level: "project" as const };
+  await common(page, [managed]);
+  let reversed = false;
+  const original = {
+    id: "entry",
+    created_at: "2026-10-09T08:00:00Z",
+    delta: "20",
+    bounty_id: bountyId,
+    task: { title: bounty.title, project: bounty.project },
+    participant: { name: "成员甲" },
+    actor: "验收人",
+    reason: "验收通过",
+    reverses: null,
+    can_reverse: true,
+  };
+  await page.route("**/lab/ledger/", (route) =>
+    route.fulfill({
+      json: reversed
+        ? [
+            { ...original, can_reverse: false },
+            { ...original, id: "correction", delta: "-20", reason: "修正验收", reverses: "entry", can_reverse: false },
+          ]
+        : [original],
+    })
+  );
+  let body: Record<string, unknown> | undefined;
+  await page.route("**/lab/ledger/entry/reverse/", (route) => {
+    body = route.request().postDataJSON() as Record<string, unknown>;
+    reversed = true;
+    return route.fulfill({ json: { ok: true } });
+  });
+  await mount(page, "ledger", "/test/lab/bounties", planner, httpOrigin, [managed]);
+  expect(await page.evaluate(() => window.isSecureContext)).toBe(false);
+  await page.getByRole("button", { name: "读取账本", exact: true }).click();
+  await page.getByRole("button", { name: "冲正", exact: true }).click();
+  const dialog = page.getByRole("dialog");
+  await expect(dialog).toHaveAccessibleName("贡献冲正");
+  await dialog.getByLabel("更正原因").fill("修正验收");
+  await dialog.getByRole("button", { name: "保存", exact: true }).click();
+  await expect(dialog).toHaveCount(0);
+  expect(body?.request_key).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
+  await expect(page.getByRole("table")).toContainText("验收通过");
+  await expect(page.getByRole("table")).toContainText("修正验收");
+  await expect(page.getByRole("button", { name: "冲正", exact: true })).toHaveCount(0);
+  expect(errors).toEqual([]);
+});
+
+test("ordinary HTTP deleted bounty contribution stays correctable using ledger permission", async ({ page }) => {
+  await common(page, []);
+  const original = {
+    id: "deleted-bounty-entry",
+    created_at: "2026-10-09T08:00:00Z",
+    delta: "20",
+    bounty_id: bountyId,
+    task: { title: bounty.title, project: bounty.project },
+    participant: { name: "成员甲" },
+    actor: "验收人",
+    reason: "删除前已验收贡献",
+    reverses: null,
+    can_reverse: true,
+  };
+  let corrected = false;
+  await page.route("**/lab/ledger/", (route) =>
+    route.fulfill({
+      json: corrected
+        ? [
+            { ...original, can_reverse: false },
+            { ...original, id: "correction", delta: "-20", reverses: original.id, can_reverse: false },
+          ]
+        : [original],
+    })
+  );
+  const bodies: Record<string, unknown>[] = [];
+  await page.route("**/lab/ledger/deleted-bounty-entry/reverse/", (route) => {
+    bodies.push(route.request().postDataJSON() as Record<string, unknown>);
+    if (bodies.length === 1) return route.fulfill({ status: 400, json: { detail: "请补充有效更正依据" } });
+    corrected = true;
+    return route.fulfill({ json: { ok: true } });
+  });
+  await mount(page, "ledger", "/test/lab/bounties", planner, httpOrigin, []);
+  expect(await page.evaluate(() => window.isSecureContext)).toBe(false);
+  await page.getByRole("button", { name: "读取账本", exact: true }).click();
+  await expect(page.getByRole("button", { name: "冲正", exact: true })).toBeVisible({ timeout: 1500 });
+  await page.getByRole("button", { name: "冲正", exact: true }).click();
+  const dialog = page.getByRole("dialog");
+  await dialog.getByLabel("更正原因").fill("更正依据");
+  await dialog.getByRole("button", { name: "保存", exact: true }).click();
+  await expect(dialog.getByRole("alert")).toContainText("补充有效更正依据");
+  await dialog.getByLabel("更正原因").fill("复核记录更正已删除卡片的验收贡献");
+  await dialog.getByRole("button", { name: "保存", exact: true }).click();
+  await expect(dialog).toHaveCount(0);
+  expect(bodies[0]?.request_key).toBe(bodies[1]?.request_key);
+  expect(bodies[1]?.reason).toBe("复核记录更正已删除卡片的验收贡献");
+  await expect(page.getByRole("table")).toContainText("删除前已验收贡献");
+  await expect(page.getByRole("button", { name: "冲正", exact: true })).toHaveCount(0);
+  await page.route("**/lab/ledger/", (route) => route.fulfill({ json: [{ ...original, can_reverse: false }] }));
+  await mount(page, "ledger", "/test/lab/bounties", planner, httpOrigin, [{ ...bounty, is_lead: true }]);
+  await page.getByRole("button", { name: "读取账本", exact: true }).click();
+  await expect(page.getByRole("table")).toContainText("删除前已验收贡献");
+  await expect(page.getByRole("button", { name: "冲正", exact: true })).toHaveCount(0);
+});
 
 test("project formula sample, validation and version save use decimal inputs and distinct expressions", async ({
   page,
@@ -298,7 +676,8 @@ test("final reward can differ from forecast and failed retry preserves idempoten
     });
     return route.fulfill({ json: { ok: true } });
   });
-  await mount(page, "finance");
+  await mount(page, "finance", "/test/lab/finance", planner, httpOrigin);
+  expect(await page.evaluate(() => window.isSecureContext)).toBe(false);
   await page.getByLabel("办理资金事项").selectOption("settlement");
   const dialog = page.getByRole("dialog");
   await dialog.getByLabel("阶段", { exact: true }).selectOption(stageId);
@@ -313,6 +692,7 @@ test("final reward can differ from forecast and failed retry preserves idempoten
   await dialog.getByRole("button", { name: "保存", exact: true }).click();
   await expect(dialog).toHaveCount(0);
   expect(bodies[0]?.request_key).toBe(bodies[1]?.request_key);
+  expect(bodies[1]?.request_key).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
   expect(bodies[1]?.amount).toBe("1800.00");
   await page.getByRole("button", { name: "核准与付款", exact: true }).click();
   const table = page.getByRole("region", { name: "最终核准与预测差异" });
@@ -600,23 +980,36 @@ test("stage budget freezes purpose entries and source-qualified historical VC wi
     body = route.request().postDataJSON() as Record<string, unknown>;
     return route.fulfill({ json: { ok: true } });
   });
-  await mount(page, "finance");
+  await mount(page, "finance", "/test/lab/finance", planner, httpOrigin);
+  expect(await page.evaluate(() => window.isSecureContext)).toBe(false);
   await page.getByLabel("办理资金事项").selectOption("stage");
   const dialog = page.getByRole("dialog");
   await dialog.getByLabel("事前冻结的 VC 阶段 B").selectOption(stageId);
   await dialog.getByLabel("阶段执行奖励预算 E（元）").fill("70000.00");
   await dialog.getByLabel("用途", { exact: true }).fill("样本处理奖励");
   await dialog.getByLabel("用途金额（元）").fill("70000.00");
+  await dialog.getByRole("button", { name: "添加用途条目", exact: true }).click();
+  await expect(dialog.getByLabel("用途", { exact: true })).toHaveCount(2);
+  await dialog.getByRole("button", { name: "删除用途", exact: true }).last().click();
+  await expect(dialog.getByLabel("用途", { exact: true })).toHaveValue("样本处理奖励");
   await dialog.getByLabel("成员", { exact: true }).selectOption(memberId);
   await dialog.getByLabel("计划 VC", { exact: true }).fill("100");
   await dialog.getByLabel("基础份额 b（0–1）").fill("0.1");
   await dialog.getByLabel("职责份额 r（0–1）").fill("0.1");
+  await dialog.getByRole("button", { name: "添加成员参数", exact: true }).click();
+  await expect(dialog.getByLabel("成员", { exact: true })).toHaveCount(2);
+  await dialog.getByRole("button", { name: "删除成员参数", exact: true }).last().click();
+  await expect(dialog.getByLabel("成员", { exact: true })).toHaveValue(memberId);
   await dialog.getByLabel("升级项目，冻结历史孵化资格").check();
   await dialog.getByLabel("历史成员", { exact: true }).selectOption(memberId);
   await dialog.getByLabel("历史有效 VC", { exact: true }).fill("300");
   await dialog.getByLabel("具体资金来源（与到账来源一致）").fill("专项执行到账");
   await dialog.getByLabel("资格形成日期").fill("2025-10-09");
   await dialog.getByLabel("资格依据", { exact: true }).fill("早期孵化验收记录");
+  await dialog.getByRole("button", { name: "添加历史资格", exact: true }).click();
+  await expect(dialog.getByLabel("历史成员", { exact: true })).toHaveCount(2);
+  await dialog.getByRole("button", { name: "删除历史资格", exact: true }).last().click();
+  await expect(dialog.getByLabel("历史成员", { exact: true })).toHaveValue(memberId);
   await dialog.getByLabel("操作／核准依据").fill("事前冻结阶段方案");
   await dialog.getByLabel("凭证或证据引用").fill("孵化验收凭证 H-01");
   await dialog.getByRole("button", { name: "保存", exact: true }).click();

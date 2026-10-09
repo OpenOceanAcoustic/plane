@@ -131,3 +131,39 @@ test("clicking an item shows its complete content before editing the schedule", 
     JSON.stringify({ issue_id: "original-issue", project_id: "original-project", archived: false })
   );
 });
+
+test("personal planning details open as a right-side overview without obscuring the board", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await setup(page);
+  await page.getByRole("button", { name: "文件夹看板", exact: true }).click();
+  const board = page.getByRole("region", { name: "文件夹看板区域", exact: true });
+  await board.getByRole("button", { name: "阅读计划", exact: true }).click();
+  const overview = page.getByRole("dialog", { name: "事项详情", exact: true });
+  await expect(overview).toBeVisible();
+  const bounds = await overview.boundingBox();
+  expect(bounds).not.toBeNull();
+  expect(bounds!.x + bounds!.width).toBeGreaterThanOrEqual(1438);
+  expect(bounds!.y).toBeLessThanOrEqual(60);
+  expect(bounds!.height).toBeGreaterThanOrEqual(900);
+  await expect(board.getByRole("button", { name: "阅读计划", exact: true })).toBeVisible();
+  await expect(overview.getByRole("region", { name: "事项内容", exact: true })).toContainText("完成笔记和练习");
+  await overview.getByRole("button", { name: "展开总览", exact: true }).click();
+  const expanded = await overview.boundingBox();
+  expect(expanded!.width).toBeGreaterThan(bounds!.width);
+  await overview.getByRole("button", { name: "还原总览", exact: true }).click();
+  await page.keyboard.press("Escape");
+  await expect(overview).toHaveCount(0);
+});
+
+test("personal overview fits a narrow screen and leaves scheduling available", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  const pane = await setup(page);
+  await pane.getByRole("button", { name: "查看事项 阅读计划", exact: true }).click();
+  const overview = page.getByRole("dialog", { name: "事项详情", exact: true });
+  await expect(overview).toBeVisible();
+  const bounds = await overview.boundingBox();
+  expect(bounds!.x).toBeGreaterThanOrEqual(0);
+  expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(390);
+  await overview.getByRole("button", { name: "安排时间", exact: true }).click();
+  await expect(page.getByRole("dialog", { name: "安排个人时间", exact: true })).toBeVisible();
+});

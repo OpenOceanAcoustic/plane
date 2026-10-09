@@ -177,7 +177,15 @@ export function StatusColumn({
   );
 }
 
-export function DraggablePlanningCard({ item, children }: { item: LabItem; children: ReactNode }) {
+export function DraggablePlanningCard({
+  item,
+  children,
+  onOpen,
+}: {
+  item: LabItem;
+  children: ReactNode;
+  onOpen?: () => void;
+}) {
   const { attributes, listeners, setNodeRef, setActivatorNodeRef, transform, isDragging } = useDraggable({
     id: `item:${item.id}`,
     data: { type: "item", item },
@@ -185,11 +193,27 @@ export function DraggablePlanningCard({ item, children }: { item: LabItem; child
   return (
     <article
       ref={setNodeRef}
+      tabIndex={onOpen ? 0 : undefined}
+      aria-label={item.title}
       style={{
         transform: CSS.Translate.toString(transform),
         ...(item.bounty_id || item.is_bounty ? labBountyOutline(item.category_color) : {}),
       }}
       className={`lab-planner-card shadow-sm relative rounded-lg border border-subtle bg-surface-1 p-3 ${isDragging ? "z-30 opacity-50" : ""}`}
+      onClick={(event) => {
+        if (
+          !isDragging &&
+          event.target instanceof Element &&
+          !event.target.closest("a,button,input,select,textarea,summary")
+        )
+          onOpen?.();
+      }}
+      onKeyDown={(event) => {
+        if (event.target === event.currentTarget && ["Enter", " "].includes(event.key)) {
+          event.preventDefault();
+          onOpen?.();
+        }
+      }}
     >
       <button
         ref={setActivatorNodeRef}

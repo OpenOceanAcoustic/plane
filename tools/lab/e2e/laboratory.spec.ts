@@ -12,6 +12,7 @@ import { verifyDocumentsWorkflow } from "./documents-workflow";
 import { verifyFieldsAndGantt } from "./fields-gantt";
 import { verifyAnalytics } from "./analytics";
 import { verifyFinance } from "./finance";
+import { verifyPlannerNativePeek } from "./planner-peek";
 
 const project = process.env.LAB_E2E_PROJECT;
 function milestone(label: string): void {
@@ -200,6 +201,8 @@ test("SSH bootstrap, TOTP login, project cover upload, original layouts and pers
     "href",
     `/browser-lab/projects/${fixture.project}/issues/${fixture.issue}`
   );
+  await verifyPlannerNativePeek(page, fixture);
+  milestone("planner native side overview and persisted priority verified");
   const statusUpdated = page.waitForResponse(
     (response) => response.url().endsWith(`/lab/items/${reference.id}/`) && response.request().method() === "PATCH",
     { timeout: 30000 }

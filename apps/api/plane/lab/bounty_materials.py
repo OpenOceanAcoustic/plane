@@ -11,6 +11,7 @@ from rest_framework.response import Response
 from plane.db.models import FileAsset, PageVersion
 from .auth import audit
 from .bounty_access import bounty_access
+from .bounties import locked_bounty
 from .bounty_models import BountyMaterial
 from .documents import accessible_pages, page_access
 from .permissions import require_lead
@@ -65,7 +66,10 @@ class BountyMaterialsView(LabView):
     @transaction.atomic
     def post(self, request, slug, pk):
         bounty = bounty_access(request.user, self.workspace, pk, execution=True)
+        bounty = locked_bounty(bounty.id)
         require_lead(request.user, bounty.stage.project)
+        if bounty.status == "deleted":
+            raise ValidationError("悬赏已删除")
         kind = request.data.get("kind")
         snapshot, version, attachment, attachment_key = {}, None, None, ""
         if kind == "document_version":

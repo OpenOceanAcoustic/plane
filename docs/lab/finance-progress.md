@@ -37,3 +37,19 @@
 内网入口为 `http://192.168.137.90:8080`，十个服务均运行。主应用、管理后台、Space 和实例 API 返回 200，网页及抽查资源与最终构建逐字节一致。真实 Chromium 验证三个用户名／动态码入口正常且无失败资源请求；匿名财务请求返回 401。四个既有数据资金／流程读取视图通过，15 个财务模型的记录数量保持不变。Django 系统检查、迁移漂移检查及真实签名上传／下载均通过。
 
 部署与恢复日志为 `/tmp/ooa-finance-production-backup.log`、`/tmp/ooa-finance-production-restore.log`、`/tmp/ooa-finance-production-migrate.log` 和 `/tmp/ooa-finance-production-start.log`。已保留前一版 API 镜像标签 `ooa-plane-api:pre-finance-20261009`；任何需要数据回退的恢复仍须先停止写入，使用本次匹配的完整备份及独立认证密钥。
+
+## 2026-10-09：操作崩溃、悬赏删除与规划总览修复
+
+内网普通 HTTP 不提供 `crypto.randomUUID()`，导致资金表单、流程节点、自定义参数和部分验收／冲正入口挂载时崩溃。普通 HTTP 确定性复现先失败，使用既有 `uuid` 依赖后通过；失败重试仍使用相同请求键。
+
+悬赏详情新增带原因的删除接口和按钮。事务内释放未授予 VC、撤回任务授权及共享、追加删除审计；解绑原事项后可以再次发布。原生事项、个人引用、文件夹、类别、排期和已记账贡献及付款保留。删除后账本通过权威 `can_reverse` 继续提供当前负责人可办理的冲正入口。客户端丢弃已删除卡片的迟到响应，并以请求版本保护阶段余额。
+
+规划项目工作项使用原生右侧总览，支持原属性和活动记录；个人事项及任务级跨项目参与使用对应右栏。原生可读与可编辑权限分别投影，跨项目任务不会请求整个项目的原生接口。受控详情每次打开重新核验权限，核验期间和撤权后不展示缓存执行资料。
+
+验证结果：真实 PostgreSQL 全量 **673 passed**；规划组件 **42 passed**；资金及普通 HTTP 组件 **18 passed**；状态与缓存回归 **5 passed**。四项完整服务浏览器验证通过，其中新增原生总览／已付款悬赏删除的主流程在最终构建上单独通过（1.8 分钟），验证原生优先级写入、刷新、活动，以及删除前后现金、VC、文件夹、颜色和时间块一致。Web／shared-state 类型、严格 Lint、格式、Ruff、生产构建和迁移漂移检查通过，无新增迁移。
+
+备份为 `/home/l1111y/.local/share/ooa-plane/backups/pre-bugfix-20261009-1120`，独立密钥为 `/home/l1111y/.local/share/ooa-plane/auth-key-backups/pre-bugfix-20261009-1120.totp.key`。隔离恢复数据库、26 个附件文件和 1 条加密凭据通过；更新前后 12 张原有表的完整指纹一致。正式服务已更新至 API 镜像 `d9fc85fd4238` 和最终 Web 构建，10 个服务运行，原资金读取及真实签名上传／下载通过。
+
+正式匿名页面可用，构建资源逐字节一致，匿名财务返回 401。额外检查发现根页面的既有可恢复 React hydration 警告；旧、新构建对照均为 40 次 #418 和 1 次 #423，静态节点树相同，本轮没有修改认证或 hydration 入口。
+
+本轮日志：`/tmp/lab-bugfix-api-full.log`、`/tmp/ooa-planner-native-browser-final.log`、`/tmp/lab-finance-components-ledger-complete.log`、`/tmp/lab-bugfix-store-final.log`、`/tmp/lab-bugfix-native-delete-e2e.log`、`/tmp/lab-bugfix-web-final-build.log`、`/tmp/lab-bugfix-production-backup.log`、`/tmp/lab-bugfix-production-restore.log`、`/tmp/lab-bugfix-production-browser-verified.log`。

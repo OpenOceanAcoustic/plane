@@ -3,6 +3,7 @@ import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { expect } from "@playwright/test";
 import type { Page } from "@playwright/test";
+import type { LabEvent, LabLedgerEntry, LabPlanner } from "../../../packages/types/src/index";
 
 type FinanceFixture = {
   stage: string;
@@ -213,4 +214,95 @@ export async function verifyFinance(page: Page, fixture: { project: string }): P
   await expect(nativeCard.getByLabel("悬赏任务", { exact: true })).toBeVisible();
   await expect(nativeCard.locator("a").first()).toHaveCSS("border-color", "rgb(13, 148, 136)");
   milestone("automatic personal reference and native kanban share the viewer's category marker");
+
+  // Exercise deletion of a paid task with an existing personal folder and schedule.
+  const csrf = (await (await page.request.get("/auth/get-csrf-token/")).json()) as { csrf_token: string };
+  const headers = { "X-CSRFToken": csrf.csrf_token };
+  const readPlanner = async (): Promise<LabPlanner> => {
+    const response = await page.request.get(`${base}planner/`);
+    expect(response.status()).toBe(200);
+    return (await response.json()) as LabPlanner;
+  };
+  let savedPlanner = await readPlanner();
+  expect(savedPlanner.folders.length).toBeGreaterThan(0);
+  const folder = savedPlanner.folders[0]!;
+  const moved = await page.request.patch(`${base}items/${seed.item}/`, { headers, data: { folder_id: folder.id } });
+  expect(moved.status()).toBe(200);
+  const blockStart = new Date(Math.ceil(Date.now() / 900000) * 900000 + 24 * 60 * 60 * 1000);
+  const blockEnd = new Date(blockStart.getTime() + 60 * 60 * 1000);
+  const scheduled = await page.request.post(`${base}calendar/`, {
+    headers,
+    data: { item_id: seed.item, start: blockStart.toISOString(), end: blockEnd.toISOString(), color: "#6366f1" },
+  });
+  expect(scheduled.status()).toBe(201);
+  const block = (await scheduled.json()) as { id: string };
+  const calendarPath = `${base}calendar/?${new URLSearchParams({ start: blockStart.toISOString(), end: blockEnd.toISOString() })}`;
+  const readEvent = async (): Promise<LabEvent> => {
+    const response = await page.request.get(calendarPath);
+    expect(response.status()).toBe(200);
+    const { events } = (await response.json()) as { events: LabEvent[] };
+    const event = events.find((row) => row.id === block.id);
+    expect(event).toBeDefined();
+    return event!;
+  };
+  const readLedger = async (): Promise<LabLedgerEntry[]> => {
+    const response = await page.request.get(`${base}ledger/?project_id=${fixture.project}`);
+    expect(response.status()).toBe(200);
+    return ((await response.json()) as LabLedgerEntry[]).toSorted((left, right) => left.id.localeCompare(right.id));
+  };
+  savedPlanner = await readPlanner();
+  const savedReference = savedPlanner.items.find((row) => row.id === seed.item)!;
+  expect(savedReference.folder_id).toBe(folder.id);
+  expect(savedReference.category_color).toBe(seed.category_color);
+  expect(savedReference.schedule.total_count).toBe(1);
+  const savedEvent = await readEvent();
+  expect(savedEvent.bounty_id).toBe(seed.bounty);
+  const fundsBeforeDeletion = await overview();
+  const ledgerBeforeDeletion = await readLedger();
+  expect(ledgerBeforeDeletion.find((row) => row.bounty_id === seed.bounty)?.delta).toBe("20.00");
+
+  await page.goto(`/browser-lab/lab/bounties?bounty_id=${seed.bounty}`);
+  await page.getByRole("button", { name: "全部悬赏", exact: true }).click();
+  await expect(card).toBeVisible();
+  await bounty.getByRole("button", { name: "删除悬赏", exact: true }).click();
+  dialog = page.getByRole("dialog", { name: "删除悬赏", exact: true });
+  await dialog.getByLabel("删除原因", { exact: true }).fill("移除已完成卡片，保留已核准及已付款事实");
+  const deleted = page.waitForResponse(
+    (response) =>
+      response.url().endsWith(`/bounties/${seed.bounty}/detail/`) && response.request().method() === "DELETE"
+  );
+  await dialog.getByRole("button", { name: "删除", exact: true }).click();
+  expect((await deleted).status()).toBe(204);
+  await expect(dialog).toHaveCount(0);
+  await expect(card).toHaveCount(0);
+  await expect(bounty).toHaveCount(0);
+  const fundsAfterDeletion = await overview();
+  expect(fundsAfterDeletion.accounts).toEqual(fundsBeforeDeletion.accounts);
+  expect(fundsAfterDeletion.settlements).toEqual(fundsBeforeDeletion.settlements);
+  expect(fundsAfterDeletion.commitments).toEqual(fundsBeforeDeletion.commitments);
+  expect(fundsAfterDeletion.payments).toEqual(fundsBeforeDeletion.payments);
+  expect(await readLedger()).toEqual(ledgerBeforeDeletion);
+  const retainedReference = (await readPlanner()).items.find((row) => row.id === seed.item)!;
+  expect(retainedReference.issue_id).toBe(savedReference.issue_id);
+  expect(retainedReference.folder_id).toBe(savedReference.folder_id);
+  expect(retainedReference.category_id).toBe(savedReference.category_id);
+  expect(retainedReference.category_color).toBe(savedReference.category_color);
+  expect(retainedReference.schedule).toEqual(savedReference.schedule);
+  expect(retainedReference.bounty_id).toBeUndefined();
+  const retainedEvent = await readEvent();
+  expect({ ...retainedEvent, bounty_id: undefined, bounty_status: undefined, bounty_detail_url: undefined }).toEqual({
+    ...savedEvent,
+    bounty_id: undefined,
+    bounty_status: undefined,
+    bounty_detail_url: undefined,
+  });
+  expect(retainedEvent.bounty_id).toBeUndefined();
+  await page.goto("/browser-lab/lab/planner");
+  await expect(planningCard).toHaveCount(1);
+  await expect(planningCard).toContainText("财务验收分类");
+  await expect(planningCard.getByLabel("悬赏任务", { exact: true })).toHaveCount(0);
+  await page.goto(`/browser-lab/projects/${fixture.project}/issues`);
+  await expect(nativeCard).toBeVisible();
+  await expect(nativeCard.getByLabel("悬赏任务", { exact: true })).toHaveCount(0);
+  milestone("published bounty deletion preserves paid cash, earned VC, personal folder, colors and schedule");
 }
