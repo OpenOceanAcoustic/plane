@@ -33,13 +33,15 @@ class CSRFTokenEndpoint(APIView):
         # Generate a CSRF token
         csrf_token = get_token(request)
         # Return the CSRF token in a JSON response
-        return Response({"csrf_token": str(csrf_token)}, status=status.HTTP_200_OK)
+        response = Response({"csrf_token": str(csrf_token)}, status=status.HTTP_200_OK)
+        response["Cache-Control"] = "no-store"
+        return response
 
 
 def csrf_failure(request, reason=""):
     """Custom CSRF failure view"""
     if request.path.startswith("/auth/lab/"):
-        return JsonResponse({"error": "请求校验失败，请刷新页面重试"}, status=403)
+        return JsonResponse({"code": "CSRF_FAILED", "error": "请求校验失败，请刷新页面重试"}, status=403)
     return render(
         request,
         "csrf_failure.html",

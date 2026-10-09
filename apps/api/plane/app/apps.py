@@ -7,3 +7,8 @@ from django.apps import AppConfig
 
 class AppApiConfig(AppConfig):
     name = "plane.app"
+
+    def ready(self):
+        from .page_signals import register_page_signals
+
+        register_page_signals()

@@ -22,6 +22,7 @@ from plane.db.models import Project, ProjectMember, ProjectUserProperty, Workspa
 from plane.bgtasks.project_add_user_email_task import project_add_user_email
 from plane.utils.host import base_host
 from plane.app.permissions.base import allow_permission, ROLE
+from plane.app.page_signals import invalidate_access
 
 
 class ProjectMemberViewSet(BaseViewSet):
@@ -132,6 +133,10 @@ class ProjectMemberViewSet(BaseViewSet):
 
         # Bulk create the project members and issue properties
         project_members = ProjectMember.objects.bulk_create(bulk_project_members, batch_size=10, ignore_conflicts=True)
+
+        # Bulk operations bypass model signals. Recheck each affected subscriber.
+        for member_id in member_roles:
+            invalidate_access(user_id=member_id, project_id=project_id, workspace_id=project.workspace_id)
 
         _ = ProjectUserProperty.objects.bulk_create(bulk_issue_props, batch_size=10, ignore_conflicts=True)
 

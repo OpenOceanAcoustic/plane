@@ -5,6 +5,10 @@
  */
 
 import { useEffect } from "react";
+import { API_BASE_URL } from "@plane/constants";
+import { LabSecurityService } from "@plane/services";
+import { LabAdminReauthDialog } from "@plane/ui";
+const securityService = new LabSecurityService(API_BASE_URL, true);
 import { observer } from "mobx-react";
 import { useRouter } from "next/navigation";
 import { Outlet } from "react-router";
@@ -47,6 +51,7 @@ function AdminLayout(_props: Route.ComponentProps) {
           </div>
         </main>
         <NewUserPopup />
+        <LabAdminReauthDialog onVerify={(code) => securityService.reauthenticate(code)} />
       </div>
     );
   }

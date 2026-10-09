@@ -15,6 +15,69 @@ MEMBER = ROLE.MEMBER.value
 GUEST = ROLE.GUEST.value
 
 
+def active_page_membership(user, slug, project_id):
+    if (
+        not user.is_authenticated
+        or not user.is_active
+        or not WorkspaceMember.objects.filter(
+            member=user, workspace__slug=slug, workspace__deleted_at__isnull=True, is_active=True
+        ).exists()
+    ):
+        return None
+    membership = (
+        ProjectMember.objects.select_related("project")
+        .filter(
+            member=user,
+            workspace__slug=slug,
+            is_active=True,
+            project_id=project_id,
+            project__deleted_at__isnull=True,
+            project__archived_at__isnull=True,
+        )
+        .first()
+    )
+    if not membership or (membership.role == GUEST and not membership.project.guest_view_all_features):
+        return None
+    return membership
+
+
+def scoped_page(slug, project_id, page_id):
+    return (
+        Page.objects.filter(
+            id=page_id,
+            workspace__slug=slug,
+            project_pages__project_id=project_id,
+            project_pages__deleted_at__isnull=True,
+        )
+        .select_related("workspace")
+        .first()
+    )
+
+
+def page_role_allows(role, method):
+    if method in SAFE_METHODS:
+        return role in (ADMIN, MEMBER, GUEST)
+    if method in ("POST", "PUT", "PATCH"):
+        return role in (ADMIN, MEMBER)
+    return method == "DELETE" and role == ADMIN
+
+
+def page_collaboration_capabilities(user, slug, project_id, page_id):
+    membership = active_page_membership(user, slug, project_id)
+    page = scoped_page(slug, project_id, page_id) if membership else None
+    if page is None:
+        return None, False, False
+    owner = page.owned_by_id == user.id
+    readable = owner or (page.access == Page.PUBLIC_ACCESS and page_role_allows(membership.role, "GET"))
+    writable = (
+        readable
+        and (owner or page_role_allows(membership.role, "PATCH"))
+        and not page.is_locked
+        and not page.archived_at
+    )
+    return page, readable, writable
+
+
 class ProjectPagePermission(BasePermission):
     """
     Custom permission to control access to pages within a workspace
@@ -45,12 +108,7 @@ class ProjectPagePermission(BasePermission):
             # (GHSA-g49r / GHSA-ghcr). Require an *active* ProjectPage link (both
             # conditions on the same relation so they match one row) so a page
             # removed from the project (soft-deleted link) is also denied.
-            page = Page.objects.filter(
-                id=page_id,
-                workspace__slug=slug,
-                project_pages__project_id=project_id,
-                project_pages__deleted_at__isnull=True,
-            ).first()
+            page = scoped_page(slug, project_id, page_id)
             if page is None:
                 return False
 
@@ -69,24 +127,8 @@ class ProjectPagePermission(BasePermission):
         """
         Check if the user is a project member.
         """
-        if not request.user.is_active or not WorkspaceMember.objects.filter(
-            member=request.user, workspace__slug=slug, is_active=True
-        ).exists():
-            return None
-        membership = (
-            ProjectMember.objects.select_related("project").filter(
-                member=request.user,
-                workspace__slug=slug,
-                is_active=True,
-                project_id=project_id,
-                project__deleted_at__isnull=True,
-                project__archived_at__isnull=True,
-            )
-            .first()
-        )
-        if not membership or (membership.role == GUEST and not membership.project.guest_view_all_features):
-            return None
-        return membership.role
+        membership = active_page_membership(request.user, slug, project_id)
+        return membership.role if membership else None
 
     def _check_access_and_get_role(self, request, slug, project_id):
         """
@@ -106,34 +148,7 @@ class ProjectPagePermission(BasePermission):
         return False
 
     def _check_project_action_access(self, request, role):
-        method = request.method
-
-        # Only admins can create (POST) pages
-        if method == "POST":
-            if role in [ADMIN, MEMBER]:
-                return True
-            return False
-
-        # Safe methods (GET, HEAD, OPTIONS) allowed for all active roles
-        if method in SAFE_METHODS:
-            if role in [ADMIN, MEMBER, GUEST]:
-                return True
-            return False
-
-        # PUT/PATCH: Admins and members can update
-        if method in ["PUT", "PATCH"]:
-            if role in [ADMIN, MEMBER]:
-                return True
-            return False
-
-        # DELETE: Only admins can delete
-        if method == "DELETE":
-            if role in [ADMIN]:
-                return True
-            return False
-
-        # Deny by default
-        return False
+        return page_role_allows(role, request.method)
 
     def _has_public_page_action_access(self, request, role):
         """

@@ -10,7 +10,7 @@ from .workflow_urls import workflow_patterns
 from .bounty_urls import bounty_patterns
 from .lifecycle_workflow import lifecycle_patterns
 from .finance_urls import finance_patterns
-from .auth_views import LabAuthView
+from .auth_views import LabAuthView, LabBrowserView, LabSignOutView
 from .planning_views import (
     BlockDetailView,
     CalendarView,
@@ -41,6 +41,15 @@ auth_patterns = [
     path("confirm/", LabAuthView.as_view(operation="confirm")),
     path("sign-in/", LabAuthView.as_view(operation="signin")),
     path("admin/sign-in/", LabAuthView.as_view(operation="admin")),
+    path("admin/reauthenticate/", LabAuthView.as_view(operation="reauthenticate")),
+    path("sign-out/", LabSignOutView.as_view()),
+    path("admin/sign-out/", LabSignOutView.as_view()),
+    path("browsers/", LabBrowserView.as_view()),
+    path("browsers/<uuid:browser_id>/", LabBrowserView.as_view()),
+    path("forget-browser/", LabBrowserView.as_view(operation="forget")),
+    path("admin/browsers/", LabBrowserView.as_view(admin=True)),
+    path("admin/browsers/<uuid:browser_id>/", LabBrowserView.as_view(admin=True)),
+    path("admin/forget-browser/", LabBrowserView.as_view(admin=True, operation="forget")),
 ]
 
 business_patterns = [

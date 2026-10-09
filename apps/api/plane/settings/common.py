@@ -44,7 +44,7 @@ if SECRET_KEY in _INSECURE_SECRET_KEYS:
         "This makes your installation vulnerable to session forgery, CSRF bypass, and "
         "password-reset token forging. Set a unique SECRET_KEY before deploying to production. "
         "Generate one with: "
-        "python3 -c \"from django.utils.crypto import get_random_secret_key; print(get_random_secret_key())\""
+        'python3 -c "from django.utils.crypto import get_random_secret_key; print(get_random_secret_key())"'
     )
 
 # SECURITY WARNING: don't run with debug turned on in production!
@@ -74,9 +74,7 @@ for _cidr in _webhook_allowed_ips_raw.split(","):
 # Example: "silo,silo.namespace.svc.cluster.local,internal-api.lan"
 _webhook_allowed_hosts_raw = os.environ.get("WEBHOOK_ALLOWED_HOSTS", "")
 WEBHOOK_ALLOWED_HOSTS = [
-    _host.strip().rstrip(".").lower()
-    for _host in _webhook_allowed_hosts_raw.split(",")
-    if _host.strip()
+    _host.strip().rstrip(".").lower() for _host in _webhook_allowed_hosts_raw.split(",") if _host.strip()
 ]
 
 # Webhook disallowed domains — comma-separated hostnames. Webhooks targeting
@@ -85,10 +83,12 @@ WEBHOOK_ALLOWED_HOSTS = [
 # for self-hosted deployments; set to e.g. "plane.so" to block specific domains.
 _webhook_disallowed_domains_raw = os.environ.get("WEBHOOK_DISALLOWED_DOMAINS", "")
 WEBHOOK_DISALLOWED_DOMAINS = [
-    _d.strip().rstrip(".").lower()
-    for _d in _webhook_disallowed_domains_raw.split(",")
-    if _d.strip()
+    _d.strip().rstrip(".").lower() for _d in _webhook_disallowed_domains_raw.split(",") if _d.strip()
 ]
+
+PUBLIC_DEPLOYMENT = os.environ.get("PUBLIC_DEPLOYMENT", "0") == "1"
+PUBLIC_ORIGIN = os.environ.get("PUBLIC_ORIGIN", "")
+PUBLIC_HOST = os.environ.get("PUBLIC_HOST", "")
 
 # Allowed Hosts
 ALLOWED_HOSTS = os.environ.get("ALLOWED_HOSTS", "*").split(",")
@@ -120,9 +120,11 @@ INSTALLED_APPS = [
 
 # Middlewares
 MIDDLEWARE = [
+    "plane.lab.security.TrustedProxyMiddleware",
     "corsheaders.middleware.CorsMiddleware",
     "django.middleware.security.SecurityMiddleware",
     "whitenoise.middleware.WhiteNoiseMiddleware",
+    "plane.lab.security.SecurityLimitsMiddleware",
     "plane.authentication.middleware.session.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
@@ -139,7 +141,10 @@ MIDDLEWARE = [
 # Rest Framework settings
 REST_FRAMEWORK = {
     "DEFAULT_AUTHENTICATION_CLASSES": ("rest_framework.authentication.SessionAuthentication",),
-    "DEFAULT_THROTTLE_CLASSES": ("rest_framework.throttling.AnonRateThrottle",),
+    "DEFAULT_THROTTLE_CLASSES": (
+        "rest_framework.throttling.AnonRateThrottle",
+        "plane.lab.security.UserSecurityThrottle",
+    ),
     "DEFAULT_THROTTLE_RATES": {
         "anon": "30/minute",
         "asset_id": "5/minute",
@@ -164,6 +169,33 @@ LAB_TOTP_KEY = os.environ.get("LAB_TOTP_KEY", "")
 if not LAB_TOTP_KEY and os.environ.get("LAB_TOTP_KEY_FILE"):
     with open(os.environ["LAB_TOTP_KEY_FILE"], encoding="utf-8") as lab_key_file:
         LAB_TOTP_KEY = lab_key_file.read().strip()
+
+# Security budgets are local to the isolated deployment's Redis instance.
+LAB_SECURITY_LIMITS_ENABLED = os.environ.get("LAB_SECURITY_LIMITS_ENABLED", "1" if PUBLIC_DEPLOYMENT else "0") == "1"
+LAB_SECURITY_NAMESPACE = os.environ.get("LAB_SECURITY_NAMESPACE", "lab-admission-v1")
+TRUSTED_PROXY_CIDRS = [value.strip() for value in os.environ.get("TRUSTED_PROXY_CIDRS", "").split(",") if value.strip()]
+LAB_AUTH_IP_LIMIT = int(os.environ.get("LAB_AUTH_IP_LIMIT", "30"))
+LAB_AUTH_GLOBAL_LIMIT = int(os.environ.get("LAB_AUTH_GLOBAL_LIMIT", "120"))
+LAB_TRUSTED_AUTH_IP_LIMIT = int(os.environ.get("LAB_TRUSTED_AUTH_IP_LIMIT", "60"))
+LAB_TRUSTED_AUTH_GLOBAL_LIMIT = int(os.environ.get("LAB_TRUSTED_AUTH_GLOBAL_LIMIT", "240"))
+LAB_REQUEST_IP_LIMIT = int(os.environ.get("LAB_REQUEST_IP_LIMIT", "1200"))
+LAB_REQUEST_GLOBAL_LIMIT = int(os.environ.get("LAB_REQUEST_GLOBAL_LIMIT", "6000"))
+LAB_TRUSTED_REQUEST_IP_LIMIT = int(os.environ.get("LAB_TRUSTED_REQUEST_IP_LIMIT", "1200"))
+LAB_TRUSTED_REQUEST_GLOBAL_LIMIT = int(os.environ.get("LAB_TRUSTED_REQUEST_GLOBAL_LIMIT", "6000"))
+LAB_USER_READ_LIMIT = int(os.environ.get("LAB_USER_READ_LIMIT", "600"))
+LAB_USER_WRITE_LIMIT = int(os.environ.get("LAB_USER_WRITE_LIMIT", "60"))
+LAB_API_USER_LIMIT = int(os.environ.get("LAB_API_USER_LIMIT", "60"))
+LAB_UPLOAD_USER_LIMIT = int(os.environ.get("LAB_UPLOAD_USER_LIMIT", "10"))
+LAB_API_TOKEN_LIMIT = int(os.environ.get("LAB_API_TOKEN_LIMIT", "5"))
+LAB_API_TOKEN_DAYS = int(os.environ.get("LAB_API_TOKEN_DAYS", "30"))
+LAB_API_TOKEN_MAX_DAYS = int(os.environ.get("LAB_API_TOKEN_MAX_DAYS", "90"))
+LAB_TRUSTED_BROWSER_COOKIE_NAME = "__Host-lab-browser"
+LAB_ADMIN_TRUSTED_BROWSER_COOKIE_NAME = "__Host-lab-admin-browser"
+LAB_MEMBER_BROWSER_LIMIT = 5
+LAB_ADMIN_BROWSER_LIMIT = 2
+LAB_MEMBER_BROWSER_AGE = 2592000
+LAB_ADMIN_BROWSER_AGE = 604800
+LAB_ADMIN_REAUTH_AGE = 600
 
 # Root Urls
 ROOT_URLCONF = "plane.urls"
@@ -380,10 +412,13 @@ SKIP_ENV_VAR = os.environ.get("SKIP_ENV_VAR", "1") == "1"
 DATA_UPLOAD_MAX_MEMORY_SIZE = int(os.environ.get("FILE_SIZE_LIMIT", 5242880))
 
 # Cookie Settings
-SESSION_COOKIE_SECURE = secure_origins
+SESSION_COOKIE_SECURE = (
+    os.environ.get("SESSION_COOKIE_SECURE", "1" if PUBLIC_DEPLOYMENT or secure_origins else "0") == "1"
+)
 SESSION_COOKIE_HTTPONLY = True
+SESSION_COOKIE_SAMESITE = "Lax"
 SESSION_ENGINE = "plane.db.models.session"
-SESSION_COOKIE_AGE = int(os.environ.get("SESSION_COOKIE_AGE", 604800))
+SESSION_COOKIE_AGE = int(os.environ.get("SESSION_COOKIE_AGE", 43200))
 SESSION_COOKIE_NAME = os.environ.get("SESSION_COOKIE_NAME", "session-id")
 SESSION_COOKIE_DOMAIN = os.environ.get("COOKIE_DOMAIN", None)
 SESSION_SAVE_EVERY_REQUEST = os.environ.get("SESSION_SAVE_EVERY_REQUEST", "0") == "1"
@@ -393,9 +428,14 @@ ADMIN_SESSION_COOKIE_NAME = "admin-session-id"
 ADMIN_SESSION_COOKIE_AGE = int(os.environ.get("ADMIN_SESSION_COOKIE_AGE", 3600))
 
 # CSRF cookies
-CSRF_COOKIE_SECURE = secure_origins
+CSRF_COOKIE_SECURE = os.environ.get("CSRF_COOKIE_SECURE", "1" if PUBLIC_DEPLOYMENT or secure_origins else "0") == "1"
 CSRF_COOKIE_HTTPONLY = True
-CSRF_TRUSTED_ORIGINS = cors_allowed_origins
+CSRF_COOKIE_SAMESITE = "Lax"
+CSRF_TRUSTED_ORIGINS = [
+    value.strip()
+    for value in os.environ.get("CSRF_TRUSTED_ORIGINS", ",".join(cors_allowed_origins)).split(",")
+    if value.strip()
+]
 CSRF_COOKIE_DOMAIN = os.environ.get("COOKIE_DOMAIN", None)
 CSRF_FAILURE_VIEW = "plane.authentication.views.common.csrf_failure"
 
@@ -577,3 +617,50 @@ if ENABLE_DRF_SPECTACULAR:
     REST_FRAMEWORK["DEFAULT_SCHEMA_CLASS"] = "drf_spectacular.openapi.AutoSchema"
     INSTALLED_APPS.append("drf_spectacular")
     from .openapi import SPECTACULAR_SETTINGS  # noqa: F401
+
+# Refuse insecure public startup rather than silently falling back to development.
+SECURE_SSL_REDIRECT = os.environ.get("SECURE_SSL_REDIRECT", "1" if PUBLIC_DEPLOYMENT else "0") == "1"
+SECURE_HSTS_SECONDS = int(os.environ.get("SECURE_HSTS_SECONDS", "300" if PUBLIC_DEPLOYMENT else "0"))
+if PUBLIC_DEPLOYMENT:
+    from django.core.exceptions import ImproperlyConfigured
+
+    origin = urlparse(PUBLIC_ORIGIN)
+    try:
+        proxy_networks = [ipaddress.ip_network(value) for value in TRUSTED_PROXY_CIDRS]
+    except ValueError as error:
+        raise ImproperlyConfigured("TRUSTED_PROXY_CIDRS must contain valid networks") from error
+    if any(network.prefixlen == 0 for network in proxy_networks):
+        raise ImproperlyConfigured("Public deployment cannot trust every forwarding peer")
+    if (
+        origin.scheme != "https"
+        or not origin.hostname
+        or origin.hostname != PUBLIC_HOST
+        or origin.netloc != PUBLIC_HOST
+        or origin.path
+        or origin.query
+        or origin.fragment
+        or PUBLIC_HOST in ("localhost", "127.0.0.1", "0.0.0.0")
+        or ALLOWED_HOSTS != [PUBLIC_HOST]
+        or cors_allowed_origins != [PUBLIC_ORIGIN]
+        or CSRF_TRUSTED_ORIGINS != [PUBLIC_ORIGIN]
+        or not SESSION_COOKIE_SECURE
+        or not CSRF_COOKIE_SECURE
+        or SESSION_COOKIE_DOMAIN
+        or CSRF_COOKIE_DOMAIN
+        or not SECURE_SSL_REDIRECT
+        or SECURE_HSTS_SECONDS <= 0
+        or not TRUSTED_PROXY_CIDRS
+        or not LAB_SECURITY_LIMITS_ENABLED
+        or not LAB_AUTH_ENABLED
+        or not LAB_TOTP_KEY
+        or SECRET_KEY in _INSECURE_SECRET_KEYS
+        or not os.environ.get("SECRET_KEY")
+        or DEBUG
+        or len(SECRET_KEY) < 50
+        or SESSION_COOKIE_SAMESITE != "Lax"
+        or CSRF_COOKIE_SAMESITE != "Lax"
+    ):
+        raise ImproperlyConfigured(
+            "Public deployment requires an exact HTTPS origin, secure cookies, trusted proxy, "
+            "authentication and local admission limits"
+        )

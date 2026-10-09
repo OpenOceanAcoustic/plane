@@ -32,4 +32,11 @@ export type HocusPocusServerContext = {
   documentType: TDocumentTypes;
   workspaceSlug: string | null;
   userId: string;
+  documentName?: string;
+  origin?: string;
+  access?: import("@/services/collaboration.service").CollaborationAccess;
+  accessCheckedAt?: number;
+  expiresAt?: number;
+  credentialGeneration?: string | null;
+  transport?: import("@/lib/socket-transport").SocketTransport;
 };

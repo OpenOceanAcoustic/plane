@@ -43,10 +43,14 @@ class Command(BaseCommand):
                 return
             if action == "purge":
                 from datetime import timedelta
-                from plane.lab.models import Enrollment, LoginAttempt
+                from plane.lab.models import Enrollment, LoginAttempt, TrustedBrowser
 
                 Enrollment.objects.filter(invitation__expires_at__lte=timezone.now()).delete()
                 LoginAttempt.objects.filter(submitted_at__lte=timezone.now() - timedelta(seconds=600)).delete()
+                # Keep browser history but mark expired credentials unusable explicitly.
+                TrustedBrowser.objects.filter(expires_at__lte=timezone.now(), revoked_at__isnull=True).update(
+                    revoked_at=timezone.now()
+                )
                 # Keep identity rows: deleting one concurrently with a login
                 # could cascade-delete a newly committed quota submission.
                 self.stdout.write("过期绑定和限流记录已清理；邀请和审计记录保留")

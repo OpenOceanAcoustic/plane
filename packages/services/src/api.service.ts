@@ -6,6 +6,7 @@
 
 import type { AxiosInstance, AxiosRequestConfig } from "axios";
 import { create } from "axios";
+import { installSessionProtection } from "./session-protection";
 
 /**
  * Abstract base class for making HTTP requests using axios
@@ -25,6 +26,7 @@ export abstract class APIService {
       baseURL,
       withCredentials: true,
     });
+    installSessionProtection(this.axiosInstance, baseURL);
   }
 
   /**

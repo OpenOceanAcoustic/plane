@@ -27,6 +27,7 @@ export function LabAuth({
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [code, setCode] = useState("");
+  const [rememberBrowser, setRememberBrowser] = useState(false);
   const [enrollment, setEnrollment] = useState<Enrollment>();
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState(false);
@@ -44,7 +45,7 @@ export function LabAuth({
     };
   }, [register]);
 
-  async function post(path: string, data: Record<string, string>) {
+  async function post(path: string, data: Record<string, string | boolean>) {
     const csrfResponse = await fetch(`${apiBase}/auth/get-csrf-token/`, { credentials: "include" });
     const csrf = (await csrfResponse.json()) as { csrf_token: string };
     const response = await fetch(`${apiBase}/auth/lab/${path}/`, {
@@ -72,12 +73,14 @@ export function LabAuth({
         setCode("");
       } else if (enrollment) {
         await post("confirm", { token: enrollment.token, code });
+        window.dispatchEvent(new Event("lab-session-changed"));
         setEnrollment(undefined);
         setInvitation("");
         setCode("");
         setMessage("绑定成功。请等待下一动态码，然后返回登录。");
       } else {
-        await post(admin ? "admin/sign-in" : "sign-in", { username, code });
+        await post(admin ? "admin/sign-in" : "sign-in", { username, code, remember_browser: rememberBrowser });
+        window.dispatchEvent(new Event("lab-session-changed"));
         onSuccess();
       }
     } catch (error) {
@@ -169,6 +172,16 @@ export function LabAuth({
                 pattern="[0-9]{6}"
                 required
               />
+            </label>
+          )}
+          {!register && (
+            <label className="flex items-center gap-2 text-13">
+              <input
+                type="checkbox"
+                checked={rememberBrowser}
+                onChange={(event) => setRememberBrowser(event.target.checked)}
+              />
+              记住此浏览器
             </label>
           )}
           <Button type="submit" loading={busy}>
