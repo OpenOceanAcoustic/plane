@@ -71,3 +71,23 @@
 正式 `ooa-plane-lab` 已更新为 API `8ec6723aeae3` 与最终 Web 构建，10 个服务运行。原数据 4 个资金／项目读取视图及新增项目预算读取通过，相关资金、VC、状态、映射与审计数量保持不变，真实签名上传下载通过。三个匿名认证入口和实例 API 正常，匿名资金及预算均返回 401；主应用 HTML 及实际载入的 88 个静态资源与最终构建逐内容一致，没有静态请求失败。可恢复 React 提示按页面记录：主入口 #418=41／#423=1，管理后台 0／0，Space 16／1。主入口与旧记录 40／1 相差一次 #418；没有改动认证／hydration 入口，不宣称次数完全不变，也不描述为完全无控制台错误。
 
 本轮日志：`/tmp/lab-bounty-simple-backend-final.log`、`/tmp/lab-bounty-native-flow-final.log`、`/tmp/lab-simple-bounty-all-components.log`、`/tmp/lab-simple-bounty-real-e2e-native-contract.log`、`/tmp/lab-simple-bounty-web-build-final.log`、`/tmp/lab-simple-bounty-api-build-with-flow.log`、`/tmp/lab-simple-bounty-production-backup.log`、`/tmp/lab-simple-bounty-production-restore.log`、`/tmp/lab-simple-bounty-production-smoke.log` 和 `/tmp/lab-simple-bounty-production-browser.log`。隔离后端及浏览器测试资源与临时凭据均已清理，正式实例没有创建测试账号、悬赏或资金。
+
+## 2026-10-09：输入时金额上限、同人验收复核与悬赏图整理
+
+此前账户、现金安排和悬赏配额主要在提交时检查，输入超额没有即时反馈。本轮增加共享十进制金额输入组件，以精确整数运算比较元、VC 与份额；输入超过所选来源、批次或可核准余额时立即显示字段错误并禁用保存。切换来源、年度或关联金额会同步重新计算，涵盖支出、划拨、承诺、线下付款、扣缴、风险释放／使用、争议预留、结转、阶段用途合计及成员份额。已有付款和承诺同时形成累计核准的下限；新预算、期初余额及新到账不套用已有账户余额上限。
+
+年度未来池限额不能从前端可见的项目操作列表推算，因为指定管理员未必能查看每个来源项目。财务概览新增管理员可读的 `future_plan_limits` 工作区汇总，按工作区时区和事实年计算，排除冲正并扣除已编列额度；项目筛选仍保留正确公共额度，其他用户不获得年度源明细。悬赏新增 `claim_available`，扣除所有已批准计划配额，未批准申请不占额度，已授予贡献不重复扣减。认领及批准继续执行服务器锁和预算复核；并发拒绝后刷新额度并保留已填资料。
+
+移除重大发布时要求发布人、验收人和复核人各不相同的身份限制，可选择同一名有效项目成员。重大任务仍保留发布复核和验收复核步骤；每步权限及记录独立，任务参与者仍不能验收自己的任务。悬赏图使用水平主线和下方结果分支，默认隐藏无关退回／取消／更正连线；点击节点或“全部流转”可以查看原关系，“当前阶段”用于定位。节点、操作和记录没有删除。
+
+验证：悬赏相关 **67 个不同后端用例**和资金／年度上限专项 **36 个用例**均已覆盖通过，包括同一负责人贯穿重大任务发布、验收和复核、权限拒绝、预算扣减与删除返还、并发、历史支付及年度冲正恢复。资金组件 **46 passed**、发布／认领组件 **12 passed**、流程图组件 **5 passed**；最终构建上的真实浏览器验收 **1 passed（47.3 秒）**，实际验证 12.51 元超过 12.50 元时没有发送请求、更正为 3.25 元后余额 9.25 元、100.01 VC 超过 100.00 VC 时禁止发布、25 VC 重大悬赏同人发布复核，以及主流程／全部流转与真实接口返回的完整关系一致。
+
+Web 和 UI 类型检查、types／UI 构建、变更 TypeScript 严格 Lint、格式检查、Ruff、Django 系统检查及迁移漂移检查通过，无新增迁移。Web 全范围 Lint 单工作线程执行通过（772 条既有警告、0 错误）；首次多线程执行出现工具内部 Rust panic，重跑通过。最终 Web 和 API 镜像生产构建通过。
+
+更新前备份至 `/home/l1111y/.local/share/ooa-plane/backups/pre-live-finance-20261009-1556`，认证密钥独立保存在 `/home/l1111y/.local/share/ooa-plane/auth-key-backups/pre-live-finance-20261009-1556.totp.key`（0700／0600）。隔离恢复数据库和增量迁移、**14 个附件文件**以及 **1 条加密凭据**验证通过。正式 `ooa-plane-lab` 已更新为 API `927e2ea346a5` 和最终 Web 构建，10 个服务运行，其余 6 个服务容器身份不变；更新前后的 15 张原有表及 15 张财务表共 **30 张表**数量和完整记录指纹一致，证据在备份内 `legacy-before.json`／`legacy-after.json`。未在正式实例创建测试账号、悬赏或资金。
+
+内网 `http://192.168.137.90:8080` 的三个匿名认证入口和实例 API 正常；匿名资金和项目 VC 预算读取返回 401。主应用 HTML、实际加载的 88 个静态资源及新增金额／流程模块与最终构建逐字节一致，无资源请求失败或新增页面错误。既有可恢复 hydration 提示仍为主入口 #418=41／#423=1，管理后台 0／0，Space 16／1。已保留旧 API 镜像 `ooa-plane-api:pre-live-finance-20261009` 和 `.temp/lab-build/pre-live-finance-20261009-155059/client-mounted`。
+
+日志：`/tmp/lab-finance-input-limits-final.log`、`/tmp/lab-finance-input-limits-regression.log`、`/tmp/lab-bounty-role-quota-backend-final.log`、`/tmp/lab-bounty-quota-adjusted-regressions.log`、`/tmp/lab-finance-live-all-components.log`、`/tmp/lab-bounty-roles-quota-components-final.log`、`/tmp/lab-live-finance-real-e2e-final.log`、`/tmp/lab-live-finance-web-types.log`、`/tmp/lab-live-finance-web-lint-final.log`、`/tmp/lab-live-finance-web-build.log`、`/tmp/lab-live-finance-api-build.log`、`/tmp/lab-live-finance-production-backup.log`、`/tmp/lab-live-finance-production-restore.log` 和 `/tmp/lab-live-finance-production-browser.log`。
+
+本轮隔离后端与浏览器测试容器、卷及临时认证配置均已清理，正式服务保持运行。

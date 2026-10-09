@@ -93,6 +93,7 @@ export function LabDialog({
   description,
   error,
   destructive = false,
+  submitDisabled = false,
 }: {
   title: string;
   children: ReactNode;
@@ -103,12 +104,13 @@ export function LabDialog({
   description?: string;
   error?: string;
   destructive?: boolean;
+  submitDisabled?: boolean;
 }) {
   const id = useId();
   const [localError, setLocalError] = useState("");
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!onSubmit) return;
+    if (!onSubmit || busy || submitDisabled) return;
     const data = new FormData(event.currentTarget);
     setLocalError("");
     try {
@@ -151,7 +153,12 @@ export function LabDialog({
                 {onSubmit ? "取消" : "关闭"}
               </Button>
               {onSubmit && (
-                <Button type="submit" loading={busy} variant={destructive ? "danger" : "primary"}>
+                <Button
+                  type="submit"
+                  loading={busy}
+                  disabled={submitDisabled}
+                  variant={destructive ? "danger" : "primary"}
+                >
                   {submitLabel}
                 </Button>
               )}

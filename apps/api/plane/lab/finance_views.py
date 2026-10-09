@@ -56,6 +56,7 @@ from .finance_services import (
     public_commitment_paid,
     public_commitment_remaining,
     public_commitment_cancelled,
+    workspace_zone,
 )
 from .permissions import collaboration_projects as project_ids
 from .planning_views import LabView
@@ -111,6 +112,26 @@ def entry_data(row):
         "occurred_at": op.occurred_at.isoformat(),
         "reverses_id": str(row.reverses_id) if row.reverses_id else None,
     }
+
+
+def future_plan_limits(workspace, source):
+    if source is None:
+        return {}
+    yearly = {}
+    zone = workspace_zone(workspace)
+    entries = source.entries.filter(
+        operation__kind__in=("receipt", "opening", "future-plan"), operation__reversal__isnull=True
+    ).select_related("operation")
+    for row in entries:
+        operation = row.operation
+        if operation.kind in ("receipt", "opening") and row.delta > ZERO:
+            year = operation.occurred_at.astimezone(zone).year
+        elif operation.kind == "future-plan":
+            year = int(operation.payload["year"])
+        else:
+            continue
+        yearly[year] = yearly.get(year, ZERO) + row.delta
+    return {str(year): f"{max(value, ZERO):.2f}" for year, value in sorted(yearly.items())}
 
 
 def financial_scope(workspace, user, project_id=None):
@@ -480,6 +501,10 @@ def overview_data(workspace, user, project_id=None):
         "public_commitments": public_commitments,
         "public_payments": public_payments,
         "funding_targets": funding_targets,
+        "future_plan_limits": future_plan_limits(
+            workspace,
+            FinancialAccount.objects.filter(workspace=workspace, kind="future_pool").first() if is_manager else None,
+        ),
     }
 
 

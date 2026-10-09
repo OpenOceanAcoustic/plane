@@ -40,6 +40,12 @@ def total(queryset, field):
     return queryset.aggregate(value=Sum(field))["value"] or Decimal("0")
 
 
+def claim_available(bounty):
+    return max(
+        Decimal("0.00"), bounty.budget - total(Allocation.objects.filter(bounty=bounty, approved=True), "planned")
+    )
+
+
 def working_days(now, count):
     from zoneinfo import ZoneInfo
 
@@ -126,10 +132,6 @@ def publish(user, stage_id, data):
         reasons.append("route_or_safety")
     reviewer = valid_reviewer(data.get("reviewer_id"), stage.project)
     independent = valid_reviewer(data.get("independent_reviewer_id"), stage.project) if reasons else None
-    if independent and (independent.id in (user.id, reviewer.id)):
-        raise ValidationError("重大任务复核人须与发布人、验收人不同")
-    if reasons and reviewer.id == user.id:
-        raise ValidationError("重大任务验收人须独立于发布人")
     flow = ProjectFlow.objects.filter(project=stage.project).first()
     if not flow or not all(getattr(flow, key + "_id") for key in ("todo", "active", "review", "done")):
         raise ValidationError("请先配置四类项目状态映射")
@@ -229,8 +231,8 @@ def claim(user, bounty_id, data):
         raise ValidationError("原任务不可执行")
     planned = amount(data.get("planned"))
     deliverable = str(data.get("deliverable", "")).strip()
-    if planned <= 0 or planned > bounty.budget or not deliverable:
-        raise ValidationError("请填写个人交付物和计划 VC，不能超过团队 T")
+    if planned <= 0 or planned > claim_available(bounty) or not deliverable:
+        raise ValidationError("请填写个人交付物和计划 VC，不能超过剩余可认领 VC")
     if Allocation.objects.filter(bounty=bounty, user_id_snapshot=user.id).exists():
         raise ValidationError("已提交认领")
     allocation = Allocation.objects.create(

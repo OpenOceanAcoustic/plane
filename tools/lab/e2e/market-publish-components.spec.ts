@@ -125,6 +125,7 @@ async function mount(page: import("@playwright/test").Page, configure?: () => Pr
   await page.route("**/lab/**", (route) => route.fulfill({ json: [] }));
   await page.route("**/lab/planner/", (route) => route.fulfill({ json: planner }));
   await page.route("**/lab/bounties/budgets/", (route) => route.fulfill({ json: budgets }));
+  await page.route("**/lab/bounties/*/materials/**", (route) => route.fulfill({ json: { materials: [] } }));
   await page.route("**/lab/tasks/**", (route) => {
     const request = new URL(route.request().url());
     return route.fulfill({ json: tasks.filter((task) => task.project_id === request.searchParams.get("project_id")) });
@@ -214,7 +215,12 @@ test("major review appears only at a threshold and advanced settings remain coll
   await dialog.getByLabel("VC配额", { exact: true }).fill("20.01");
   await expect(dialog.getByLabel("复核人", { exact: true })).toBeVisible();
   await dialog.getByLabel("验收人", { exact: true }).selectOption(reviewerId);
-  await expect(dialog.getByLabel("复核人", { exact: true }).locator("option")).toHaveText(["请选择", "复核人"]);
+  await expect(dialog.getByLabel("复核人", { exact: true }).locator("option")).toHaveText([
+    "请选择",
+    "负责人",
+    "验收人",
+    "复核人",
+  ]);
   await dialog.getByLabel("VC配额", { exact: true }).fill("10");
   await expect(dialog.getByLabel("复核人", { exact: true })).toHaveCount(0);
   await dialog.getByText("更多设置", { exact: true }).click();
@@ -227,6 +233,75 @@ test("major review appears only at a threshold and advanced settings remain coll
   await expect(dialog.getByLabel("复核人", { exact: true })).toBeVisible();
   await dialog.getByLabel("预计人日", { exact: true }).fill("0");
   await dialog.getByLabel("重大路线或安全事项", { exact: true }).check();
+  await expect(dialog.getByLabel("复核人", { exact: true })).toBeVisible();
+});
+
+test("VC quota warns while typing and updates when switching project budgets", async ({ page }) => {
+  let publications = 0;
+  await mount(page, async () => {
+    await page.route("**/lab/bounties/", (route) => {
+      if (route.request().method() === "POST") publications++;
+      return route.fulfill({ json: [] });
+    });
+  });
+  const dialog = await openPublication(page);
+  const quota = dialog.getByLabel("VC配额", { exact: true });
+  await quota.fill("80.01");
+  await expect(quota).toHaveAttribute("aria-invalid", "true");
+  await expect(dialog.getByRole("alert")).toContainText("80");
+  await expect(dialog.getByRole("button", { name: "发布", exact: true })).toBeDisabled();
+  expect(publications).toBe(0);
+  await quota.fill("80.00");
+  await expect(quota).not.toHaveAttribute("aria-invalid", "true");
+  await expect(dialog.getByRole("alert")).toHaveCount(0);
+  await expect(dialog.getByRole("button", { name: "发布", exact: true })).toBeEnabled();
+  await dialog.getByLabel("项目", { exact: true }).selectOption(otherProjectId);
+  await expect(dialog.getByRole("alert")).toContainText("55");
+  await expect(dialog.getByRole("button", { name: "发布", exact: true })).toBeDisabled();
+  await quota.fill("55");
+  await expect(dialog.getByRole("alert")).toHaveCount(0);
+  expect(publications).toBe(0);
+});
+
+test("publisher can also be both reviewers on a major bounty", async ({ page }) => {
+  let body: Record<string, unknown> | undefined;
+  await mount(page, async () => {
+    await page.route("**/lab/bounties/", (route) => {
+      if (route.request().method() !== "POST") return route.fulfill({ json: [] });
+      body = route.request().postDataJSON() as Record<string, unknown>;
+      return route.fulfill({ json: {} });
+    });
+  });
+  const dialog = await openPublication(page);
+  await dialog.getByLabel("工作项", { exact: true }).selectOption(issueId);
+  await dialog.getByLabel("VC配额", { exact: true }).fill("40");
+  await dialog.getByLabel("任务资料", { exact: true }).fill("资料");
+  await dialog.getByLabel("交付要求", { exact: true }).fill("交付");
+  await dialog.getByLabel("验收标准", { exact: true }).fill("标准");
+  await expect(dialog.getByLabel("验收人", { exact: true }).locator("option")).toHaveText([
+    "请选择",
+    "负责人",
+    "验收人",
+    "复核人",
+  ]);
+  await dialog.getByLabel("验收人", { exact: true }).selectOption(memberId);
+  await dialog.getByLabel("复核人", { exact: true }).selectOption(memberId);
+  await dialog.getByRole("button", { name: "发布", exact: true }).click();
+  await expect(dialog).toHaveCount(0);
+  expect(body?.reviewer_id).toBe(memberId);
+  expect(body?.independent_reviewer_id).toBe(memberId);
+});
+
+test("major review threshold compares exact decimal VC at twenty percent", async ({ page }) => {
+  await mount(page, async () => {
+    await page.route("**/lab/bounties/budgets/", (route) =>
+      route.fulfill({ json: [{ ...budgets[0], budget: "0.35", reserved: "0.00", available: "0.35" }] })
+    );
+  });
+  const dialog = await openPublication(page);
+  await dialog.getByLabel("VC配额", { exact: true }).fill("0.07");
+  await expect(dialog.getByLabel("复核人", { exact: true })).toHaveCount(0);
+  await dialog.getByLabel("VC配额", { exact: true }).fill("0.08");
   await expect(dialog.getByLabel("复核人", { exact: true })).toBeVisible();
 });
 
@@ -332,9 +407,11 @@ test("a rejected publication refreshes remaining VC and preserves materials for 
   await dialog.getByLabel("验收标准", { exact: true }).fill("复核通过");
   await dialog.getByLabel("验收人", { exact: true }).selectOption(reviewerId);
   await dialog.getByRole("button", { name: "发布", exact: true }).click();
-  await expect(dialog.getByRole("alert")).toHaveText("项目剩余 VC 预算不足");
+  await expect(dialog.getByRole("alert").filter({ hasText: "项目剩余 VC 预算不足" })).toBeVisible();
   await expect(dialog.getByLabel("项目 VC 预算")).toHaveText("VC预算 100.00 · 已占用 95.00 · 剩余 5.00");
   await expect(dialog.getByLabel("VC配额", { exact: true })).toHaveAttribute("max", "5.00");
+  await expect(dialog.getByLabel("VC配额", { exact: true })).toHaveAttribute("aria-invalid", "true");
+  await expect(dialog.getByRole("button", { name: "发布", exact: true })).toBeDisabled();
   await expect(dialog.getByLabel("任务资料", { exact: true })).toHaveValue("声学样本说明");
   await expect(dialog.getByLabel("交付要求", { exact: true })).toHaveValue("完成标注表");
   await expect(dialog.getByLabel("验收标准", { exact: true })).toHaveValue("复核通过");
@@ -342,4 +419,128 @@ test("a rejected publication refreshes remaining VC and preserves materials for 
   await dialog.getByRole("button", { name: "发布", exact: true }).click();
   await expect(dialog).toHaveCount(0);
   expect(attempts).toBe(2);
+});
+
+const bountyRecord = {
+  id: "bounty-a",
+  stage_id: "stage-a",
+  project_id: projectId,
+  project: "声学实验",
+  issue_id: issueId,
+  issue_key: "LAB-1",
+  title: "标注声学样本",
+  deliverable: "标注表",
+  criteria: "复核全部通过",
+  budget: "20.00",
+  claim_available: "5.00",
+  reserved: "20.00",
+  awarded: "3.00",
+  status: "open",
+  major: false,
+  major_reasons: [],
+  evidence: "",
+  due_at: null,
+  overdue: false,
+  is_lead: false,
+  is_reviewer: false,
+  is_independent_reviewer: false,
+  allocations: [],
+  acceptances: [],
+};
+
+test("claim VC validates the authoritative remaining plan budget while typing", async ({ page }) => {
+  let claims = 0;
+  await mount(page, async () => {
+    await page.route("**/lab/bounties/", (route) => route.fulfill({ json: [bountyRecord] }));
+    await page.route("**/lab/bounties/bounty-a/detail/", (route) => route.fulfill({ json: bountyRecord }));
+    await page.route("**/lab/bounties/bounty-a/claim/", (route) => {
+      claims++;
+      return route.fulfill({ json: {} });
+    });
+  });
+  await page.getByRole("button", { name: "查看悬赏 标注声学样本", exact: true }).click();
+  await page.getByRole("button", { name: "申请认领", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "申请团队分工", exact: true });
+  const planned = dialog.getByLabel("计划 VC", { exact: true });
+  await planned.fill("5.01");
+  await expect(planned).toHaveAttribute("aria-invalid", "true");
+  await expect(dialog.getByRole("alert")).toContainText("5.00 VC");
+  await expect(dialog.getByRole("button", { name: "保存", exact: true })).toBeDisabled();
+  await planned.fill("5.00");
+  await expect(dialog.getByRole("alert")).toHaveCount(0);
+  await expect(dialog.getByRole("button", { name: "保存", exact: true })).toBeEnabled();
+  expect(claims).toBe(0);
+});
+
+test("claim rejection refreshes remaining VC without discarding delivery text", async ({ page }) => {
+  let claims = 0;
+  let planned: string | undefined;
+  await mount(page, async () => {
+    await page.route("**/lab/bounties/", (route) => route.fulfill({ json: [bountyRecord] }));
+    await page.route("**/lab/bounties/bounty-a/detail/", (route) =>
+      route.fulfill({ json: { ...bountyRecord, claim_available: claims ? "2.00" : "5.00" } })
+    );
+    await page.route("**/lab/bounties/bounty-a/claim/", (route) => {
+      claims++;
+      planned = (route.request().postDataJSON() as { planned: string }).planned;
+      return claims === 1
+        ? route.fulfill({ status: 400, json: { detail: "可认领 VC 不足" } })
+        : route.fulfill({ json: {} });
+    });
+  });
+  await page.getByRole("button", { name: "查看悬赏 标注声学样本", exact: true }).click();
+  await page.getByRole("button", { name: "申请认领", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "申请团队分工", exact: true });
+  await dialog.getByLabel("本人交付物", { exact: true }).fill("保留个人交付说明");
+  await dialog.getByLabel("计划 VC", { exact: true }).fill("5");
+  await dialog.getByRole("button", { name: "保存", exact: true }).click();
+  await expect(dialog.getByRole("alert").filter({ hasText: "可认领 VC 不足" })).toBeVisible();
+  await expect(dialog.getByLabel("计划 VC", { exact: true })).toHaveAttribute("max", "2.00");
+  await expect(dialog.getByRole("button", { name: "保存", exact: true })).toBeDisabled();
+  await expect(dialog.getByLabel("本人交付物", { exact: true })).toHaveValue("保留个人交付说明");
+  await dialog.getByLabel("计划 VC", { exact: true }).fill("2");
+  await dialog.getByRole("button", { name: "保存", exact: true }).click();
+  await expect(dialog).toHaveCount(0);
+  expect(claims).toBe(2);
+  expect(planned).toBe("2");
+});
+
+test("acceptance cumulative VC warns above plan and below previously awarded contribution", async ({ page }) => {
+  const reviewing = {
+    ...bountyRecord,
+    status: "review",
+    is_reviewer: true,
+    allocations: [
+      {
+        id: "allocation-a",
+        user_id: reviewerId,
+        name: "成员",
+        deliverable: "标注表",
+        planned: "10.00",
+        awarded: "3.00",
+        approved: true,
+        confirmed: true,
+        closed: false,
+      },
+    ],
+  };
+  await mount(page, async () => {
+    await page.route("**/lab/bounties/", (route) => route.fulfill({ json: [reviewing] }));
+    await page.route("**/lab/bounties/bounty-a/detail/", (route) => route.fulfill({ json: reviewing }));
+  });
+  await page.getByRole("button", { name: "全部悬赏", exact: true }).click();
+  await page.getByRole("button", { name: "查看悬赏 标注声学样本", exact: true }).click();
+  await page.getByRole("button", { name: "独立验收", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "独立验收与累计贡献", exact: true });
+  const cumulative = dialog.getByLabel("成员 累计通过 VC（已授予 3.00 / 计划 10.00）", { exact: true });
+  await expect(cumulative).toHaveValue("10.00");
+  await cumulative.fill("10.01");
+  await expect(cumulative).toHaveAttribute("aria-invalid", "true");
+  await expect(dialog.getByRole("alert")).toContainText("10.00 VC");
+  await expect(dialog.getByRole("button", { name: "保存", exact: true })).toBeDisabled();
+  await cumulative.fill("2.99");
+  await expect(dialog.getByRole("alert")).toContainText("3.00 VC");
+  await cumulative.fill("3.00");
+  await expect(dialog.getByRole("alert")).toHaveCount(0);
+  await expect(dialog.getByRole("button", { name: "保存", exact: true })).toBeEnabled();
 });

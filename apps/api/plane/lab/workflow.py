@@ -135,6 +135,7 @@ def actions_for(bounty, user, allocations, ledger):
             and bounty.issue_id
             and not bounty.issue.archived_at
             and user.id not in (bounty.reviewer_id, bounty.independent_reviewer_id)
+            and bounties.claim_available(bounty) > 0
         ):
             add("claim", "申请认领", "claim")
         if lead:

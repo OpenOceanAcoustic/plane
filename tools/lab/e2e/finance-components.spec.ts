@@ -579,6 +579,44 @@ test("ordinary HTTP direct finance toolbar opens the same business form", async 
     await expect(page.getByRole("dialog")).toHaveCount(0);
   }
 });
+
+test("financial amount warns immediately when exceeding the selected source balance", async ({ page }) => {
+  await common(page);
+  const data = overview();
+  data.accounts[0]!.available = "0.30";
+  data.accounts[0]!.kind = "project";
+  data.accounts.push({
+    ...data.accounts[0]!,
+    id: "retained",
+    kind: "retained",
+    label: "留存资金",
+    balance: "100.00",
+    available: "100.00",
+  });
+  await page.route("**/lab/finance/overview/**", (route) => route.fulfill({ json: data }));
+  let posts = 0;
+  await page.route("**/lab/finance/transfer/", (route) => {
+    posts += 1;
+    return route.fulfill({ json: { ok: true } });
+  });
+  await mount(page, "finance");
+  await page.getByLabel("办理资金事项").selectOption("transfer");
+  const dialog = page.getByRole("dialog");
+  await dialog.getByLabel("转出账户").selectOption("execution");
+  await dialog.getByLabel("转入账户").selectOption("retained");
+  await dialog.getByLabel("划拨金额（元）").fill("0.31");
+  await expect(dialog.getByRole("alert")).toContainText("0.30");
+  await expect(dialog.getByRole("button", { name: "保存", exact: true })).toBeDisabled();
+  expect(posts).toBe(0);
+  await dialog.getByLabel("划拨金额（元）").fill("0.30");
+  await expect(dialog.getByRole("alert")).toHaveCount(0);
+  await expect(dialog.getByRole("button", { name: "保存", exact: true })).toBeEnabled();
+  await dialog.getByLabel("划拨金额（元）").fill("10.00");
+  await expect(dialog.getByRole("alert")).toBeVisible();
+  await dialog.getByLabel("转出账户").selectOption("retained");
+  await expect(dialog.getByRole("alert")).toHaveCount(0);
+  await expect(dialog.getByRole("button", { name: "保存", exact: true })).toBeEnabled();
+});
 /* oxlint-enable no-await-in-loop */
 
 test("ordinary HTTP published team bounty can be deleted without removing personal planning references", async ({
@@ -881,7 +919,7 @@ test("final reward can differ from forecast and failed retry preserves idempoten
   const dialog = page.getByRole("dialog");
   await dialog.getByLabel("阶段", { exact: true }).selectOption(stageId);
   await dialog.getByLabel("奖励成员").selectOption(memberId);
-  await dialog.getByLabel("个人阶段累计最终核准金额（元）").fill("80000");
+  await dialog.getByLabel("个人阶段累计最终核准金额（元）").fill("1800.00");
   await dialog.getByLabel("绩效与核准依据").fill("按实际质量追加奖励");
   await dialog.getByLabel("关联参考预测（可选）").selectOption("forecast");
   await dialog.getByLabel("操作／核准依据").fill("负责人核准");
@@ -1405,4 +1443,458 @@ test("retained funds allocate only to another frozen stage in the same project w
   expect(body?.evidence).toBe("结转核准单 C-01");
   expect(body?.request_key).toMatch(/^[0-9a-f-]{36}$/);
   expect(settlementRequests).toBe(0);
+});
+
+function financialLimitOverview(): LabFinanceOverview {
+  const data = overview();
+  data.future_plan_limits = { "2026": "90.00", "2025": "50.00" };
+  data.members.push({ id: "member-two", name: "成员乙" });
+  Object.assign(data.accounts[0]!, { balance: "100.00", available: "80.00", committed: "20.00" });
+  Object.assign(data.stages[0]!, { execution_funded: "100.00" });
+  for (const [kind, balance, available] of [
+    ["project", "10.00", "10.00"],
+    ["retained", "100.00", "70.00"],
+    ["risk", "40.00", "30.00"],
+    ["dispute", "40.00", "30.00"],
+    ["withholding", "10.00", "10.00"],
+    ["public", "100.00", "80.00"],
+    ["future_exploration", "50.00", "40.00"],
+    ["future_pool", "100.00", "100.00"],
+  ]) {
+    data.accounts.push({
+      id: kind!,
+      kind: kind!,
+      balance: balance!,
+      available: available!,
+      committed: "0.00",
+      label: kind!,
+      project_id: ["public", "future_pool", "future_exploration"].includes(kind!) ? null : projectId,
+      stage_id: ["public", "future_pool", "future_exploration"].includes(kind!) ? null : stageId,
+      can_manage: true,
+    });
+  }
+  data.settlements = [
+    {
+      id: "settlement-one",
+      stage_id: stageId,
+      user_id: memberId,
+      user_name: "成员甲",
+      kind: "execution",
+      revision: 1,
+      amount: "60.00",
+      forecast_id: null,
+      forecast_amount: null,
+      difference: null,
+      performance_basis: "绩效",
+      paid: "10.00",
+      outstanding: "50.00",
+      committed: "20.00",
+      withheld: "0.00",
+      net_paid: "10.00",
+      can_manage: true,
+    },
+    {
+      id: "settlement-two",
+      stage_id: stageId,
+      user_id: "member-two",
+      user_name: "成员乙",
+      kind: "execution",
+      revision: 1,
+      amount: "20.00",
+      forecast_id: null,
+      forecast_amount: null,
+      difference: null,
+      performance_basis: "绩效",
+      paid: "0.00",
+      outstanding: "20.00",
+      committed: "0.00",
+      withheld: "0.00",
+      net_paid: "0.00",
+      can_manage: true,
+    },
+  ];
+  data.commitments = [
+    {
+      id: "commitment",
+      settlement_id: "settlement-one",
+      account_id: "execution",
+      user_id: memberId,
+      amount: "20.00",
+      paid: "0.00",
+      remaining: "20.00",
+      cancelled: false,
+      can_manage: true,
+    },
+  ];
+  data.batches = [
+    {
+      id: "batch",
+      stage_id: stageId,
+      project_id: projectId,
+      gross: "400",
+      costs: "0",
+      D: "400",
+      source: "到账批次",
+      risk: "40.00",
+      execution: "280.00",
+      history: "0.00",
+      risk_released: "0.00",
+      risk_remaining: "40.00",
+      history_snapshot: [],
+      created_at: "2026-10-09T08:00:00Z",
+      can_manage: true,
+    },
+  ];
+  data.public_awards = [
+    {
+      id: "public-award",
+      group_key: "public-group",
+      revision: 1,
+      user_id: memberId,
+      user_name: "成员甲",
+      period: "2026-10",
+      duty: "设备管理",
+      amount: "60.00",
+      paid: "10.00",
+      outstanding: "50.00",
+      committed: "20.00",
+      withheld: "0.00",
+      net_paid: "10.00",
+      can_manage: true,
+    },
+    {
+      id: "public-award-two",
+      group_key: "public-group-two",
+      revision: 1,
+      user_id: "member-two",
+      user_name: "成员乙",
+      period: "2026-10",
+      duty: "资料管理",
+      amount: "20.00",
+      paid: "0.00",
+      outstanding: "20.00",
+      committed: "0.00",
+      withheld: "0.00",
+      net_paid: "0.00",
+      can_manage: true,
+    },
+  ];
+  data.public_commitments = [
+    {
+      id: "public-commitment",
+      award_id: "public-award",
+      account_id: "public",
+      user_id: memberId,
+      user_name: "成员甲",
+      amount: "20.00",
+      paid: "0.00",
+      remaining: "20.00",
+      cancelled: false,
+      can_manage: true,
+    },
+  ];
+  data.funding_targets = [
+    { stage_id: stageId, project_id: projectId, project: "声学实验", name: "探索阶段", E: "100.00" },
+  ];
+  data.operations.push({
+    id: "future-opening",
+    kind: "opening",
+    actor: "负责人",
+    reason: "期初",
+    evidence: "凭证",
+    payload: {},
+    created_at: "2026-10-09T08:00:00Z",
+    occurred_at: "2026-10-09T08:00:00Z",
+    reverses_id: null,
+    reversed: false,
+    can_manage: true,
+  });
+  data.entries.push({
+    id: "future-entry",
+    operation_id: "future-opening",
+    account_id: "future_pool",
+    project_id: null,
+    stage_id: null,
+    kind: "future_pool",
+    delta: "90.00",
+    reason: "期初",
+    evidence: "凭证",
+    actor: "负责人",
+    created_at: "2026-10-09T08:00:00Z",
+    occurred_at: "2026-10-09T08:00:00Z",
+    reverses_id: null,
+  });
+  return data;
+}
+
+for (const scenario of [
+  { action: "expense", selector: "支出账户", source: "project", label: "实际支出（元）", limit: "10.00" },
+  {
+    action: "tax-remit",
+    selector: "扣缴待上缴账户",
+    source: "withholding",
+    label: "线下上缴金额（元）",
+    limit: "10.00",
+  },
+  { action: "risk-release", selector: "原到账批次", source: "batch", label: "释放金额（元）", limit: "30.00" },
+  {
+    action: "risk-use",
+    selector: "原到账风险准备金批次",
+    source: "batch",
+    label: "已批准的实际支出（元）",
+    limit: "30.00",
+  },
+  {
+    action: "commit",
+    selector: "已核准奖励",
+    source: "settlement-one",
+    label: "本次支付安排金额（元）",
+    limit: "30.00",
+  },
+  {
+    action: "payment",
+    selector: "已批准的现金支付安排",
+    source: "commitment",
+    label: "本次核销应付（元）",
+    limit: "20.00",
+  },
+  {
+    action: "public-commit",
+    selector: "已核准公共职责奖励",
+    source: "public-award",
+    label: "本次公共职责支付安排（元）",
+    limit: "30.00",
+  },
+  {
+    action: "public-payment",
+    selector: "公共职责未付支付安排",
+    source: "public-commitment",
+    label: "本次核销应付（元）",
+    limit: "20.00",
+  },
+  { action: "dispute", selector: "原阶段执行账户", source: "execution", label: "预留争议金额（元）", limit: "20.00" },
+  { action: "carryover", selector: "原阶段执行账户", source: "execution", label: "未用余额结转（元）", limit: "20.00" },
+  { action: "resolve-dispute", selector: "原争议账户", source: "dispute", label: "释放金额（元）", limit: "30.00" },
+  {
+    action: "stage-allocation",
+    selector: "同项目留存来源账户",
+    source: "retained",
+    label: "留存拨付执行奖励（元）",
+    limit: "70.00",
+  },
+  {
+    action: "exploration-allocation",
+    selector: "探索阶段",
+    source: stageId,
+    label: "探索奖励拨付（元）",
+    limit: "40.00",
+  },
+  {
+    action: "public-duty",
+    selector: "公共职责成员",
+    source: memberId,
+    label: "本月累计固定奖励（元）",
+    limit: "30.00",
+  },
+  { action: "future-plan", selector: "", source: "", label: "该年度尚未编列的新增未来池资金（元）", limit: "90.00" },
+]) {
+  test(`financial ${scenario.action} checks the actual remaining amount while typing`, async ({ page }) => {
+    await common(page);
+    await page.route("**/lab/finance/overview/**", (route) => route.fulfill({ json: financialLimitOverview() }));
+    let writes = 0;
+    await page.route(`**/lab/finance/${scenario.action}/`, (route) => {
+      writes += 1;
+      return route.fulfill({ json: { ok: true } });
+    });
+    await mount(page, "finance");
+    await page.getByLabel("办理资金事项").selectOption(scenario.action);
+    const dialog = page.getByRole("dialog");
+    if (scenario.selector) await dialog.getByLabel(scenario.selector, { exact: true }).selectOption(scenario.source);
+    if (scenario.action === "future-plan") await dialog.getByLabel("编列年度", { exact: true }).fill("2026");
+    await dialog.getByLabel(scenario.label, { exact: true }).fill(String(Number(scenario.limit) + 1));
+    await expect(dialog.getByRole("alert")).toContainText(scenario.limit);
+    await expect(dialog.getByRole("button", { name: "保存", exact: true })).toBeDisabled();
+    expect(writes).toBe(0);
+    await dialog.getByLabel(scenario.label, { exact: true }).fill(scenario.limit);
+    await expect(dialog.getByRole("alert")).toHaveCount(0);
+    await expect(dialog.getByRole("button", { name: "保存", exact: true })).toBeEnabled();
+  });
+}
+
+for (const action of ["payment", "public-payment"]) {
+  test(`financial ${action} checks withholding against gross immediately and after gross changes`, async ({ page }) => {
+    await common(page);
+    await page.route("**/lab/finance/overview/**", (route) => route.fulfill({ json: financialLimitOverview() }));
+    await mount(page, "finance");
+    await page.getByLabel("办理资金事项").selectOption(action);
+    const dialog = page.getByRole("dialog");
+    await dialog
+      .getByLabel(action === "payment" ? "已批准的现金支付安排" : "公共职责未付支付安排", { exact: true })
+      .selectOption(action === "payment" ? "commitment" : "public-commitment");
+    await dialog.getByLabel("本次核销应付（元）").fill("10.00");
+    await dialog.getByLabel("本次扣缴（元）").fill("10.01");
+    await expect(dialog.getByRole("alert")).toContainText("10.00");
+    await expect(dialog.getByRole("button", { name: "保存", exact: true })).toBeDisabled();
+    await dialog.getByLabel("本次扣缴（元）").fill("10.00");
+    await expect(dialog.getByRole("alert")).toHaveCount(0);
+    await dialog.getByLabel("本次核销应付（元）").fill("5.00");
+    await expect(dialog.getByRole("alert")).toContainText("5.00");
+    await expect(dialog.getByRole("button", { name: "保存", exact: true })).toBeDisabled();
+  });
+}
+
+test("financial cumulative approval respects other members and existing payments without using forecast as a ceiling", async ({
+  page,
+}) => {
+  await common(page);
+  await page.route("**/lab/finance/overview/**", (route) => route.fulfill({ json: financialLimitOverview() }));
+  await mount(page, "finance");
+  await page.getByLabel("办理资金事项").selectOption("settlement");
+  const dialog = page.getByRole("dialog");
+  await dialog.getByLabel("阶段", { exact: true }).selectOption(stageId);
+  await dialog.getByLabel("奖励成员").selectOption(memberId);
+  await dialog.getByLabel("个人阶段累计最终核准金额（元）").fill("80.01");
+  await expect(dialog.getByRole("alert")).toContainText("80.00");
+  await dialog.getByLabel("个人阶段累计最终核准金额（元）").fill("80.00");
+  await expect(dialog.getByRole("alert")).toHaveCount(0);
+  await dialog.getByLabel("个人阶段累计最终核准金额（元）").fill("29.99");
+  await expect(dialog.getByRole("alert")).toContainText("30.00");
+  await dialog.getByLabel("个人阶段累计最终核准金额（元）").fill("40.01");
+  await dialog.getByLabel("奖励成员").selectOption("member-two");
+  await expect(dialog.getByRole("alert")).toContainText("40.00");
+  await expect(dialog.getByRole("button", { name: "保存", exact: true })).toBeDisabled();
+});
+
+test("financial receipt limits costs and D to the entered real receipt while gross remains unrestricted", async ({
+  page,
+}) => {
+  await common(page);
+  await page.route("**/lab/finance/overview/**", (route) => route.fulfill({ json: financialLimitOverview() }));
+  await mount(page, "finance");
+  await page.getByLabel("办理资金事项").selectOption("receipt");
+  const dialog = page.getByRole("dialog");
+  await dialog.getByLabel("阶段", { exact: true }).selectOption(stageId);
+  await dialog.getByLabel("本次真实到账（元）").fill("1000000.00");
+  await expect(dialog.getByRole("alert")).toHaveCount(0);
+  await dialog.getByLabel("本次真实到账（元）").fill("0.30");
+  await dialog.getByLabel("本次成本扣除（元）").fill("0.31");
+  await expect(dialog.getByRole("alert")).toContainText("0.30");
+  await dialog.getByLabel("本次成本扣除（元）").fill("0.10");
+  await dialog.getByLabel("本次核准可分配 D（元）").fill("0.21");
+  await expect(dialog.getByRole("alert")).toContainText("0.20");
+  await dialog.getByLabel("本次核准可分配 D（元）").fill("0.20");
+  await expect(dialog.getByRole("alert")).toHaveCount(0);
+  await expect(dialog.getByRole("button", { name: "保存", exact: true })).toBeEnabled();
+});
+
+test("financial stage purposes and selected member VC share the same exact budget", async ({ page }) => {
+  await common(page);
+  const data = financialLimitOverview();
+  data.stages = [];
+  await page.route("**/lab/finance/overview/**", (route) => route.fulfill({ json: data }));
+  await mount(page, "finance");
+  await page.getByLabel("办理资金事项").selectOption("stage");
+  const dialog = page.getByRole("dialog");
+  await dialog.getByLabel("事前冻结的 VC 阶段 B").selectOption(stageId);
+  await dialog.getByLabel("阶段执行奖励预算 E（元）").fill("0.30");
+  await dialog.getByLabel("用途金额（元）").fill("0.10");
+  await dialog.getByRole("button", { name: "添加用途条目" }).click();
+  await dialog.getByLabel("用途金额（元）").nth(1).fill("0.20");
+  await expect(dialog.getByRole("alert")).toHaveCount(0);
+  await dialog.getByLabel("用途金额（元）").nth(1).fill("0.21");
+  await expect(dialog.getByRole("alert").filter({ hasText: "0.20" })).toBeVisible();
+  await expect(dialog.getByRole("button", { name: "保存", exact: true })).toBeDisabled();
+  await dialog.getByRole("button", { name: "删除用途" }).nth(1).click();
+  await expect(dialog.getByRole("alert")).toHaveCount(0);
+  await dialog.getByLabel("成员", { exact: true }).selectOption(memberId);
+  await dialog.getByLabel("计划 VC").fill("600.00");
+  await dialog.getByRole("button", { name: "添加成员参数" }).click();
+  await dialog.getByLabel("成员", { exact: true }).nth(1).selectOption("member-two");
+  await dialog.getByLabel("计划 VC").nth(1).fill("400.00");
+  await expect(dialog.getByRole("alert")).toHaveCount(0);
+  await dialog.getByLabel("计划 VC").nth(1).fill("400.01");
+  await expect(dialog.getByRole("alert").filter({ hasText: "400.00" })).toBeVisible();
+  await dialog.getByLabel("计划 VC").nth(1).fill("400.00");
+  await dialog.getByLabel("基础份额 b（0–1）").first().fill("0.6");
+  await dialog.getByLabel("基础份额 b（0–1）").nth(1).fill("0.4");
+  await expect(dialog.getByRole("alert")).toHaveCount(0);
+  await dialog.getByLabel("基础份额 b（0–1）").nth(1).fill("0.4001");
+  await expect(dialog.getByRole("alert").filter({ hasText: "0.4000" })).toBeVisible();
+  await expect(dialog.getByRole("button", { name: "保存", exact: true })).toBeDisabled();
+});
+
+test("financial annual limits come from the server and update with the selected year", async ({ page }) => {
+  await common(page);
+  const data = financialLimitOverview();
+  data.operations = [];
+  data.entries = [];
+  await page.route("**/lab/finance/overview/**", (route) => route.fulfill({ json: data }));
+  await mount(page, "finance");
+  await page.getByLabel("办理资金事项").selectOption("future-plan");
+  const dialog = page.getByRole("dialog");
+  await dialog.getByLabel("编列年度").fill("2026");
+  await dialog.getByLabel("该年度尚未编列的新增未来池资金（元）").fill("90.00");
+  await expect(dialog.getByRole("alert")).toHaveCount(0);
+  await dialog.getByLabel("编列年度").fill("2025");
+  await expect(dialog.getByRole("alert")).toContainText("50.00");
+  await expect(dialog.getByRole("button", { name: "保存", exact: true })).toBeDisabled();
+  await dialog.getByLabel("该年度尚未编列的新增未来池资金（元）").fill("50.00");
+  await dialog.getByLabel("编列年度").fill("2024");
+  await expect(dialog.getByRole("alert")).toContainText("0 元");
+});
+
+test("financial payment respects cash balance even when an existing commitment has no available cash", async ({
+  page,
+}) => {
+  await common(page);
+  const data = financialLimitOverview();
+  Object.assign(data.accounts[0]!, { balance: "5.00", available: "0.00" });
+  await page.route("**/lab/finance/overview/**", (route) => route.fulfill({ json: data }));
+  await mount(page, "finance");
+  await page.getByLabel("办理资金事项").selectOption("payment");
+  const dialog = page.getByRole("dialog");
+  await dialog.getByLabel("已批准的现金支付安排").selectOption("commitment");
+  await dialog.getByLabel("本次核销应付（元）").fill("5.01");
+  await expect(dialog.getByRole("alert")).toContainText("5.00");
+  await dialog.getByLabel("本次核销应付（元）").fill("5.00");
+  await expect(dialog.getByRole("alert")).toHaveCount(0);
+  await expect(dialog.getByRole("button", { name: "保存", exact: true })).toBeEnabled();
+});
+
+test("financial public pool protects approved duties and uses public totals when project filtering hides accounts", async ({
+  page,
+}) => {
+  await common(page);
+  const data = financialLimitOverview();
+  data.accounts = data.accounts.filter((row) => row.project_id !== null);
+  data.public_summary = [
+    { kind: "public", label: "公共贡献池", balance: "100.00", available: "80.00", committed: "20.00" },
+  ];
+  await page.route("**/lab/finance/overview/**", (route) => route.fulfill({ json: data }));
+  await mount(page, "finance", `/test/lab/finance?project_id=${projectId}`);
+  await page.getByLabel("办理资金事项").selectOption("public-duty");
+  const dialog = page.getByRole("dialog");
+  await dialog.getByLabel("公共职责成员").selectOption(memberId);
+  await dialog.getByLabel("本月累计固定奖励（元）").fill("30.01");
+  await expect(dialog.getByRole("alert")).toContainText("30.00");
+  await dialog.getByLabel("追加修订的原核准（可选）").selectOption("public-award");
+  await dialog.getByLabel("本月累计固定奖励（元）").fill("90.00");
+  await expect(dialog.getByRole("alert")).toHaveCount(0);
+  await dialog.getByLabel("本月累计固定奖励（元）").fill("29.99");
+  await expect(dialog.getByRole("alert")).toContainText("30.00");
+});
+
+test("financial new budgets and opening balances do not inherit an unrelated account ceiling", async ({ page }) => {
+  await common(page);
+  await page.route("**/lab/finance/overview/**", (route) => route.fulfill({ json: financialLimitOverview() }));
+  await mount(page, "finance");
+  await page.getByRole("button", { name: "设置 VC 预算", exact: true }).click();
+  let dialog = page.getByRole("dialog");
+  await dialog.getByLabel("VC 预算", { exact: true }).fill("1000000.00");
+  await expect(dialog.getByRole("alert")).toHaveCount(0);
+  await dialog.getByRole("button", { name: "取消", exact: true }).click();
+  await page.getByLabel("办理资金事项").selectOption("opening");
+  dialog = page.getByRole("dialog");
+  await dialog.getByLabel("期初实际余额（元）").fill("1000000.00");
+  await expect(dialog.getByRole("alert")).toHaveCount(0);
 });

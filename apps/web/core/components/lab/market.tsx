@@ -11,7 +11,15 @@ import { useSWRConfig } from "swr";
 import { Button, LabBountyBadge, labBountyOutline } from "@plane/ui";
 import type { LabBounty } from "@plane/types";
 import type { LabStore } from "@plane/shared-state";
-import { LabDialog, LabField, labInputClass } from "@plane/ui";
+import {
+  LabAmountInput,
+  LabDialog,
+  LabField,
+  labAmountError,
+  labDecimalText,
+  labDecimalUnits,
+  labInputClass,
+} from "@plane/ui";
 import { LabBountyWorkflow } from "./workflow";
 import { LabBountyMaterials } from "./bounty-materials";
 import { LabBountyPublish } from "./bounty-publish";
@@ -39,6 +47,8 @@ export const LabMarket = observer(function LabMarket({ store }: { store: LabStor
   const [projectFilter, setProjectFilter] = useState("");
   const [result, setResult] = useState("pass");
   const [acceptanceKey, setAcceptanceKey] = useState("");
+  const [plannedVc, setPlannedVc] = useState("");
+  const [acceptanceTargets, setAcceptanceTargets] = useState<Record<string, string>>({});
   const [workflowIds, setWorkflowIds] = useState<Set<string>>(new Set());
   const [reasonAction, setReasonAction] = useState<{
     bounty: LabBounty;
@@ -68,7 +78,30 @@ export const LabMarket = observer(function LabMarket({ store }: { store: LabStor
   const close = () => {
     setMode(undefined);
     setChosen(undefined);
+    setPlannedVc("");
+    setAcceptanceTargets({});
   };
+  const claimLimit = chosen
+    ? (chosen.claim_available ??
+      labDecimalText(
+        (labDecimalUnits(chosen.budget) ?? 0n) -
+          chosen.allocations
+            .filter((row) => row.approved)
+            .reduce((total, row) => total + (labDecimalUnits(row.planned) ?? 0n), 0n)
+      ))
+    : undefined;
+  const claimError = labAmountError(plannedVc, { limit: claimLimit, min: "0.01", unit: "VC" });
+  const acceptanceInvalid =
+    !["rework", "reject"].includes(result) &&
+    !!chosen?.allocations.some(
+      (row) =>
+        row.approved &&
+        !!labAmountError(acceptanceTargets[row.id] ?? row.planned, {
+          limit: row.planned,
+          min: row.awarded,
+          unit: "VC",
+        })
+    );
   async function act(bounty: LabBounty, action: string, body: unknown = {}) {
     await store.execute(async () => {
       await store.request(`bounties/${bounty.id}/${action}/`, "POST", body);
@@ -83,6 +116,20 @@ export const LabMarket = observer(function LabMarket({ store }: { store: LabStor
       await store.loadPlanner();
       close();
     });
+  }
+  async function refreshOnFailure(action: () => Promise<void>) {
+    try {
+      await action();
+    } catch (failure) {
+      if (chosen) {
+        try {
+          setChosen(await store.loadBountyDetail(chosen.id));
+        } catch {
+          // Retain the original action failure if the balance refresh is unavailable.
+        }
+      }
+      throw failure;
+    }
   }
   const actionReason = (bounty: LabBounty, action: string, extra: Record<string, string> = {}) => {
     setReasonAction({ bounty, action, extra });
@@ -345,6 +392,7 @@ export const LabMarket = observer(function LabMarket({ store }: { store: LabStor
                       size="sm"
                       onClick={() => {
                         setChosen(bounty);
+                        setPlannedVc("");
                         setMode("claim");
                       }}
                     >
@@ -380,6 +428,11 @@ export const LabMarket = observer(function LabMarket({ store }: { store: LabStor
                         setChosen(bounty);
                         setResult("pass");
                         setAcceptanceKey(uuidv4());
+                        setAcceptanceTargets(
+                          Object.fromEntries(
+                            bounty.allocations.filter((row) => row.approved).map((row) => [row.id, row.planned])
+                          )
+                        );
                         setMode("accept");
                       }}
                     >
@@ -555,13 +608,17 @@ export const LabMarket = observer(function LabMarket({ store }: { store: LabStor
         <LabDialog
           title="申请团队分工"
           busy={store.busy}
+          error={store.error}
+          submitDisabled={!!claimError}
           onClose={close}
           onSubmit={(data) =>
             finish(() =>
-              store.request(`bounties/${chosen.id}/claim/`, "POST", {
-                deliverable: data.get("deliverable"),
-                planned: data.get("planned"),
-              })
+              refreshOnFailure(() =>
+                store.request(`bounties/${chosen.id}/claim/`, "POST", {
+                  deliverable: data.get("deliverable"),
+                  planned: data.get("planned"),
+                })
+              )
             )
           }
         >
@@ -569,11 +626,14 @@ export const LabMarket = observer(function LabMarket({ store }: { store: LabStor
             <textarea name="deliverable" className={labInputClass} required />
           </LabField>
           <LabField label="计划 VC">
-            <input
+            <LabAmountInput
+              aria-label="计划 VC"
               name="planned"
-              type="number"
               min="0.01"
-              max={chosen.budget}
+              limit={claimLimit}
+              unit="VC"
+              value={plannedVc}
+              onValueChange={setPlannedVc}
               step="0.01"
               className={labInputClass}
               required
@@ -599,19 +659,25 @@ export const LabMarket = observer(function LabMarket({ store }: { store: LabStor
         <LabDialog
           title="独立验收与累计贡献"
           busy={store.busy}
+          error={store.error}
+          submitDisabled={acceptanceInvalid}
           onClose={close}
           onSubmit={(data) =>
             finish(() =>
-              store.request(`bounties/${chosen.id}/accept/`, "POST", {
-                request_key: acceptanceKey,
-                result,
-                reason: data.get("reason"),
-                targets: ["rework", "reject"].includes(result)
-                  ? {}
-                  : Object.fromEntries(
-                      chosen.allocations.filter((row) => row.approved).map((row) => [row.id, String(data.get(row.id))])
-                    ),
-              })
+              refreshOnFailure(() =>
+                store.request(`bounties/${chosen.id}/accept/`, "POST", {
+                  request_key: acceptanceKey,
+                  result,
+                  reason: data.get("reason"),
+                  targets: ["rework", "reject"].includes(result)
+                    ? {}
+                    : Object.fromEntries(
+                        chosen.allocations
+                          .filter((row) => row.approved)
+                          .map((row) => [row.id, String(data.get(row.id))])
+                      ),
+                })
+              )
             )
           }
         >
@@ -632,14 +698,16 @@ export const LabMarket = observer(function LabMarket({ store }: { store: LabStor
               .filter((row) => row.approved)
               .map((row) => (
                 <LabField key={row.id} label={`${row.name} 累计通过 VC（已授予 ${row.awarded} / 计划 ${row.planned}）`}>
-                  <input
+                  <LabAmountInput
+                    aria-label={`${row.name} 累计通过 VC（已授予 ${row.awarded} / 计划 ${row.planned}）`}
                     name={row.id}
-                    type="number"
                     min={row.awarded}
-                    max={row.planned}
+                    limit={row.planned}
+                    unit="VC"
                     step="0.01"
                     className={labInputClass}
-                    defaultValue={row.planned}
+                    value={acceptanceTargets[row.id] ?? row.planned}
+                    onValueChange={(value) => setAcceptanceTargets((previous) => ({ ...previous, [row.id]: value }))}
                     required
                   />
                 </LabField>

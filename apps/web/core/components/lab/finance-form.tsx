@@ -3,7 +3,16 @@ import { useState } from "react";
 import { v4 as uuidv4 } from "uuid";
 import type { LabFinanceOverview } from "@plane/types";
 import type { LabStore } from "@plane/shared-state";
-import { Button, LabDialog, LabField, labInputClass } from "@plane/ui";
+import {
+  Button,
+  LabAmountInput,
+  LabDialog,
+  LabField,
+  labAmountError,
+  labDecimalText,
+  labDecimalUnits,
+  labInputClass,
+} from "@plane/ui";
 import { calendarInstant } from "./calendar-time";
 
 export const financeActionLabels: Record<string, string> = {
@@ -61,6 +70,16 @@ type Field = {
 export type LabFinanceChosenAction = { action: string; body?: Record<string, string> };
 const text = (form: FormData, key: string) => String(form.get(key) ?? "").trim();
 
+const units = (value: string | null | undefined, precision = 2) =>
+  value === null || value === undefined || value === "" ? null : labDecimalUnits(value, precision);
+const positive = (value: bigint) => (value > 0n ? value : 0n);
+const minimumLimit = (...values: (string | null | undefined)[]) => {
+  const known = values.map((value) => units(value)).filter((value): value is bigint => value !== null);
+  return known.length
+    ? labDecimalText(positive(known.reduce((minimum, value) => (value < minimum ? value : minimum))))
+    : undefined;
+};
+
 const number = (key: string, label: string, required = true, value?: string): Field => ({
   key,
   label,
@@ -99,6 +118,7 @@ export function LabFinanceActionDialog({
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
   const [allocationSource, setAllocationSource] = useState(chosen.body?.from_account_id ?? "");
+  const [values, setValues] = useState<Record<string, string>>(chosen.body ?? {});
   const defaults = chosen.body ?? {};
   const action = chosen.action;
   const members = data.members.map((member) => ({ value: member.id, label: member.name }));
@@ -441,13 +461,162 @@ export function LabFinanceActionDialog({
       ];
       break;
   }
+  const valueOf = (key: string) =>
+    values[key] ??
+    defaults[key] ??
+    fields.find((field) => field.key === key)?.value ??
+    (key === "project_id" ? projectId || "public" : "");
+  const changeValue = (key: string, value: string) => {
+    setError("");
+    setValues((current) => ({ ...current, [key]: value }));
+  };
+  const limits: Record<string, string | undefined> = {};
+  const minimums: Record<string, string | undefined> = {};
+  const selectedStage = data.stages.find((row) => row.stage_id === valueOf("stage_id"));
+  const publicAccount =
+    manageable.find((row) => row.kind === "public" && row.project_id === null) ??
+    data.public_summary?.find((row) => row.kind === "public");
+  const publicOutstanding = (data.public_awards ?? []).reduce(
+    (total, row) => total + (units(row.outstanding) ?? 0n),
+    0n
+  );
+  const sourceAccount = manageable.find((row) => row.id === valueOf("from_account_id"));
+  const spendLimit = (account: typeof sourceAccount) =>
+    account?.kind === "public" && units(account.balance) !== null
+      ? minimumLimit(account.available, labDecimalText(units(account.balance)! - publicOutstanding))
+      : account?.available;
+  const stageAllocated = (stage: string, excludeUser?: string) =>
+    data.settlements
+      .filter((row) => row.kind === "execution" && row.stage_id === stage && row.user_id !== excludeUser)
+      .reduce((total, row) => total + (units(row.amount) ?? 0n), 0n);
+  if (["transfer", "stage-allocation", "dispute", "resolve-dispute", "carryover"].includes(action)) {
+    limits.amount = spendLimit(sourceAccount);
+    if (["dispute", "carryover"].includes(action) && sourceAccount?.stage_id) {
+      const stage = data.stages.find((row) => row.stage_id === sourceAccount.stage_id);
+      const funded = units(stage?.execution_funded);
+      if (funded !== null)
+        limits.amount = minimumLimit(limits.amount, labDecimalText(funded - stageAllocated(sourceAccount.stage_id)));
+    }
+  } else if (["expense", "tax-remit"].includes(action)) {
+    limits.amount = spendLimit(manageable.find((row) => row.id === valueOf("account_id")));
+  } else if (["risk-release", "risk-use"].includes(action)) {
+    const batch = data.batches.find((row) => row.id === valueOf("batch_id"));
+    limits.amount = minimumLimit(
+      batch?.risk_remaining,
+      manageable.find((row) => row.kind === "risk" && row.stage_id === batch?.stage_id)?.available
+    );
+  } else if (action === "settlement") {
+    const funded = units(selectedStage?.execution_funded);
+    if (funded !== null)
+      limits.amount = labDecimalText(positive(funded - stageAllocated(valueOf("stage_id"), valueOf("user_id"))));
+    const previous = data.settlements.find(
+      (row) => row.kind === "execution" && row.stage_id === valueOf("stage_id") && row.user_id === valueOf("user_id")
+    );
+    if (previous) minimums.amount = labDecimalText((units(previous.paid) ?? 0n) + (units(previous.committed) ?? 0n));
+  } else if (action === "commit") {
+    const settlement = data.settlements.find((row) => row.id === valueOf("settlement_id"));
+    if (settlement)
+      limits.amount = minimumLimit(
+        labDecimalText((units(settlement.outstanding) ?? 0n) - (units(settlement.committed) ?? 0n)),
+        manageable.find((row) => row.kind === settlement.kind && row.stage_id === settlement.stage_id)?.available
+      );
+  } else if (action === "public-commit") {
+    const award = data.public_awards?.find((row) => row.id === valueOf("award_id"));
+    if (award)
+      limits.amount = minimumLimit(
+        labDecimalText((units(award.outstanding) ?? 0n) - (units(award.committed) ?? 0n)),
+        publicAccount?.available
+      );
+  } else if (["payment", "public-payment"].includes(action)) {
+    const commitment = (action === "payment" ? data.commitments : (data.public_commitments ?? [])).find(
+      (row) => row.id === valueOf("commitment_id")
+    );
+    limits.gross = minimumLimit(
+      commitment?.remaining,
+      manageable.find((row) => row.id === commitment?.account_id)?.balance ??
+        (action === "public-payment" ? publicAccount?.balance : undefined)
+    );
+    limits.withheld = valueOf("gross") || undefined;
+  } else if (action === "public-duty") {
+    const previous = data.public_awards?.find((row) => row.id === valueOf("award_id"));
+    const balance = units(publicAccount?.balance);
+    if (balance !== null)
+      limits.amount = labDecimalText(positive(balance - publicOutstanding + (units(previous?.amount) ?? 0n)));
+    if (previous) minimums.amount = labDecimalText((units(previous.paid) ?? 0n) + (units(previous.committed) ?? 0n));
+  } else if (action === "exploration-allocation") {
+    limits.amount =
+      manageable.find((row) => row.kind === "future_exploration")?.available ??
+      data.public_summary?.find((row) => row.kind === "future_exploration")?.available;
+  } else if (action === "future-plan") {
+    const source =
+      manageable.find((row) => row.kind === "future_pool") ??
+      data.public_summary?.find((row) => row.kind === "future_pool");
+    limits.amount = minimumLimit(
+      source?.available,
+      data.future_plan_limits?.[valueOf("year")] ?? (data.future_plan_limits ? "0" : undefined)
+    );
+  } else if (action === "receipt") {
+    limits.costs = valueOf("gross") || undefined;
+    const gross = units(valueOf("gross"));
+    const costs = units(valueOf("costs"));
+    if (gross !== null && costs !== null) limits.D = labDecimalText(positive(gross - costs));
+  }
+  const numericFields = fields.filter((field) => field.type === "number" && field.key !== "year");
+  const numericErrors = numericFields.map((field) =>
+    labAmountError(valueOf(field.key), {
+      limit: limits[field.key],
+      min: minimums[field.key] ?? field.min,
+      unit: field.key === "budget" ? "VC" : "元",
+    })
+  );
+  const purposeLimits: Record<string, string | undefined> = {};
+  const shareLimits: Record<string, string | undefined> = {};
+  const stageErrors: string[] = [];
+  if (action === "stage") {
+    const E = units(valueOf("E"));
+    const B = units(store.stages?.find((row) => row.id === valueOf("stage_id"))?.budget);
+    for (const id of purposes) {
+      const key = `purpose-amount-${id}`;
+      if (E !== null)
+        purposeLimits[key] = labDecimalText(
+          positive(
+            E -
+              purposes
+                .filter((other) => other !== id)
+                .reduce((total, other) => total + (units(values[`purpose-amount-${other}`]) ?? 0n), 0n)
+          )
+        );
+      stageErrors.push(labAmountError(values[key] ?? "", { limit: purposeLimits[key] }));
+    }
+    for (const id of shares) {
+      for (const [name, precision, budget, unit] of [
+        ["vc", 2, B, "VC"],
+        ["b", 4, 10000n, "份额"],
+        ["r", 4, 10000n, "份额"],
+      ] as const) {
+        const key = `share-${name}-${id}`;
+        const otherTotal = shares
+          .filter((other) => other !== id && values[`share-user-${other}`])
+          .reduce((total, other) => total + (units(values[`share-${name}-${other}`] ?? "0", precision) ?? 0n), 0n);
+        if (budget !== null) shareLimits[key] = labDecimalText(positive(budget - otherTotal), precision);
+        if (values[`share-user-${id}`])
+          stageErrors.push(labAmountError(values[key] ?? "0", { limit: shareLimits[key], precision, unit }));
+      }
+    }
+    if (upgraded)
+      for (const id of history)
+        stageErrors.push(labAmountError(values[`history-vc-${id}`] ?? "", { min: "0.01", unit: "VC" }));
+  }
+  const invalid = [...numericErrors, ...stageErrors].some(Boolean);
   return (
     <LabDialog
       title={financeActionLabels[action] ?? "办理资金事项"}
       busy={store.busy || saving}
       onClose={onClose}
       error={error}
+      submitDisabled={invalid}
       onSubmit={async (form) => {
+        if (invalid) return;
         setError("");
         setSaving(true);
         const body: Record<string, unknown> = {
@@ -508,9 +677,10 @@ export function LabFinanceActionDialog({
             <select
               name={field.key}
               required={field.required}
-              defaultValue={defaults[field.key] ?? (field.key === "project_id" ? projectId || "public" : "")}
+              value={valueOf(field.key)}
               className={labInputClass}
               onChange={(event) => {
+                changeValue(field.key, event.target.value);
                 if (action === "stage-allocation" && field.key === "from_account_id")
                   setAllocationSource(event.target.value);
               }}
@@ -530,6 +700,17 @@ export function LabFinanceActionDialog({
               className={labInputClass}
               defaultValue={defaults[field.key] ?? field.value}
             />
+          ) : field.type === "number" && field.key !== "year" ? (
+            <LabAmountInput
+              name={field.key}
+              aria-label={field.label}
+              value={valueOf(field.key)}
+              onValueChange={(value) => changeValue(field.key, value)}
+              min={minimums[field.key] ?? field.min}
+              limit={limits[field.key]}
+              unit={field.key === "budget" ? "VC" : "元"}
+              required={field.required}
+            />
           ) : (
             <input
               name={field.key}
@@ -540,6 +721,9 @@ export function LabFinanceActionDialog({
               required={field.required}
               className={labInputClass}
               defaultValue={defaults[field.key] ?? field.value}
+              onChange={(event) => {
+                if (field.key === "year") changeValue(field.key, event.target.value);
+              }}
             />
           )}
         </LabField>
@@ -554,11 +738,12 @@ export function LabFinanceActionDialog({
                   <input name={`purpose-name-${id}`} required className={labInputClass} />
                 </LabField>
                 <LabField label="用途金额（元）">
-                  <input
+                  <LabAmountInput
                     name={`purpose-amount-${id}`}
-                    type="number"
-                    min="0"
-                    step="0.01"
+                    aria-label="用途金额（元）"
+                    value={values[`purpose-amount-${id}`] ?? ""}
+                    onValueChange={(value) => changeValue(`purpose-amount-${id}`, value)}
+                    limit={purposeLimits[`purpose-amount-${id}`]}
                     required
                     className={labInputClass}
                   />
@@ -582,7 +767,12 @@ export function LabFinanceActionDialog({
             {shares.map((id) => (
               <div key={id} className="grid grid-cols-2 gap-2">
                 <LabField label="成员">
-                  <select name={`share-user-${id}`} className={labInputClass}>
+                  <select
+                    name={`share-user-${id}`}
+                    className={labInputClass}
+                    value={values[`share-user-${id}`] ?? ""}
+                    onChange={(event) => changeValue(`share-user-${id}`, event.target.value)}
+                  >
                     <option value="">不添加</option>
                     {members.map((member) => (
                       <option key={member.value} value={member.value}>
@@ -592,34 +782,40 @@ export function LabFinanceActionDialog({
                   </select>
                 </LabField>
                 <LabField label="计划 VC">
-                  <input
+                  <LabAmountInput
                     name={`share-vc-${id}`}
-                    type="number"
-                    step="0.01"
-                    min="0"
-                    defaultValue="0"
+                    aria-label="计划 VC"
+                    value={values[`share-vc-${id}`] ?? "0"}
+                    onValueChange={(value) => changeValue(`share-vc-${id}`, value)}
+                    limit={shareLimits[`share-vc-${id}`]}
+                    unit="VC"
+                    disabled={!values[`share-user-${id}`]}
                     className={labInputClass}
                   />
                 </LabField>
                 <LabField label="基础份额 b（0–1）">
-                  <input
+                  <LabAmountInput
                     name={`share-b-${id}`}
-                    type="number"
-                    step="0.0001"
-                    min="0"
-                    max="1"
-                    defaultValue="0"
+                    aria-label="基础份额 b（0–1）"
+                    value={values[`share-b-${id}`] ?? "0"}
+                    onValueChange={(value) => changeValue(`share-b-${id}`, value)}
+                    limit={shareLimits[`share-b-${id}`]}
+                    precision={4}
+                    unit="份额"
+                    disabled={!values[`share-user-${id}`]}
                     className={labInputClass}
                   />
                 </LabField>
                 <LabField label="职责份额 r（0–1）">
-                  <input
+                  <LabAmountInput
                     name={`share-r-${id}`}
-                    type="number"
-                    step="0.0001"
-                    min="0"
-                    max="1"
-                    defaultValue="0"
+                    aria-label="职责份额 r（0–1）"
+                    value={values[`share-r-${id}`] ?? "0"}
+                    onValueChange={(value) => changeValue(`share-r-${id}`, value)}
+                    limit={shareLimits[`share-r-${id}`]}
+                    precision={4}
+                    unit="份额"
+                    disabled={!values[`share-user-${id}`]}
                     className={labInputClass}
                   />
                 </LabField>
@@ -656,10 +852,12 @@ export function LabFinanceActionDialog({
                     </select>
                   </LabField>
                   <LabField label="历史有效 VC">
-                    <input
+                    <LabAmountInput
                       name={`history-vc-${id}`}
-                      type="number"
-                      step="0.01"
+                      aria-label="历史有效 VC"
+                      value={values[`history-vc-${id}`] ?? ""}
+                      onValueChange={(value) => changeValue(`history-vc-${id}`, value)}
+                      unit="VC"
                       min="0.01"
                       required
                       className={labInputClass}

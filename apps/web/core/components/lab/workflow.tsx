@@ -3,33 +3,48 @@
  * SPDX-License-Identifier: AGPL-3.0-only
  */
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { observer } from "mobx-react";
 import useSWR from "swr";
 import { v4 as uuidv4 } from "uuid";
-import { Background, Controls, Handle, MiniMap, Position, ReactFlow } from "@xyflow/react";
-import type { Node, NodeProps } from "@xyflow/react";
+import { Background, Controls, Handle, Position, ReactFlow } from "@xyflow/react";
+import type { NodeProps, ReactFlowInstance } from "@xyflow/react";
 // oxlint-disable-next-line import/no-unassigned-import -- React Flow requires its local component stylesheet.
 import "./workflow.css";
 import type { LabBounty } from "@plane/types";
 import type { LabStore } from "@plane/shared-state";
-import { Button, LabDialog, LabField, labInputClass } from "@plane/ui";
+import {
+  Button,
+  LabAmountInput,
+  LabDialog,
+  LabField,
+  labAmountError,
+  labDecimalText,
+  labDecimalUnits,
+  labInputClass,
+} from "@plane/ui";
 import { acceptanceLabels, workflowActionBody } from "./workflow-types";
 import type { LabWorkflow, LabWorkflowAction } from "./workflow-types";
+import { bountyWorkflowLayout } from "./workflow-layout";
+import type { BountyWorkflowNode } from "./workflow-layout";
 
-type WorkflowNode = Node<{ label: string; state: "current" | "completed" | "upcoming" }, "labBounty">;
-
-function BountyFlowNode({ data }: NodeProps<WorkflowNode>) {
+function BountyFlowNode({ data }: NodeProps<BountyWorkflowNode>) {
   return (
     <div
-      className={`shadow-sm min-w-44 rounded-lg border px-4 py-3 text-center text-13 ${data.state === "current" ? "border-accent-strong bg-accent-primary/10 text-accent-primary" : data.state === "completed" ? "border-subtle bg-layer-1 text-primary" : "border-subtle bg-surface-1 text-tertiary"}`}
+      className={`lab-bounty-node ${data.auxiliary ? "lab-bounty-node-auxiliary" : ""} rounded-lg border text-center text-13 ${data.state === "current" ? "border-accent-strong bg-accent-primary/10 text-accent-primary" : data.state === "completed" ? "border-subtle bg-layer-1 text-primary" : "border-subtle bg-surface-1 text-tertiary"}`}
     >
-      <Handle type="target" position={Position.Left} />
+      {Object.entries({ left: Position.Left, right: Position.Right, top: Position.Top, bottom: Position.Bottom }).map(
+        ([side, position]) => (
+          <div key={side}>
+            <Handle type="target" id={`target-${side}`} position={position} />
+            <Handle type="source" id={`source-${side}`} position={position} />
+          </div>
+        )
+      )}
       <p className="font-medium">{data.label}</p>
       {data.state !== "upcoming" && (
         <span className="mt-1 block text-11">{data.state === "current" ? "当前阶段" : "已有记录"}</span>
       )}
-      <Handle type="source" position={Position.Right} />
     </div>
   );
 }
@@ -52,21 +67,82 @@ export const LabBountyWorkflow = observer(function LabBountyWorkflow({
   const [result, setResult] = useState("pass");
   const [requestKey, setRequestKey] = useState("");
   const [selectedNode, setSelectedNode] = useState<string>();
-  const nodes: WorkflowNode[] =
-    data?.nodes.map((node) => ({
-      id: node.id,
-      type: "labBounty",
-      position: { x: node.x, y: node.y },
-      data: { label: node.label, state: node.state },
-    })) ?? [];
-  const edges = data?.edges.map((edge) => ({ ...edge, animated: edge.target === data.current_node })) ?? [];
+  const [planned, setPlanned] = useState("");
+  const [targets, setTargets] = useState<Record<string, string>>({});
+  const [showAllTransitions, setShowAllTransitions] = useState(false);
+  const [flow, setFlow] = useState<ReactFlowInstance<BountyWorkflowNode>>();
+  const canvas = useRef<HTMLDivElement>(null);
+  const currentNode = data?.current_node;
+  useEffect(() => {
+    const element = canvas.current;
+    if (!flow || !element || !currentNode) return;
+    let frame = 0;
+    const resizeObserver = new ResizeObserver(() => {
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(() => {
+        void flow.fitView({
+          nodes: element.clientWidth < 960 ? [{ id: currentNode }] : undefined,
+          padding: 0.15,
+          minZoom: 0.65,
+          maxZoom: 1,
+        });
+      });
+    });
+    resizeObserver.observe(element);
+    return () => {
+      resizeObserver.disconnect();
+      cancelAnimationFrame(frame);
+    };
+  }, [flow, currentNode]);
+  const { nodes, edges } = data
+    ? bountyWorkflowLayout(data, selectedNode, showAllTransitions)
+    : { nodes: [], edges: [] };
   const actions = data?.actions.filter((action) => !selectedNode || action.node_id === selectedNode) ?? [];
   const history = data?.history.filter((event) => !selectedNode || event.node_id === selectedNode) ?? [];
   const newestHistory = Array.from({ length: history.length }, (_, index) => history[history.length - index - 1]!);
+  const approved = bounty.allocations.filter((row) => row.approved);
+  const budgetUnits = labDecimalUnits(bounty.budget);
+  const approvedUnits = approved.reduce((sum, row) => sum + (labDecimalUnits(row.planned) ?? 0n), 0n);
+  const claimAvailable =
+    bounty.claim_available ??
+    (budgetUnits === null ? undefined : labDecimalText(budgetUnits > approvedUnits ? budgetUnits - approvedUnits : 0n));
+  const plannedError = labAmountError(planned, { limit: claimAvailable, min: "0.01", unit: "VC" });
+  const hasTargets = !["rework", "reject"].includes(result);
+  const targetErrors = approved.map((row) =>
+    labAmountError(targets[row.id] ?? "", {
+      min: ["pass", "negative"].includes(result) ? row.planned : row.awarded,
+      limit: row.planned,
+      unit: "VC",
+    })
+  );
+  const targetUnits = approved.map((row) => labDecimalUnits(targets[row.id] ?? ""));
+  const targetTotal = targetUnits.every((value) => value !== null)
+    ? targetUnits.reduce<bigint>((sum, value) => sum + value!, 0n)
+    : null;
+  const targetsError =
+    targetTotal !== null && budgetUnits !== null && targetTotal > budgetUnits
+      ? `累计通过 VC 超过悬赏配额 ${bounty.budget} VC`
+      : "";
   return (
     <section className="mt-4 rounded-md border border-subtle bg-layer-1 p-3" aria-label="悬赏流程图">
       <div className="mb-2 flex flex-wrap items-center gap-2">
         <h3 className="mr-auto text-14 font-semibold">团队悬赏流程</h3>
+        {data && (
+          <>
+            <Button size="sm" variant="neutral-primary" onClick={() => setShowAllTransitions((value) => !value)}>
+              {showAllTransitions ? "主流程" : "全部流转"}
+            </Button>
+            <Button
+              size="sm"
+              variant="neutral-primary"
+              onClick={() =>
+                void flow?.fitView({ nodes: [{ id: data.current_node }], padding: 0.7, maxZoom: 1, duration: 200 })
+              }
+            >
+              当前阶段
+            </Button>
+          </>
+        )}
         {selectedNode && (
           <Button size="sm" variant="neutral-primary" onClick={() => setSelectedNode(undefined)}>
             查看全部节点
@@ -84,7 +160,10 @@ export const LabBountyWorkflow = observer(function LabBountyWorkflow({
       )}
       {data && (
         <>
-          <div className="lab-bounty-flow h-[430px] overflow-hidden rounded-md border border-subtle bg-surface-1">
+          <div
+            ref={canvas}
+            className="lab-bounty-flow h-[430px] overflow-hidden rounded-md border border-subtle bg-surface-1"
+          >
             <ReactFlow
               nodes={nodes}
               edges={edges}
@@ -94,8 +173,9 @@ export const LabBountyWorkflow = observer(function LabBountyWorkflow({
               edgesReconnectable={false}
               fitView
               fitViewOptions={{ padding: 0.15 }}
-              minZoom={0.3}
+              minZoom={0.65}
               maxZoom={1.5}
+              onInit={setFlow}
               onNodeClick={(_event, node) => setSelectedNode(node.id)}
               onPaneClick={() => setSelectedNode(undefined)}
               proOptions={{ hideAttribution: false }}
@@ -103,15 +183,6 @@ export const LabBountyWorkflow = observer(function LabBountyWorkflow({
             >
               <Background gap={20} />
               <Controls showInteractive={false} />
-              <MiniMap
-                pannable
-                zoomable
-                nodeColor={(node) =>
-                  node.id === data.current_node
-                    ? "var(--background-color-accent-primary)"
-                    : "var(--background-color-layer-3)"
-                }
-              />
             </ReactFlow>
           </div>
           <div className="mt-3 flex flex-wrap gap-2" aria-label="当前可执行动作">
@@ -125,6 +196,8 @@ export const LabBountyWorkflow = observer(function LabBountyWorkflow({
                 onClick={() => {
                   setChosen(action);
                   setResult("pass");
+                  setPlanned("");
+                  setTargets(Object.fromEntries(approved.map((row) => [row.id, row.planned])));
                   setRequestKey(uuidv4());
                 }}
               >
@@ -166,6 +239,13 @@ export const LabBountyWorkflow = observer(function LabBountyWorkflow({
         <LabDialog
           title={chosen.label}
           busy={store.busy}
+          submitDisabled={
+            chosen.action === "claim"
+              ? Boolean(plannedError)
+              : chosen.action === "accept" && hasTargets
+                ? Boolean(targetsError || targetErrors.some(Boolean))
+                : false
+          }
           onClose={() => setChosen(undefined)}
           onSubmit={(form) =>
             store.execute(async () => {
@@ -190,13 +270,14 @@ export const LabBountyWorkflow = observer(function LabBountyWorkflow({
                 <textarea name="deliverable" className={labInputClass} required />
               </LabField>
               <LabField label="计划 VC">
-                <input
+                <LabAmountInput
                   name="planned"
-                  type="number"
+                  aria-label="计划 VC"
+                  value={planned}
+                  onValueChange={setPlanned}
                   min="0.01"
-                  max={bounty.budget}
-                  step="0.01"
-                  className={labInputClass}
+                  limit={claimAvailable}
+                  unit="VC"
                   required
                 />
               </LabField>
@@ -219,25 +300,28 @@ export const LabBountyWorkflow = observer(function LabBountyWorkflow({
                 </select>
               </LabField>
               {!["rework", "reject"].includes(result) &&
-                bounty.allocations
-                  .filter((row) => row.approved)
-                  .map((row) => (
-                    <LabField
-                      key={row.id}
-                      label={`${row.name} 累计通过 VC（已授予 ${row.awarded}／计划 ${row.planned}）`}
-                    >
-                      <input
-                        name={row.id}
-                        type="number"
-                        min={row.awarded}
-                        max={row.planned}
-                        step="0.01"
-                        defaultValue={row.planned}
-                        className={labInputClass}
-                        required
-                      />
-                    </LabField>
-                  ))}
+                approved.map((row) => (
+                  <LabField
+                    key={row.id}
+                    label={`${row.name} 累计通过 VC（已授予 ${row.awarded}／计划 ${row.planned}）`}
+                  >
+                    <LabAmountInput
+                      name={row.id}
+                      aria-label={`${row.name} 累计通过 VC（已授予 ${row.awarded}／计划 ${row.planned}）`}
+                      value={targets[row.id] ?? ""}
+                      onValueChange={(value) => setTargets((previous) => ({ ...previous, [row.id]: value }))}
+                      min={["pass", "negative"].includes(result) ? row.planned : row.awarded}
+                      limit={row.planned}
+                      unit="VC"
+                      required
+                    />
+                  </LabField>
+                ))}
+              {hasTargets && targetsError && (
+                <p role="alert" className="text-13 text-danger-primary">
+                  {targetsError}
+                </p>
+              )}
             </>
           )}
           {["accept", "publication-review", "acceptance-review", "cancel", "reopen", "reverse"].includes(

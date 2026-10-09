@@ -192,7 +192,7 @@ def test_failed_publication_does_not_consume_budget_and_delete_returns_unused_vc
     issue = task(lab)
     client = lab["client"](lab["lead"])
     response = client.post(
-        lab["base"] + "bounties/", publication(lab, issue, reviewer_id=str(lab["lead"].id), budget="25"), format="json"
+        lab["base"] + "bounties/", publication(lab, issue, reviewer_id=str(uuid.uuid4()), budget="25"), format="json"
     )
     assert response.status_code == 400 and budgets(lab)[0]["available"] == "100.00"
     response = client.post(lab["base"] + "bounties/", publication(lab, issue), format="json")

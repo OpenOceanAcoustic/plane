@@ -73,11 +73,11 @@ def test_delete_revokes_execution_materials_and_preserves_existing_planning(labo
     lab = laboratory
     bounty_id, issue, _ = prepare(lab)
     cross = cross_member(lab)
+    internal_allocation = action(lab, lab["member"], bounty_id, "claim", {"planned": "1", "deliverable": "原任务分工"})
+    assert internal_allocation.status_code == 200
     approve_cross(lab, bounty_id, cross)
     assert action(lab, cross, bounty_id, "confirm").status_code == 200
-    internal_allocation = action(lab, lab["member"], bounty_id, "claim", {"planned": "1", "deliverable": "原任务分工"})
-    # The external allocation uses all 20VC, so do not approve this extra application.
-    assert internal_allocation.status_code == 200
+    # The pending application predates the approved full-budget external allocation.
     category = PersonalCategory.objects.create(
         workspace=lab["workspace"], user=lab["member"], name="实验", color="#abcdef"
     )

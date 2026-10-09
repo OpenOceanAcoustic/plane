@@ -153,6 +153,7 @@ export type LabFinanceOperation = {
   can_manage: boolean;
 };
 export type LabFinanceOverview = {
+  future_plan_limits?: Record<string, string>;
   manager_id: string | null;
   is_manager: boolean;
   can_designate_manager?: boolean;

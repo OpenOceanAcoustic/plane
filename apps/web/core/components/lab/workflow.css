@@ -27,3 +27,44 @@
 .lab-bounty-flow .react-flow__attribution a {
   color: inherit;
 }
+
+.lab-bounty-node {
+  box-sizing: border-box;
+  width: 150px;
+  height: 66px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding: 10px;
+}
+
+.lab-bounty-node-auxiliary {
+  border-style: dashed;
+}
+
+.lab-bounty-node .react-flow__handle {
+  width: 3px;
+  height: 3px;
+  min-width: 3px;
+  min-height: 3px;
+  opacity: 0;
+}
+
+.lab-bounty-flow .lab-bounty-edge-primary .react-flow__edge-path {
+  stroke: var(--text-color-secondary);
+}
+
+.lab-bounty-flow .lab-bounty-edge-secondary .react-flow__edge-path {
+  stroke: var(--text-color-tertiary);
+  stroke-dasharray: 4 5;
+  opacity: 0.4;
+}
+
+.lab-bounty-flow .lab-bounty-edge-focused .react-flow__edge-path {
+  stroke: var(--text-color-accent-primary);
+}
+
+.lab-bounty-flow .react-flow__node.selected .lab-bounty-node {
+  border-color: var(--border-color-accent-strong);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--background-color-accent-primary) 15%, transparent);
+}

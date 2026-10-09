@@ -8,7 +8,7 @@ import { observer } from "mobx-react";
 import { Link } from "react-router";
 import type { LabBountyBudget, LabTask } from "@plane/types";
 import type { LabStore } from "@plane/shared-state";
-import { LabDialog, LabField, labInputClass } from "@plane/ui";
+import { LabAmountInput, LabDialog, LabField, labAmountError, labDecimalUnits, labInputClass } from "@plane/ui";
 
 export const LabBountyPublish = observer(function LabBountyPublish({
   store,
@@ -87,10 +87,12 @@ export const LabBountyPublish = observer(function LabBountyPublish({
 
   const source = budgets.find((row) => row.project_id === projectId);
   const project = store.planner?.projects.find((row) => row.id === projectId);
-  const quota = Number(budget);
+  const quota = labDecimalUnits(budget);
+  const projectBudget = source?.budget ? labDecimalUnits(source.budget) : null;
+  const quotaError = labAmountError(budget, { limit: source?.available, min: "0.01", unit: "VC" });
   const major =
-    quota >= 40 ||
-    (source?.budget !== null && source?.budget !== undefined && quota > Number(source.budget) * 0.2) ||
+    (quota !== null && quota >= 4000n) ||
+    (quota !== null && projectBudget !== null && quota * 5n > projectBudget) ||
     Number(cashCommitment) >= 5000 ||
     Number(personDays) > 10 ||
     safety;
@@ -101,6 +103,7 @@ export const LabBountyPublish = observer(function LabBountyPublish({
       title="发布悬赏"
       submitLabel="发布"
       busy={store.busy}
+      submitDisabled={!!quotaError}
       error={store.error || budgetError || taskError}
       onClose={onClose}
       onSubmit={async (data) => {
@@ -108,8 +111,7 @@ export const LabBountyPublish = observer(function LabBountyPublish({
         if (!source?.configured) throw new Error("项目尚未配置 VC 预算");
         if (!tasks.some((task) => task.id === issueId && task.project_id === projectId))
           throw new Error("请选择当前项目的工作项");
-        if (!Number.isFinite(quota) || quota <= 0 || quota > Number(source.available))
-          throw new Error("VC 配额须大于零且不超过项目剩余预算");
+        if (quota === null || quota <= 0n || quotaError) throw new Error("VC 配额须大于零且不超过项目剩余预算");
         await store.execute(async () => {
           const deliverable = data.get("deliverable");
           const criteria = data.get("criteria");
@@ -215,15 +217,16 @@ export const LabBountyPublish = observer(function LabBountyPublish({
         }}
       />
       <LabField label="VC配额">
-        <input
+        <LabAmountInput
+          aria-label="VC配额"
           name="budget"
-          type="number"
           min="0.01"
-          max={source?.available ?? undefined}
+          limit={source?.available}
+          unit="VC"
           step="0.01"
           className={labInputClass}
           value={budget}
-          onChange={(event) => setBudget(event.target.value)}
+          onValueChange={setBudget}
           required
         />
       </LabField>
@@ -245,26 +248,22 @@ export const LabBountyPublish = observer(function LabBountyPublish({
           required
         >
           <option value="">请选择</option>
-          {project?.members
-            .filter((member) => !major || member.id !== store.planner?.user_id)
-            .map((member) => (
-              <option key={member.id} value={member.id}>
-                {member.name}
-              </option>
-            ))}
+          {project?.members.map((member) => (
+            <option key={member.id} value={member.id}>
+              {member.name}
+            </option>
+          ))}
         </select>
       </LabField>
       {major && (
         <LabField label="复核人">
           <select name="independent_reviewer_id" className={labInputClass} required>
             <option value="">请选择</option>
-            {project?.members
-              .filter((member) => member.id !== store.planner?.user_id && member.id !== reviewerId)
-              .map((member) => (
-                <option key={member.id} value={member.id}>
-                  {member.name}
-                </option>
-              ))}
+            {project?.members.map((member) => (
+              <option key={member.id} value={member.id}>
+                {member.name}
+              </option>
+            ))}
           </select>
         </LabField>
       )}

@@ -53,6 +53,7 @@ def bounty_data(row, user, reward_context=None):
         else None
     )
     category = PersonalCategory.objects.filter(workspace=row.stage.workspace, user=user, legacy_key="project").first()
+    claim_available = bounties.claim_available(row)
     return {
         **capabilities,
         **bounty_reward_projection(row, user, context=reward_context),
@@ -75,6 +76,7 @@ def bounty_data(row, user, reward_context=None):
             and row.issue_id
             and not row.issue.archived_at
             and user.id not in (row.reviewer_id, row.independent_reviewer_id)
+            and claim_available > 0
         ),
         "can_confirm": bool(row.status == "open" and mine and mine.approved and not mine.confirmed and not public),
         "can_submit": bool(
@@ -97,6 +99,7 @@ def bounty_data(row, user, reward_context=None):
         "deliverable": publication.deliverable if public and publication else "" if public else row.deliverable,
         "criteria": publication.criteria if public and publication else "" if public else row.criteria,
         "budget": str(row.budget),
+        "claim_available": str(claim_available),
         "reserved": None if public else str(row.reserved),
         "awarded": None if public else str(bounties.total(row.ledger.all(), "delta")),
         "status": row.status,

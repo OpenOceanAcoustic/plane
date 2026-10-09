@@ -164,6 +164,7 @@ export type LabBounty = {
   deliverable: string;
   criteria: string;
   budget: string;
+  claim_available?: string;
   reserved: string | null;
   awarded: string | null;
   status: LabBountyStatus;
