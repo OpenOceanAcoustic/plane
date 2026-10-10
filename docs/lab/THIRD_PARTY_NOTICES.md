@@ -15,6 +15,8 @@ This fork and its backend/frontend are released under AGPL-3.0-only. The applica
 | Tiptap                 | Existing free core and local editor extensions                                | [MIT](licenses/tiptap.txt)                                                                       |
 | React Flow             | 12.12.0                                                                       | [MIT](licenses/react-flow.txt)                                                                   |
 | Recharts               | Existing v2 installation                                                      | [MIT](licenses/recharts.txt)                                                                     |
+| react-dropzone         | 14.3.8                                                                        | [MIT](licenses/react-dropzone.txt)                                                               |
+| react-markdown         | 9.1.0                                                                         | [MIT](licenses/react-markdown.txt)                                                               |
 
 ## FullCalendar Scheduler open-source route
 
@@ -22,7 +24,7 @@ The personnel resource calendar and horizontal timeline use FullCalendar's AGPLv
 
 ## Source and modifications
 
-- [This Plane fork](https://github.com/OpenOceanAcoustic/plane/tree/feat/personal-planning-workbench), including backend, client, deployment instructions, dependency lockfile and patches.
+- [This Plane fork](https://github.com/OpenOceanAcoustic/plane/tree/feat/project-document-files), including backend, client, deployment instructions, dependency lockfile and patches.
 - [Frappe Gantt](https://github.com/frappe/gantt): upstream CSS copied locally because the package export map does not expose its stylesheet. Selectors are scoped under `.lab-frappe-gantt`; the patch adds deterministic removal of its document mouse handler on disposal.
 - [shadcn/ui registry](https://github.com/shadcn-ui/ui/tree/main/apps/v4/registry/new-york-v4/ui): Dialog/Select composition adapted to Plane's existing controls, typography and theme tokens.
 

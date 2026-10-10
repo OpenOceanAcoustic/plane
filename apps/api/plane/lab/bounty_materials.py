@@ -14,6 +14,8 @@ from .bounty_access import bounty_access
 from .bounties import locked_bounty
 from .bounty_models import BountyMaterial
 from .documents import accessible_pages, page_access
+from .document_files import available_file, file_data, file_response
+from .document_models import DocumentFileVersion
 from .permissions import require_lead
 from .planning_views import LabView
 
@@ -28,6 +30,23 @@ def material_data(material):
         "page_version_id": str(material.page_version_id) if material.page_version_id else None,
         # Deliberately return no native asset URL or attachment identifier.
     }
+
+
+def shared_document_file(material, bounty):
+    if material.kind != "document_version" or not material.page_version_id:
+        return None
+    row = (
+        DocumentFileVersion.objects.select_related("page_version__page", "asset")
+        .filter(page_version_id=material.page_version_id)
+        .first()
+    )
+    if row and not available_file(
+        row, bounty.stage.project.workspace, material.page_version.page_id, bounty.stage.project_id
+    ):
+        from django.http import Http404
+
+        raise Http404()
+    return row
 
 
 class BountyMaterialsView(LabView):
@@ -152,7 +171,15 @@ class BountyMaterialDetailView(LabView):
                 from django.http import Http404
 
                 raise Http404()
-            return Response({**material_data(material), **material.document_snapshot})
+            document_file = shared_document_file(material, bounty)
+            prefix = f"bounties/{bounty.id}/materials/{material.id}/"
+            return Response(
+                {
+                    **material_data(material),
+                    **material.document_snapshot,
+                    "file": file_data(document_file, bounty.stage.project_id, prefix=prefix),
+                }
+            )
         attachment = material.attachment
         if (
             not attachment
@@ -190,3 +217,20 @@ class BountyMaterialDetailView(LabView):
             material.save(update_fields=["revoked_at"])
             audit("bounty.material_revoked", material, request.user, self.workspace, bounty_id=str(bounty.id))
         return Response(status=204)
+
+
+class BountyMaterialFileView(LabView):
+    def get(self, request, slug, pk, material_id, preview=False):
+        from django.http import Http404
+
+        bounty = bounty_access(request.user, self.workspace, pk, execution=True)
+        material = get_object_or_404(
+            BountyMaterial.objects.select_related("page_version__page"),
+            bounty=bounty,
+            id=material_id,
+            revoked_at__isnull=True,
+        )
+        document_file = shared_document_file(material, bounty)
+        if not document_file:
+            raise Http404()
+        return file_response(document_file, preview=preview)

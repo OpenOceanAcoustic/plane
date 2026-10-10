@@ -22,3 +22,16 @@ class TaskDocumentLink(BaseModel):
                 name="lab_unique_active_task_document",
             )
         ]
+
+
+class DocumentFileVersion(BaseModel):
+    """The original private file belonging to one native document version."""
+
+    page_version = models.OneToOneField("db.PageVersion", on_delete=models.PROTECT, related_name="lab_file")
+    asset = models.OneToOneField("db.FileAsset", on_delete=models.PROTECT, related_name="lab_document_file")
+    name = models.CharField(max_length=255)
+    extension = models.CharField(max_length=8)
+    content_type = models.CharField(max_length=255)
+    size = models.PositiveBigIntegerField()
+    sha256 = models.CharField(max_length=64)
+    asset_key = models.CharField(max_length=800)

@@ -35,7 +35,7 @@ export function LabNavigation() {
         );
       })}
       <a
-        href="https://github.com/OpenOceanAcoustic/plane/tree/feat/personal-planning-workbench"
+        href="https://github.com/OpenOceanAcoustic/plane/tree/feat/project-document-files"
         target="_blank"
         rel="noreferrer"
         className="mt-2 px-3 text-12 text-tertiary hover:text-secondary"

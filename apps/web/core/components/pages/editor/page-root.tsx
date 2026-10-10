@@ -18,6 +18,7 @@ import type { EPageStoreType } from "@/hooks/store";
 // store
 import type { TPageInstance } from "@/store/pages/base-page";
 import { LabPageTasks } from "@/components/lab/documents";
+import { LabPageDocumentFilePanel } from "@/components/lab/document-file-reader";
 // local imports
 import { PageNavigationPaneRoot } from "../navigation-pane";
 import { PageVersionsOverlay } from "../version";
@@ -179,7 +180,15 @@ export const PageRoot = observer(function PageRoot(props: TPageRootProps) {
         />
         {showContentTooLargeBanner && <ContentLimitBanner className="px-page-x" />}
         {projectId && page.id && (
-          <LabPageTasks key={page.id} workspaceSlug={workspaceSlug} projectId={projectId} pageId={page.id} />
+          <>
+            <LabPageDocumentFilePanel
+              key={`file:${page.id}`}
+              workspaceSlug={workspaceSlug}
+              projectId={projectId}
+              pageId={page.id}
+            />
+            <LabPageTasks key={page.id} workspaceSlug={workspaceSlug} projectId={projectId} pageId={page.id} />
+          </>
         )}
         <PageEditorBody
           config={config}

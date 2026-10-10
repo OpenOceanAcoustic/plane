@@ -14,6 +14,7 @@ import { useUserPermissions } from "@/hooks/store/user";
 import { EUserPermissionsLevel } from "@plane/constants";
 import { EUserProjectRoles } from "@plane/types";
 import { LabExperimentTemplateButton } from "@/components/lab/documents";
+import { LabDocumentUploadButton } from "@/components/lab/document-file-upload";
 // local imports
 import { PagesListHeaderRoot } from "./header";
 import { PagesListMainContent } from "./pages-list-main-content";
@@ -45,11 +46,17 @@ export const PagesListView = observer(function PagesListView(props: TPageView) {
   return (
     <div className="relative flex h-full w-full flex-col overflow-hidden">
       {canCreate && pageType !== "archived" && (
-        <div className="flex shrink-0 justify-end border-b border-subtle px-4 py-2">
+        <div className="flex shrink-0 flex-wrap justify-end gap-2 border-b border-subtle px-4 py-2">
           <LabExperimentTemplateButton
             workspaceSlug={workspaceSlug}
             projectId={projectId}
             defaultAccess={pageType === "private" ? 1 : 0}
+          />
+          <LabDocumentUploadButton
+            workspaceSlug={workspaceSlug}
+            projectId={projectId}
+            defaultAccess={pageType === "private" ? 1 : 0}
+            onUploaded={() => fetchPagesList(workspaceSlug, projectId, pageType)}
           />
         </div>
       )}
