@@ -215,6 +215,7 @@ svg {
   height: 64px;
   padding: 8px 12px;
   margin: 0;
+  gap: 8px;
 }
 .lab-detail-page > .page-heading h1 {
   font-size: 20px;
