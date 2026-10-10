@@ -241,6 +241,18 @@ export function Planner({
             <Empty>暂无团队排期查看权限。</Empty>
           ) : (
             <>
+              {!team && view === "agenda" && (
+                <div className="lab-planner-context-actions">
+                  <Button
+                    onClick={() => {
+                      setDay(today());
+                      setMonth(today().slice(0, 7));
+                    }}
+                  >
+                    今天
+                  </Button>
+                </div>
+              )}
               {!team && view === "overview" && (
                 <div className="lab-stats">
                   <div className="lab-stat">
@@ -391,7 +403,7 @@ export function Planner({
                         <button
                           key={entry.id}
                           aria-pressed={rangeMode === entry.id}
-                          className={rangeMode === entry.id ? "active" : ""}
+                          className={`lab-chip ${rangeMode === entry.id ? "active" : ""}`}
                           onClick={() => (team ? setView(entry.id) : setTimelineScale(entry.id))}
                         >
                           {entry.name}
@@ -405,7 +417,7 @@ export function Planner({
                         <button
                           key={date}
                           aria-pressed={day === date}
-                          className={day === date ? "active" : ""}
+                          className={`lab-chip ${day === date ? "active" : ""}`}
                           onClick={() => {
                             setDay(date);
                             setMonth(date.slice(0, 7));
@@ -482,7 +494,8 @@ export function Planner({
                       )}
                     </>
                   ) : (
-                    view !== "overview" && (
+                    view !== "overview" &&
+                    (team || view !== "agenda") && (
                       <LabField label={view === "week" ? "所选周的日期" : "日期"}>
                         <input
                           type="date"
@@ -634,10 +647,10 @@ export function Planner({
                       <div className="lab-agenda">{visibleEvents.map(eventCard)}</div>
                     </div>
                   ) : (
-                    <div className="lab-agenda">
+                    <div className={`lab-agenda ${!team && view === "agenda" ? "lab-personal-agenda" : ""}`}>
                       {eventDates.map((date) => (
                         <section key={date}>
-                          <h3 className="lab-section-heading">
+                          <h3 className="lab-agenda-date">
                             <CanonicalIcon name="plan" size={18} />
                             <span>{calendarDateLabel(date)}</span>
                           </h3>
@@ -671,7 +684,16 @@ export function Planner({
                   }}
                 />
               )}
-              {["agenda", "month", "week", "timeline"].includes(view) && (
+              {!team && view === "agenda" && (
+                <FloatingAction
+                  label="安排时间"
+                  onClick={() => {
+                    setScheduledItem(rows[0]?.id ?? "");
+                    setSchedule("new");
+                  }}
+                />
+              )}
+              {["agenda", "month", "week", "timeline"].includes(view) && (team || view !== "agenda") && (
                 <div className="lab-actions">
                   <Button
                     variant="primary"

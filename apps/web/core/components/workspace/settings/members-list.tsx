@@ -45,7 +45,8 @@ export const WorkspaceMembersList = observer(function WorkspaceMembersList(props
   const searchedMemberIds = searchQuery ? getSearchedWorkspaceMemberIds(searchQuery) : filteredMemberIds;
   const memberDetails = searchedMemberIds
     ?.map((memberId) => getWorkspaceMemberDetails(memberId))
-    .toSorted((a, b) => {
+    // oxlint-disable-next-line unicorn/no-array-sort -- map creates a new array; sort supports the ES2022 target
+    .sort((a, b) => {
       if (a?.is_active && !b?.is_active) return -1;
       if (!a?.is_active && b?.is_active) return 1;
       return 0;

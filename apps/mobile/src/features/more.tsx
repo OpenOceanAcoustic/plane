@@ -35,6 +35,7 @@ const groups: { title: string; links: Link[] }[] = [
   },
 ];
 const additional: Link[] = [
+  { page: "stickies", label: "便签", icon: "files" },
   { page: "lab-documents", label: "关联文档", icon: "files" },
   { page: "drafts", label: "草稿", icon: "files" },
   { page: "workspace-views", label: "工作区视图", icon: "projects" },

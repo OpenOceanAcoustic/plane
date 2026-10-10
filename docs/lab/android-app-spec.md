@@ -35,3 +35,5 @@ Local dependency tickets are `.scratch/android-app/issues/01.md` through `08.md`
 ## User acceptance handoff
 
 On 2026-10-10 the user instructed “不用测试了，我自己测试”. Stop further test execution and emulator diagnosis, deliver the existing signed APK and instructions, and keep remaining Android UI acceptance explicitly unverified. This changes the final testing handoff; the implemented functional scope and existing passing evidence remain as specified.
+
+The later installed-UI complaint supersedes the emulator-diagnosis stop for temporary inspection of the user's MuMu emulator. The user explicitly authorized control for this diagnosis. Read-only device inspection, same-signature APK upgrades that retain user data, and build checks are included; do not create, edit or delete real business records or resume business/unit test suites. Record original native screenshots and installed package identity. The focused correction specification is [android-installed-ui-correction.md](android-installed-ui-correction.md), compared against the verified installed 1.0.2 source `ec7ebea68725cf4fbfe5ec4695198ce3c898e203`.

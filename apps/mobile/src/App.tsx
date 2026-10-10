@@ -7,11 +7,13 @@ import { Keyboard } from "@capacitor/keyboard";
 import { CanonicalIcon, MobileHeaderContext } from "./components/navigation";
 import { MobileStore, type MobileRoute, type MobileUser } from "@plane/shared-state/mobile";
 import { ApiClient, nativeTransport } from "./lib/client";
+import { requestMobileNavigation } from "./lib/mobile-navigation";
 import { ErrorMessage, FormSheet, Loading, Sheet, records, useData } from "./components/ui";
 import { MobileClientContext } from "./components/rich-editor";
 import { Login, ServerSetup } from "./features/auth";
 import { Home, Inbox, SearchPage } from "./features/home";
 import More from "./features/more";
+import Stickies from "./features/stickies";
 import LabFeature from "./features/lab";
 import CoreFeature from "./features/core";
 import { SettingsFeature } from "./features/settings";
@@ -51,6 +53,7 @@ const pageTitles: Record<string, string> = {
   document: "文档",
   "lab-documents": "关联文档",
   widgets: "管理首页组件",
+  stickies: "便签",
   drafts: "草稿",
   activity: "我的活动",
   "workspace-views": "工作区视图",
@@ -100,7 +103,7 @@ const App = observer(function App() {
   const workspaces = useData(client, store.user ? "/api/users/me/workspaces/" : null);
   const { mutate } = useSWRConfig();
   const theme = store.theme;
-  const navigate = useCallback((route: MobileRoute) => store.navigate(route), []);
+  const navigate = useCallback((route: MobileRoute) => requestMobileNavigation(() => store.navigate(route)), []);
   const restore = useCallback(async () => {
     const session = await client.request<{ user: MobileUser; client_platform: string; mobile_api_version: number }>(
       "/api/lab/session/"
@@ -274,10 +277,11 @@ const App = observer(function App() {
       />
     );
   const page = route.page;
-  const rootLink = (target: string) => store.root(target);
+  const rootLink = (target: string) => requestMobileNavigation(() => store.root(target));
   let content;
   if (page === "home")
     content = <Home client={client} workspaceSlug={store.workspaceSlug} userId={store.user?.id} navigate={navigate} />;
+  else if (page === "stickies") content = <Stickies client={client} workspaceSlug={store.workspaceSlug} />;
   else if (page === "more" && store.user)
     content = (
       <More
@@ -541,9 +545,11 @@ const App = observer(function App() {
                     className="row"
                     key={item.id}
                     onClick={() => {
-                      store.setWorkspace(String(item.slug));
-                      localStorage.setItem("ooa.workspace", String(item.slug));
                       setWorkspacePicker(false);
+                      requestMobileNavigation(() => {
+                        store.setWorkspace(String(item.slug));
+                        localStorage.setItem("ooa.workspace", String(item.slug));
+                      });
                     }}
                   >
                     {String(item.name)}
@@ -553,7 +559,7 @@ const App = observer(function App() {
                   className="button"
                   onClick={() => {
                     setWorkspacePicker(false);
-                    setNewWorkspace(true);
+                    requestMobileNavigation(() => setNewWorkspace(true));
                   }}
                 >
                   创建工作区

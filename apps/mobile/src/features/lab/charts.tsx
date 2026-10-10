@@ -155,11 +155,13 @@ export function ChartVisual({ chart, onSelect }: { chart: LabChart; onSelect: (r
                       key={day}
                       disabled={!row}
                       aria-label={`${member.name} ${day} ${row ? row[key] : 0} ${chart.unit}`}
-                      style={{
-                        background: row
-                          ? `color-mix(in srgb,var(--brand) ${Math.min(80, Math.max(5, (number(row, key) * 80) / maximum))}%,var(--soft))`
-                          : undefined,
-                      }}
+                      style={
+                        {
+                          "--heat-strength": row
+                            ? Math.min(0.8, Math.max(0.05, (number(row, key) * 0.8) / maximum))
+                            : 0,
+                        } as CSSProperties
+                      }
                       onClick={() => row && onSelect(row)}
                     >
                       {row ? String(row[key] ?? "0") : "0"}

@@ -3,10 +3,10 @@ import { Search } from "lucide-react";
 import { CanonicalIcon } from "../components/navigation";
 import type { MobileRoute } from "@plane/shared-state/mobile";
 import type { ApiClient } from "../lib/client";
+import { requestMobileNavigation } from "../lib/mobile-navigation";
 import {
   ActionButton,
   ErrorMessage,
-  FormSheet,
   Html,
   Loading,
   PageHeading,
@@ -15,6 +15,7 @@ import {
   textValue,
   useData,
 } from "../components/ui";
+import { StickyActions, StickyCard, StickyEditor, stickyRecords, type Sticky } from "./stickies";
 
 export function Home({
   client,
@@ -33,8 +34,18 @@ export function Home({
     userId ? `/api/workspaces/${encodeURIComponent(workspaceSlug)}/user-stats/${userId}/` : null
   );
   const stickies = useData(client, path);
-  const [create, setCreate] = useState(false);
-  const [editing, setEditing] = useState<import("../components/ui").Entity>();
+  const [editing, setEditing] = useState<Sticky | "new">();
+  const [actions, setActions] = useState<Sticky>();
+  const notes = stickyRecords(stickies.data);
+  const openEditor = (note: Sticky) => {
+    if (editing !== "new" && editing?.id === note.id) return;
+    requestMobileNavigation(() => setEditing(note));
+  };
+  const openActions = (note: Sticky) =>
+    requestMobileNavigation(() => {
+      setEditing(undefined);
+      setActions(note);
+    });
   const preferences = useData<import("./workspace/widgets").HomePreference[]>(
     client,
     `/api/workspaces/${workspaceSlug}/home-preferences/`
@@ -48,34 +59,34 @@ export function Home({
     : [{ key: "my_stickies", is_enabled: true, sort_order: 0 }];
 
   const renderWidget = (widget: { key: string }) => (
-    <section className={widget.key === "my_stickies" ? "home-stickies" : "home-widget"} key={widget.key}>
+    <section
+      className={
+        widget.key === "my_stickies" ? `home-stickies ${notes.length || editing ? "is-populated" : ""}` : "home-widget"
+      }
+      key={widget.key}
+    >
       {widget.key === "my_stickies" ? (
         <>
           <h2 className="section-label">
-            便签
-            <CanonicalIcon name="down" size={13} />
+            <button className="home-stickies-link" onClick={() => navigate({ page: "stickies" })}>
+              便签
+              <CanonicalIcon name="down" size={13} />
+            </button>
           </h2>
           <ErrorMessage error={stickies.error} />
           {stickies.loading ? (
             <Loading />
-          ) : records(stickies.data).length ? (
-            records(stickies.data).map((item) => (
-              <article className="card sticky" key={item.id}>
-                <h3>{textValue(item.name ?? item.title)}</h3>
-                <Html html={item.description_html ?? item.description} />
-                <button className="button" onClick={() => setEditing(item)}>
-                  编辑便签
-                </button>
-                <ActionButton
-                  action={() => client.request(`${path}${item.id}/`, "DELETE")}
-                  onDone={() => {
-                    void stickies.refresh();
-                  }}
-                >
-                  删除便签
-                </ActionButton>
-              </article>
-            ))
+          ) : notes.length ? (
+            <>
+              <div className="sticky-list">
+                {notes.slice(0, 3).map((note) => (
+                  <StickyCard key={note.id} note={note} onEdit={openEditor} onMore={openActions} />
+                ))}
+              </div>
+              <button className="text-button home-stickies-all" onClick={() => navigate({ page: "stickies" })}>
+                查看全部便签
+              </button>
+            </>
           ) : (
             <div className="sticky-empty">
               <img src="./assets/sticky-empty.png" alt="" />
@@ -86,7 +97,7 @@ export function Home({
                 <br />
                 开始你的工作。
               </p>
-              <button className="button" onClick={() => setCreate(true)}>
+              <button className="button" onClick={() => setEditing("new")}>
                 创建第一张便签
               </button>
             </div>
@@ -174,6 +185,20 @@ export function Home({
       </section>
       <ErrorMessage error={preferences.error} />
       {order.filter((item) => item.is_enabled && item.key === "my_stickies").map(renderWidget)}
+      {editing && (
+        <StickyEditor
+          key={editing === "new" ? "new" : editing.id}
+          note={editing === "new" ? undefined : editing}
+          onCancel={() => setEditing(undefined)}
+          onSave={async (values) => {
+            if (editing === "new") await client.request(path, "POST", values);
+            else if (Object.keys(values).length)
+              await client.request(`${path}${encodeURIComponent(editing.id)}/`, "PATCH", values);
+            // A refresh failure must not offer another POST after the note was saved.
+            void stickies.refresh().catch(() => undefined);
+          }}
+        />
+      )}
       <details className="home-secondary-details">
         <summary>
           快捷链接与最近访问
@@ -184,41 +209,21 @@ export function Home({
           管理首页组件
         </button>
       </details>
-      {editing && (
-        <FormSheet
-          title="编辑便签"
-          fields={[
-            { key: "name", label: "标题", value: editing.name },
-            { key: "description_html", label: "内容", type: "rich", value: editing.description_html },
-          ]}
-          onClose={() => setEditing(undefined)}
-          onSubmit={async (values) => {
-            await client.request(`${path}${editing.id}/`, "PATCH", values);
-            await stickies.refresh();
-          }}
+      {actions && (
+        <StickyActions
+          note={actions}
+          client={client}
+          path={path}
+          onClose={() => setActions(undefined)}
+          onEdit={openEditor}
+          onChanged={stickies.refresh}
         />
       )}
-      {create && (
-        <FormSheet
-          title="新建便签"
-          fields={[
-            { key: "name", label: "标题", required: true },
-            { key: "description", label: "内容", type: "textarea" },
-          ]}
-          onClose={() => setCreate(false)}
-          onSubmit={async (values) => {
-            await client.request(path, "POST", {
-              name: values.name,
-              description: values.description,
-              description_html: `<p>${values.description.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;")}</p>`,
-            });
-            await stickies.refresh();
-          }}
-        />
+      {!editing && (
+        <button className="create-fab" aria-label="新建便签" onClick={() => setEditing("new")}>
+          <CanonicalIcon name="plus" size={26} />
+        </button>
       )}
-      <button className="create-fab" aria-label="新建便签" onClick={() => setCreate(true)}>
-        <CanonicalIcon name="plus" size={26} />
-      </button>
     </div>
   );
 }
