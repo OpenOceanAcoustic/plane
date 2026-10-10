@@ -133,6 +133,7 @@ export function LabDialog({
         />
         <DialogPrimitive.Content
           data-prevent-outside-click
+          aria-modal="true"
           aria-describedby={description ? `${id}-description` : undefined}
           className="shadow-xl fixed top-1/2 left-1/2 z-[81] max-h-[85vh] w-[calc(100%_-_2rem)] max-w-lg -translate-x-1/2 -translate-y-1/2 overflow-y-auto rounded-xl border border-subtle bg-surface-1 p-6 text-primary"
         >

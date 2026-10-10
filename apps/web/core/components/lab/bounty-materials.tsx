@@ -1,19 +1,24 @@
 /** Copyright (c) 2026 OpenOceanAcoustic and contributors. SPDX-License-Identifier: AGPL-3.0-only */
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import useSWR from "swr";
 import type { LabBounty, LabBountyMaterial } from "@plane/types";
 import type { LabStore } from "@plane/shared-state";
 import { Button, LabDialog, LabField, labInputClass } from "@plane/ui";
+import { LabDocumentFileActions } from "./document-file-reader";
+import type { LabDocumentFile } from "./document-types";
 
 type SharedSources = {
   document_versions: { id: string; name: string; created_at: string }[];
   attachments: { id: string; name: string }[];
 };
-type SharedDocument = { name: string; description_html: string; created_at: string };
+type SharedDocument = { name: string; description_html: string; created_at: string; file: LabDocumentFile | null };
+type ViewedDocument = SharedDocument & { materialId: string };
 export function LabBountyMaterials({ store, bounty }: { store: LabStore; bounty: LabBounty }) {
   const [sharing, setSharing] = useState(false);
   const [kind, setKind] = useState<"document_version" | "attachment">("document_version");
-  const [viewed, setViewed] = useState<SharedDocument>();
+  const [viewed, setViewed] = useState<ViewedDocument>();
+  const [readError, setReadError] = useState("");
+  const readTicket = useRef(0);
   const [revoking, setRevoking] = useState<LabBountyMaterial>();
   const { data, error, mutate } = useSWR(["bounty-materials", store.slug, bounty.id, bounty.can_manage_materials], () =>
     store.request<{ materials: LabBountyMaterial[]; sources?: SharedSources }>(
@@ -21,6 +26,20 @@ export function LabBountyMaterials({ store, bounty }: { store: LabStore; bounty:
     )
   );
   const sources = kind === "document_version" ? data?.sources?.document_versions : data?.sources?.attachments;
+  useEffect(() => {
+    setViewed(undefined);
+    setReadError("");
+    readTicket.current += 1;
+    return () => {
+      readTicket.current += 1;
+    };
+  }, [store, bounty.id]);
+  useEffect(() => {
+    if (error || (data && viewed && !data.materials.some((material) => material.id === viewed.materialId))) {
+      readTicket.current += 1;
+      setViewed(undefined);
+    }
+  }, [error, data, viewed]);
   return (
     <section aria-label="悬赏共享资料" className="mt-4 space-y-2 rounded border border-subtle p-3">
       <div className="flex items-center gap-2">
@@ -32,39 +51,56 @@ export function LabBountyMaterials({ store, bounty }: { store: LabStore; bounty:
         )}
       </div>
       {error && <p className="text-12 text-secondary">{error instanceof Error ? error.message : "资料暂不可读取"}</p>}
-      {data?.materials.map((material) => (
-        <div key={material.id} className="flex flex-wrap items-center gap-2 rounded bg-layer-1 p-2 text-12">
-          <span className="mr-auto">
-            {material.label} · {material.kind === "document_version" ? "冻结文档版本" : "附件"}
-          </span>
-          {material.kind === "document_version" ? (
-            <Button
-              size="sm"
-              variant="neutral-primary"
-              onClick={() =>
-                void store.execute(async () =>
-                  setViewed(await store.request<SharedDocument>(`bounties/${bounty.id}/materials/${material.id}/`))
-                )
-              }
-            >
-              读取共享版本
-            </Button>
-          ) : (
-            <a
-              className="text-accent-primary"
-              href={`${store.apiBase}/api/workspaces/${encodeURIComponent(store.slug)}/lab/bounties/${bounty.id}/materials/${material.id}/`}
-              download
-            >
-              下载共享附件
-            </a>
-          )}
-          {bounty.can_manage_materials && (
-            <Button size="sm" variant="neutral-primary" onClick={() => setRevoking(material)}>
-              撤回共享
-            </Button>
-          )}
-        </div>
-      ))}
+      {readError && (
+        <p role="alert" className="text-12 text-danger-primary">
+          {readError}
+        </p>
+      )}
+      {!error &&
+        data?.materials.map((material) => (
+          <div key={material.id} className="flex flex-wrap items-center gap-2 rounded bg-layer-1 p-2 text-12">
+            <span className="mr-auto">
+              {material.label} · {material.kind === "document_version" ? "冻结文档版本" : "附件"}
+            </span>
+            {material.kind === "document_version" ? (
+              <Button
+                size="sm"
+                variant="neutral-primary"
+                onClick={() => {
+                  const ticket = ++readTicket.current;
+                  setViewed(undefined);
+                  setReadError("");
+                  void store.execute(async () => {
+                    try {
+                      const document = await store.request<SharedDocument>(
+                        `bounties/${bounty.id}/materials/${material.id}/`
+                      );
+                      if (ticket === readTicket.current) setViewed({ ...document, materialId: material.id });
+                    } catch (failure) {
+                      if (ticket === readTicket.current)
+                        setReadError(failure instanceof Error ? failure.message : "资料暂不可读取");
+                    }
+                  });
+                }}
+              >
+                读取共享版本
+              </Button>
+            ) : (
+              <a
+                className="text-accent-primary"
+                href={`${store.apiBase}/api/workspaces/${encodeURIComponent(store.slug)}/lab/bounties/${bounty.id}/materials/${material.id}/`}
+                download
+              >
+                下载共享附件
+              </a>
+            )}
+            {bounty.can_manage_materials && (
+              <Button size="sm" variant="neutral-primary" onClick={() => setRevoking(material)}>
+                撤回共享
+              </Button>
+            )}
+          </div>
+        ))}
       {data && !data.materials.length && <p className="text-12 text-secondary">尚无已共享的执行资料。</p>}
       {sharing && (
         <LabDialog
@@ -138,10 +174,14 @@ export function LabBountyMaterials({ store, bounty }: { store: LabStore; bounty:
           <p className="text-12 text-secondary">
             共享版本创建于 {new Date(viewed.created_at).toLocaleString("zh-CN", { timeZone: "Asia/Shanghai" })}
           </p>
-          <p className="text-13 whitespace-pre-wrap">
-            {new DOMParser().parseFromString(viewed.description_html, "text/html").body.textContent ||
-              "此版本暂无文字内容"}
-          </p>
+          {viewed.file ? (
+            <LabDocumentFileActions workspaceSlug={store.slug} file={viewed.file} />
+          ) : (
+            <p className="text-13 whitespace-pre-wrap">
+              {new DOMParser().parseFromString(viewed.description_html, "text/html").body.textContent ||
+                "此版本暂无文字内容"}
+            </p>
+          )}
         </LabDialog>
       )}
     </section>

@@ -60,4 +60,8 @@ def native_asset_access(user, asset):
             ).exists()
         ):
             return False
+        from plane.lab.document_files import native_document_asset_access
+
+        if not native_document_asset_access(user, asset):
+            return False
     return True

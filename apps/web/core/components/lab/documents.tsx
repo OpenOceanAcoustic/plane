@@ -12,6 +12,8 @@ import { LabStore } from "@plane/shared-state";
 import { Button, LabDialog, LabField, labInputClass } from "@plane/ui";
 import { documentLink } from "./document-types";
 import type { LabDocument, LabDocumentList, LabDocumentTask, LabDocumentTaskList } from "./document-types";
+import { LabDocumentUploadButton } from "./document-file-upload";
+import { LabDocumentFileActions } from "./document-file-reader";
 
 function useDocumentTransport(workspaceSlug: string) {
   return useMemo(() => new LabStore(API_BASE_URL, workspaceSlug), [workspaceSlug]);
@@ -70,11 +72,8 @@ export const LabExperimentTemplateButton = observer(function LabExperimentTempla
           </LabField>
           <label className="flex items-center gap-2 text-13">
             <input type="checkbox" name="private" defaultChecked={defaultAccess === 1} />
-            私人文档（仅本人可见）
+            私人
           </label>
-          <p className="text-12 text-secondary">
-            模板包含目标、方法、配置、结果、结论及后续事项。附件和历史版本在文档中维护。
-          </p>
           <RequestError error={transport.error} />
         </LabDialog>
       )}
@@ -86,15 +85,18 @@ export const LabTaskDocuments = observer(function LabTaskDocuments({
   workspaceSlug,
   projectId,
   issueId,
+  editable = true,
 }: {
   workspaceSlug: string;
   projectId: string;
   issueId: string;
+  editable?: boolean;
 }) {
   const transport = useDocumentTransport(workspaceSlug);
   const { data, error, mutate, isLoading } = useSWR(["lab-task-documents", workspaceSlug, issueId], () =>
     transport.request<LabDocumentList>(`tasks/${issueId}/documents/`)
   );
+  const canEdit = editable && !error && !!data?.can_edit;
   const [mode, setMode] = useState<"link" | "unlink">();
   const [chosen, setChosen] = useState<LabDocument>();
   const [query, setQuery] = useState("");
@@ -106,13 +108,19 @@ export const LabTaskDocuments = observer(function LabTaskDocuments({
     <section aria-label="关联文档" className="flex flex-col gap-3 rounded-md border border-subtle bg-surface-1 p-4">
       <div className="flex flex-wrap items-center gap-2">
         <h3 className="mr-auto text-14 font-semibold">关联文档</h3>
-        {data?.can_edit && (
+        {canEdit && (
           <>
             <LabExperimentTemplateButton
               workspaceSlug={workspaceSlug}
               projectId={projectId}
               issueId={issueId}
               onCreated={mutate}
+            />
+            <LabDocumentUploadButton
+              workspaceSlug={workspaceSlug}
+              projectId={projectId}
+              issueId={issueId}
+              onUploaded={() => mutate()}
             />
             <Button
               size="sm"
@@ -131,27 +139,33 @@ export const LabTaskDocuments = observer(function LabTaskDocuments({
       {isLoading && <p className="text-12 text-secondary">正在加载文档…</p>}
       {data && data.documents.length === 0 && <p className="text-12 text-tertiary">尚未关联项目文档。</p>}
       <ul className="flex flex-col gap-2">
-        {data?.documents.map((document) => (
-          <li key={document.id} className="flex items-center gap-2 rounded bg-layer-1 px-3 py-2 text-13">
-            <a href={documentLink(workspaceSlug, document)} className="min-w-0 flex-1 truncate text-accent-primary">
-              {document.name}
-            </a>
-            {document.access === 1 && <span className="text-11 text-tertiary">私人</span>}
-            {document.archived_at && <span className="text-11 text-tertiary">已归档</span>}
-            {data.can_edit && !document.is_locked && !document.archived_at && (
-              <Button
-                size="sm"
-                variant="neutral-primary"
-                onClick={() => {
-                  setChosen(document);
-                  setMode("unlink");
-                }}
-              >
-                解除关联
-              </Button>
-            )}
-          </li>
-        ))}
+        {!error &&
+          data?.documents.map((document) => (
+            <li key={document.id} className="flex flex-wrap items-center gap-2 rounded bg-layer-1 px-3 py-2 text-13">
+              {document.file ? (
+                <span className="min-w-0 flex-1 break-all">{document.name}</span>
+              ) : (
+                <a href={documentLink(workspaceSlug, document)} className="min-w-0 flex-1 truncate text-accent-primary">
+                  {document.name}
+                </a>
+              )}
+              {document.file && <LabDocumentFileActions workspaceSlug={workspaceSlug} file={document.file} />}
+              {document.access === 1 && <span className="text-11 text-tertiary">私人</span>}
+              {document.archived_at && <span className="text-11 text-tertiary">已归档</span>}
+              {canEdit && !document.is_locked && !document.archived_at && (
+                <Button
+                  size="sm"
+                  variant="neutral-primary"
+                  onClick={() => {
+                    setChosen(document);
+                    setMode("unlink");
+                  }}
+                >
+                  解除关联
+                </Button>
+              )}
+            </li>
+          ))}
       </ul>
       {mode === "link" && (
         <LabDialog
@@ -198,7 +212,7 @@ export const LabTaskDocuments = observer(function LabTaskDocuments({
             })
           }
         >
-          <p className="text-13">解除与“{chosen.name}”的关联。文档及其历史版本继续保留。</p>
+          <p className="text-13">解除与“{chosen.name}”的关联。</p>
           <RequestError error={transport.error} />
         </LabDialog>
       )}
@@ -256,7 +270,7 @@ export const LabPageTasks = observer(function LabPageTasks({
           </div>
         ))}
         {data?.tasks.length === 0 && <p className="text-tertiary">尚未关联任务。</p>}
-        {data?.can_edit && (
+        {!error && data?.can_edit && (
           <div>
             <Button
               size="sm"
@@ -340,16 +354,23 @@ export const LabProjectDocuments = observer(function LabProjectDocuments({
     <section className="flex flex-col gap-3 rounded-md border border-subtle p-4">
       <div className="flex items-center justify-between gap-2">
         <h2 className="text-14 font-semibold">项目文档</h2>
-        {data?.can_edit && (
-          <LabExperimentTemplateButton workspaceSlug={workspaceSlug} projectId={projectId} onCreated={mutate} />
+        {!error && data?.can_edit && (
+          <div className="flex flex-wrap gap-2">
+            <LabExperimentTemplateButton workspaceSlug={workspaceSlug} projectId={projectId} onCreated={mutate} />
+            <LabDocumentUploadButton workspaceSlug={workspaceSlug} projectId={projectId} onUploaded={() => mutate()} />
+          </div>
         )}
       </div>
       <RequestError error={error} />
-      {data?.documents.map((document) => (
-        <a key={document.id} href={documentLink(workspaceSlug, document)} className="text-13 text-accent-primary">
-          {document.name}
-        </a>
-      ))}
+      {!error &&
+        data?.documents.map((document) => (
+          <div key={document.id} className="flex flex-wrap items-center gap-2 text-13">
+            <a href={documentLink(workspaceSlug, document)} className="mr-auto min-w-0 break-all text-accent-primary">
+              {document.name}
+            </a>
+            {document.file && <LabDocumentFileActions workspaceSlug={workspaceSlug} file={document.file} />}
+          </div>
+        ))}
       {data?.documents.length === 0 && <p className="text-12 text-tertiary">暂无文档。</p>}
     </section>
   );

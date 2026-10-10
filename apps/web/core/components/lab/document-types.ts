@@ -3,6 +3,19 @@
  * SPDX-License-Identifier: AGPL-3.0-only
  */
 
+export type LabDocumentFile = {
+  name: string;
+  extension: string;
+  content_type: string;
+  size: number;
+  version_id: string;
+  previewable: boolean;
+  download_path: string;
+  preview_path: string | null;
+};
+
+export type LabDocumentPreview = { text: string; format: "txt" | "md"; filename: string };
+
 export type LabDocument = {
   id: string;
   name: string;
@@ -12,6 +25,7 @@ export type LabDocument = {
   is_locked: boolean;
   archived_at: string | null;
   updated_at: string;
+  file: LabDocumentFile | null;
 };
 
 export type LabDocumentTask = { id: string; title: string; project_id: string; key: string };

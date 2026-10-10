@@ -437,6 +437,12 @@ class GenericAssetEndpoint(BaseAPIView):
             # Get the asset
             asset = FileAsset.objects.get(id=asset_id, workspace_id=workspace.id, is_deleted=False)
 
+            from plane.lab.document_files import native_document_file_response
+
+            document_response = native_document_file_response(request.user, asset)
+            if document_response is not None:
+                return document_response
+
             # Check if the asset exists and is uploaded
             if not asset.is_uploaded:
                 return Response(
@@ -450,9 +456,7 @@ class GenericAssetEndpoint(BaseAPIView):
             # (default MinIO self-hosted setup).
             storage = S3Storage(request=request, is_server=True)
             asset_mime_type = (asset.attributes.get("type") or "").split(";")[0].strip().lower()
-            disposition = (
-                "attachment" if asset_mime_type in settings.SCRIPT_CAPABLE_MIME_TYPES else "inline"
-            )
+            disposition = "attachment" if asset_mime_type in settings.SCRIPT_CAPABLE_MIME_TYPES else "inline"
             presigned_url = storage.generate_presigned_url(
                 object_name=asset.asset.name,
                 filename=asset.attributes.get("name"),

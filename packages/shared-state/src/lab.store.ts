@@ -29,20 +29,56 @@ export class LabStore {
     makeAutoObservable(this, {}, { autoBind: true });
   }
 
-  async request<T>(path: string, method = "GET", body?: unknown): Promise<T> {
+  private async responseError(response: Response): Promise<Error> {
+    let data: { error?: string; detail?: string } | string[];
+    try {
+      data = await response.json();
+    } catch {
+      return new Error("请求失败，请稍后重试");
+    }
+    return new Error(
+      Array.isArray(data)
+        ? data.join("；")
+        : typeof data?.error === "string"
+          ? data.error
+          : typeof data?.detail === "string"
+            ? data.detail
+            : "请求失败，请检查权限和填写内容"
+    );
+  }
+
+  private async send(path: string, method = "GET", body?: unknown): Promise<Response> {
     const headers: Record<string, string> = {};
+    const multipart = body instanceof FormData;
     if (method !== "GET") {
       const csrfResponse = await fetch(`${this.apiBase}/auth/get-csrf-token/`, { credentials: "include" });
+      if (!csrfResponse.ok) throw await this.responseError(csrfResponse);
       const csrf = (await csrfResponse.json()) as { csrf_token: string };
+      if (typeof csrf.csrf_token !== "string" || !csrf.csrf_token) throw new Error("会话验证失败，请刷新后重试");
       headers["X-CSRFToken"] = csrf.csrf_token;
-      headers["Content-Type"] = "application/json";
+      if (!multipart) headers["Content-Type"] = "application/json";
     }
     const response = await fetch(`${this.apiBase}/api/workspaces/${encodeURIComponent(this.slug)}/lab/${path}`, {
       credentials: "include",
       method,
       headers,
-      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+      ...(body === undefined ? {} : { body: multipart ? body : JSON.stringify(body) }),
     });
+    if (!response.ok) throw await this.responseError(response);
+    return response;
+  }
+
+  async upload<T>(path: string, data: FormData): Promise<T> {
+    return this.request<T>(path, "POST", data);
+  }
+
+  async download(path: string): Promise<{ blob: Blob }> {
+    const response = await this.send(path);
+    return { blob: await response.blob() };
+  }
+
+  async request<T>(path: string, method = "GET", body?: unknown): Promise<T> {
+    const response = await this.send(path, method, body);
     if (response.status === 204) {
       const removed = method === "DELETE" ? /^bounties\/([^/]+)\/detail\/$/.exec(path) : null;
       if (removed) {
@@ -56,18 +92,7 @@ export class LabStore {
       }
       return undefined as T;
     }
-    const data = (await response.json()) as T & { error?: string; detail?: string };
-    if (!response.ok)
-      throw new Error(
-        typeof data.error === "string"
-          ? data.error
-          : typeof data.detail === "string"
-            ? data.detail
-            : Array.isArray(data)
-              ? data.join("；")
-              : "请求失败，请检查权限和填写内容"
-      );
-    return data;
+    return (await response.json()) as T;
   }
 
   async loadPlanner() {

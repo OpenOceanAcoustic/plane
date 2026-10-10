@@ -7,12 +7,16 @@ import { join, resolve } from "node:path";
 import type { AddressInfo } from "node:net";
 import { expect, test } from "@playwright/test";
 import type { Page } from "@playwright/test";
+import type { LabDocument } from "../../../apps/web/core/components/lab/document-types";
 
 let server: ReturnType<typeof createServer>;
 let origin = "";
 let directory = "";
 const viewPath = resolve("apps/web/core/components/issues/peek-overview/view.tsx");
 const mainPath = resolve("apps/web/core/components/issues/issue-detail/main-content.tsx");
+const pagesViewPath = resolve("apps/web/core/components/pages/pages-list-view.tsx");
+const pagesContentPath = resolve("apps/web/core/components/pages/pages-list-main-content.tsx");
+const pageRootPath = resolve("apps/web/core/components/pages/editor/page-root.tsx");
 const nativeStub = `import React from 'react';
 const issue = {id:'issue',project_id:'project',name:'共享工作项',description_html:'<p>完整实验说明</p>',sequence_id:1};
 const nativeIssues={removeIssueFromList:(id)=>window.dispatchEvent(new CustomEvent('native-issue-cache-removed',{detail:{kind:'index',id}}))};
@@ -39,6 +43,22 @@ export function IssueParentDetail(){return null}
 export function IssueReaction(){return null}
 export default function noop(){return [600,1000]}
 `;
+const nativePageStub = `import React from 'react';
+const pages={isAnyPageAvailable:false,loader:false,getCurrentProjectPageIdsByTab:()=>[],getCurrentProjectFilteredPageIdsByTab:()=>[],fetchPagesList:(slug,project,tab)=>fetch('/api/workspaces/'+slug+'/projects/'+project+'/pages/?tab='+tab).then(response=>response.json()),createPage:()=>{throw new Error('Native page writes are forbidden')}};
+export const EPageStoreType={PROJECT:'PROJECT_PAGE'};
+export function usePageStore(){return pages}
+export function useUserPermissions(){return {allowPermissions:()=>!location.search.includes('readonly')}}
+export function useProject(){return {currentProjectDetails:{id:'project'}}}
+export function usePageFallback(){return {isFetchingFallbackBinary:false}}
+export function usePagesPaneExtensions(){return {editorExtensionHandlers:{},navigationPaneExtensions:[],handleOpenNavigationPane:()=>{},handleCloseNavigationPane:()=>{},isNavigationPaneOpen:false}}
+export function useExtendedEditorProps(){return {}}
+export function PageEditorBody(){return <p>原生Page编辑器</p>}
+export function PageEditorToolbarRoot(){return null}
+export function PageNavigationPaneRoot(){return null}
+export function PageVersionsOverlay(){return null}
+export function PagesVersionEditor(){return null}
+export function ContentLimitBanner(){return null}
+`;
 
 test.beforeAll(async () => {
   directory = await mkdtemp(join(tmpdir(), "lab-issue-details-"));
@@ -46,7 +66,7 @@ test.beforeAll(async () => {
   const { build } = require("esbuild") as typeof import("esbuild");
   await build({
     stdin: {
-      contents: `import React, { useEffect, useState } from 'react'; import { createRoot } from 'react-dom/client'; import { MemoryRouter } from 'react-router'; import { SWRConfig } from 'swr'; import { IssueView } from '${viewPath}'; import { IssueMainContent } from '${mainPath}'; import { LabStore } from '${resolve("packages/shared-state/src/lab.store.ts")}'; import { LabPlannerBoard } from '${resolve("apps/web/core/components/lab/planner.tsx")}'; import { LabTaskTable } from '${resolve("apps/web/core/components/lab/task-table.tsx")}'; const store=new LabStore('', 'test'); const common={workspaceSlug:'test',projectId:'project',issueId:'issue',issueOperations:{update:async()=>{}}}; function Harness(){const [open,setOpen]=useState(true);useEffect(()=>{const close=()=>setOpen(false);window.addEventListener('native-issue-closed',close);if(['/planner','/tasks'].includes(location.pathname))void store.loadPlanner();return()=>window.removeEventListener('native-issue-closed',close)},[]);if(location.pathname==='/planner')return <LabPlannerBoard store={store} schedule={()=>{}}/>;if(location.pathname==='/tasks')return <LabTaskTable store={store}/>;return <><button onClick={()=>setOpen(!open)}>{open?'关闭工作项':'打开工作项'}</button>{open&&(location.pathname==='/main'?<IssueMainContent {...common} isEditable={!location.search.includes('readonly')} isArchived={false}/>:<IssueView {...common} is_archived={false} disabled={location.search.includes('readonly')}/>)}</>}; createRoot(document.getElementById('root')).render(<MemoryRouter><SWRConfig value={{provider:()=>new Map(),dedupingInterval:0}}><Harness/></SWRConfig></MemoryRouter>);`,
+      contents: `import React, { useEffect, useState } from 'react'; import { createRoot } from 'react-dom/client'; import { MemoryRouter } from 'react-router'; import { SWRConfig } from 'swr'; import { IssueView } from '${viewPath}'; import { IssueMainContent } from '${mainPath}'; import { LabStore } from '${resolve("packages/shared-state/src/lab.store.ts")}'; import { LabPlannerBoard } from '${resolve("apps/web/core/components/lab/planner.tsx")}'; import { LabTaskTable } from '${resolve("apps/web/core/components/lab/task-table.tsx")}'; import { LabTaskOverview } from '${resolve("apps/web/core/components/lab/task-overview.tsx")}'; import { PagesListView } from '${pagesViewPath}'; import { PageRoot } from '${pageRootPath}'; const store=new LabStore('', 'test'); const common={workspaceSlug:'test',projectId:'project',issueId:'issue',issueOperations:{update:async()=>{}}}; function Harness(){const [open,setOpen]=useState(true);useEffect(()=>{const close=()=>setOpen(false);window.addEventListener('native-issue-closed',close);if(['/planner','/tasks'].includes(location.pathname))void store.loadPlanner();return()=>window.removeEventListener('native-issue-closed',close)},[]);if(location.pathname==='/planner')return <LabPlannerBoard store={store} schedule={()=>{}}/>;if(location.pathname==='/tasks')return <LabTaskTable store={store}/>;if(location.pathname==='/native-project-documents')return <PagesListView workspaceSlug='test' projectId='project' pageType={location.search.includes('private')?'private':'public'} storeType='PROJECT_PAGE'><p>原生项目文档列表</p></PagesListView>;if(location.pathname==='/native-page')return <PageRoot workspaceSlug='test' projectId='project' storeType='PROJECT_PAGE' page={{id:'page',isContentEditable:false,editor:{setEditorRef:()=>{},editorRef:null}}} config={{fileHandler:{}}} handlers={{}} webhookConnectionParams={{}}/>;if(location.pathname==='/controlled-materials')return open?<LabTaskOverview store={store} item={{id:'controlled-item',title:'共享执行任务',kind:'task',status:'active',bounty_id:'bounty',issue_key:'LAB-1'}} onClose={()=>setOpen(false)} onSchedule={()=>{}}/>:<p>受控任务已关闭</p>;return <><button onClick={()=>setOpen(!open)}>{open?'关闭工作项':'打开工作项'}</button>{open&&(location.pathname==='/main'?<IssueMainContent {...common} isEditable={!location.search.includes('readonly')} isArchived={false}/>:<IssueView {...common} is_archived={false} disabled={location.search.includes('readonly')}/>)}</>}; createRoot(document.getElementById('root')).render(<MemoryRouter><SWRConfig value={{provider:()=>new Map(),dedupingInterval:0}}><Harness/></SWRConfig></MemoryRouter>);`,
       resolveDir: resolve("apps/web"),
       loader: "tsx",
       sourcefile: "lab-issue-details-harness.tsx",
@@ -57,7 +77,29 @@ test.beforeAll(async () => {
         setup(builder) {
           builder.onResolve({ filter: /.*/ }, (args) => {
             if (args.path === "@plane/ui") return { path: resolve("packages/ui/src/index.ts") };
+            if (args.path === "@plane/shared-state") return { path: resolve("packages/shared-state/src/index.ts") };
+            if (args.path === "@plane/types") return { path: resolve("packages/types/src/index.ts") };
+            if (args.path === "next/link") return { path: resolve("apps/web/app/compat/next/link.tsx") };
             if (args.path === "next/navigation") return { path: "navigation", namespace: "router-seam" };
+            if (
+              [pagesViewPath, pagesContentPath].includes(args.importer) &&
+              ["@/hooks/store", "@/hooks/store/user", "@/hooks/store/use-project"].includes(args.path)
+            )
+              return { path: args.path, namespace: "native-page-seam" };
+            if (
+              args.importer === pageRootPath &&
+              [
+                "@/hooks/use-page-fallback",
+                "@/hooks/pages",
+                "../navigation-pane",
+                "../version",
+                "../version/editor",
+                "./content-limit-banner",
+                "./editor-body",
+                "./toolbar",
+              ].includes(args.path)
+            )
+              return { path: args.path, namespace: "native-page-seam" };
             if (![viewPath, mainPath].includes(args.importer)) return;
             if (args.path === "@/hooks/use-peek-overview-outside-click")
               return { path: resolve("apps/web/core/hooks/use-peek-overview-outside-click.tsx") };
@@ -67,8 +109,14 @@ test.beforeAll(async () => {
               return { path: args.path, namespace: "native-seam" };
           });
           builder.onLoad({ filter: /.*/, namespace: "router-seam" }, () => ({
-            contents: "export function useRouter(){return {push:()=>{}}}",
+            contents:
+              "export function useRouter(){return {push:()=>{}}} export function useParams(){return {workspaceSlug:'test',projectId:'project'}}",
             loader: "js",
+          }));
+          builder.onLoad({ filter: /.*/, namespace: "native-page-seam" }, () => ({
+            contents: nativePageStub,
+            loader: "tsx",
+            resolveDir: resolve("apps/web"),
           }));
           builder.onLoad({ filter: /.*/, namespace: "native-seam" }, () => ({
             contents: nativeStub,
@@ -135,6 +183,41 @@ async function setup(page: Page, budget: string | null = "12.50", status = "acti
     else throw new Error(`Unexpected lab read: ${path}`);
     await route.fulfill({ json });
   });
+}
+
+function fileDocument(name: string, extension: string, contentType: string, bytes: Buffer, id: string): LabDocument {
+  const previewable = ["txt", "md"].includes(extension);
+  return {
+    id,
+    name,
+    project_id: "project",
+    access: 0,
+    owned_by: "lead",
+    is_locked: false,
+    archived_at: null,
+    updated_at: "2026-10-10T00:00:00Z",
+    file: {
+      name,
+      extension,
+      content_type: contentType,
+      size: bytes.length,
+      version_id: "file-version",
+      previewable,
+      download_path: `documents/${id}/files/file-version/download/`,
+      preview_path: previewable ? `documents/${id}/files/file-version/preview/` : null,
+    },
+  };
+}
+
+async function setupDocuments(page: Page, documents: LabDocument[], canEdit = true) {
+  await setup(page, null);
+  await page.route("**/auth/get-csrf-token/", (route) => route.fulfill({ json: { csrf_token: "test" } }));
+  await page.route("**/api/instances/", (route) =>
+    route.fulfill({ json: { config: { file_size_limit: 5 * 1024 * 1024 } } })
+  );
+  await page.route("**/lab/tasks/issue/documents/", (route) =>
+    route.fulfill({ json: { can_edit: canEdit, documents } })
+  );
 }
 
 async function assertQuota(page: Page) {
@@ -747,3 +830,494 @@ for (const status of ["rejected", "cancelled"]) {
     await assertQuota(page);
   });
 }
+
+test("uploading a TXT document links it to the native work item without closing the peek", async ({ page }) => {
+  await setup(page, null);
+  const uploads: { path: string; contentType: string; body: string }[] = [];
+  const existing = {
+    id: "document",
+    name: "同一份实验记录",
+    project_id: "project",
+    access: 0,
+    owned_by: "lead",
+    is_locked: false,
+    archived_at: null,
+    updated_at: "2026-10-10T00:00:00Z",
+    file: null,
+  };
+  const uploaded = {
+    ...existing,
+    id: "uploaded-document",
+    name: "实验记录.txt",
+    file: {
+      name: "实验记录.txt",
+      extension: "txt",
+      content_type: "text/plain",
+      size: Buffer.byteLength("实验目标：记录声学数据\n频率：48000 Hz\n"),
+      version_id: "file-version",
+      previewable: true,
+      download_path: "documents/uploaded-document/files/file-version/download/",
+      preview_path: "documents/uploaded-document/files/file-version/preview/",
+    },
+  };
+  const documents = [existing] as (typeof existing | typeof uploaded)[];
+  const documentText = "实验目标：记录声学数据\n频率：48000 Hz\n";
+  await page.route("**/auth/get-csrf-token/", (route) => route.fulfill({ json: { csrf_token: "test" } }));
+  await page.route("**/lab/tasks/issue/documents/", (route) => route.fulfill({ json: { can_edit: true, documents } }));
+  await page.route("**/lab/projects/project/documents/upload/", async (route) => {
+    const request = route.request();
+    if (request.method() !== "POST") throw new Error("Document upload requires POST");
+    uploads.push({
+      path: new URL(request.url()).pathname,
+      contentType: request.headers()["content-type"] ?? "",
+      body: request.postDataBuffer()?.toString("utf8") ?? "",
+    });
+    documents.push(uploaded);
+    await route.fulfill({ status: 201, json: uploaded });
+  });
+
+  await page.goto(`${origin}/peek`);
+  const overview = page.locator('[data-issue-peek-overview="issue"]');
+  const linked = page.getByRole("region", { name: "关联文档", exact: true });
+  await expect(page.getByText("完整实验说明", { exact: true })).toBeVisible();
+  await expect(linked.getByRole("link", { name: existing.name, exact: true })).toBeVisible();
+  await expect(linked.getByRole("button", { name: "新建实验记录", exact: true })).toBeVisible();
+  await page.evaluate(() => {
+    document.documentElement.dataset.nativeCloseCount = "0";
+    window.addEventListener("native-issue-closed", () => {
+      document.documentElement.dataset.nativeCloseCount = String(
+        Number(document.documentElement.dataset.nativeCloseCount) + 1
+      );
+    });
+  });
+  await linked.getByRole("button", { name: "上传文档", exact: true }).click({ timeout: 3000 });
+  const dialog = page.getByRole("dialog", { name: "上传文档", exact: true });
+  await expect(dialog).toBeVisible();
+  const [chooser] = await Promise.all([
+    page.waitForEvent("filechooser"),
+    dialog.getByLabel("文件", { exact: true }).click(),
+  ]);
+  await chooser.setFiles({ name: "实验记录.txt", mimeType: "text/plain", buffer: Buffer.from(documentText) });
+  await dialog.getByLabel("文档名称", { exact: true }).click();
+  await dialog.getByLabel("文档名称", { exact: true }).fill("实验记录.txt");
+  await expect(overview).toBeAttached();
+  await dialog.getByRole("button", { name: "保存", exact: true }).click();
+  await expect(dialog).toHaveCount(0);
+  await expect(linked.getByText("实验记录.txt", { exact: true })).toBeVisible();
+  await expect(linked.getByRole("button", { name: "阅读", exact: true })).toBeVisible();
+  await expect(linked.getByRole("button", { name: "下载", exact: true })).toBeVisible();
+  await expect(overview).toBeVisible();
+  await expect(page).toHaveURL(`${origin}/peek`);
+  expect(await page.evaluate(() => document.documentElement.dataset.nativeCloseCount)).toBe("0");
+  expect(uploads).toHaveLength(1);
+  expect(uploads[0]!.path).toBe("/api/workspaces/test/lab/projects/project/documents/upload/");
+  expect(uploads[0]!.contentType).toMatch(/^multipart\/form-data; boundary=/);
+  expect(uploads[0]!.body).toContain('name="issue_id"\r\n\r\nissue');
+  expect(uploads[0]!.body).toContain('name="name"\r\n\r\n实验记录.txt');
+  expect(uploads[0]!.body).toContain('name="access"\r\n\r\n0');
+  expect(uploads[0]!.body).toContain('filename="实验记录.txt"');
+  expect(uploads[0]!.body).toContain(documentText);
+});
+
+test("reading a controlled shared document keeps its task overview open through nested dialog interactions", async ({
+  page,
+}) => {
+  const reads: string[] = [];
+  const nativeProjectRequests: string[] = [];
+  const materialPath = "bounties/bounty/materials/material/";
+  const file = {
+    name: "共享执行说明.md",
+    extension: "md",
+    content_type: "text/markdown",
+    size: 24,
+    version_id: "shared-version",
+    previewable: true,
+    download_path: `${materialPath}download/`,
+    preview_path: `${materialPath}preview/`,
+  };
+  await page.route("**/api/**", (route) => {
+    nativeProjectRequests.push(new URL(route.request().url()).pathname);
+    return route.fulfill({ status: 403, json: { error: "测试成员无原生项目访问权限" } });
+  });
+  await page.route("**/lab/bounties/bounty/detail/", (route) =>
+    route.fulfill({
+      json: {
+        id: "bounty",
+        stage_id: "stage",
+        project_id: "project",
+        project: "海声实验",
+        issue_id: "issue",
+        title: "共享执行任务",
+        deliverable: "实验记录",
+        criteria: "参数完整",
+        budget: "12.50",
+        reserved: "0.00",
+        awarded: "0.00",
+        status: "active",
+        major: false,
+        major_reasons: [],
+        evidence: "",
+        due_at: null,
+        overdue: false,
+        is_lead: false,
+        is_reviewer: false,
+        is_independent_reviewer: false,
+        allocations: [],
+        acceptances: [],
+        access_level: "task",
+        can_manage_materials: false,
+      },
+    })
+  );
+  await page.route("**/lab/bounties/bounty/workflow/", (route) =>
+    route.fulfill({
+      json: { nodes: [], edges: [], actions: [], history: [], current_node: "active" },
+    })
+  );
+  await page.route("**/lab/bounties/bounty/materials/**", async (route) => {
+    const path = new URL(route.request().url()).pathname;
+    reads.push(path);
+    if (path.endsWith("/materials/"))
+      return route.fulfill({
+        json: { materials: [{ id: "material", kind: "document_version", label: "执行说明" }] },
+      });
+    if (path.endsWith("/material/"))
+      return route.fulfill({
+        json: {
+          name: "冻结的执行说明",
+          description_html: "<p>仅共享版本资料</p>",
+          created_at: "2026-10-10T00:00:00Z",
+          file,
+        },
+      });
+    if (path.endsWith("/preview/"))
+      return route.fulfill({
+        json: { text: "# 执行步骤\n\n记录实验参数。", format: "md", filename: file.name },
+      });
+    if (path.endsWith("/download/"))
+      return route.fulfill({
+        contentType: "text/markdown",
+        headers: { "Content-Disposition": 'attachment; filename="instructions.md"' },
+        body: Buffer.from("# 执行步骤\r\n\r\n记录实验参数。\r\n"),
+      });
+    throw new Error(`Unexpected material request: ${path}`);
+  });
+
+  await page.goto(`${origin}/controlled-materials`);
+  const overview = page.getByRole("dialog", { name: "悬赏任务详情", exact: true });
+  await expect(overview).toBeVisible();
+  await overview.getByRole("button", { name: "读取共享版本", exact: true }).click();
+  const shared = page.getByRole("dialog", { name: "冻结的执行说明", exact: true });
+  await expect(shared).toBeVisible();
+  await shared.getByRole("button", { name: "阅读", exact: true }).click();
+  const reader = page.getByRole("dialog", { name: "阅读文档", exact: true });
+  await expect(reader).toBeVisible({ timeout: 3000 });
+  await expect(reader.getByRole("heading", { name: "执行步骤", exact: true })).toBeVisible();
+  await reader.getByText("记录实验参数。", { exact: true }).click();
+  await expect(overview).toBeAttached();
+  await page.keyboard.press("Escape");
+  await expect(reader).toHaveCount(0);
+  await expect(shared).toBeVisible();
+  await expect(overview).toBeAttached();
+  await shared.getByRole("button", { name: "阅读", exact: true }).click();
+  await expect(reader.getByRole("heading", { name: "执行步骤", exact: true })).toBeVisible();
+  const [download] = await Promise.all([
+    page.waitForEvent("download"),
+    reader.getByRole("button", { name: "下载", exact: true }).click(),
+  ]);
+  expect(await readFile((await download.path())!)).toEqual(Buffer.from("# 执行步骤\r\n\r\n记录实验参数。\r\n"));
+  await reader.getByRole("button", { name: "关闭", exact: true }).click();
+  await expect(reader).toHaveCount(0);
+  await expect(shared).toBeVisible();
+  await shared.getByRole("button", { name: "关闭", exact: true }).click();
+  await expect(shared).toHaveCount(0);
+  await expect(overview).toBeVisible();
+  await expect(page).toHaveURL(`${origin}/controlled-materials`);
+  expect(reads).toContain("/api/workspaces/test/lab/bounties/bounty/materials/material/preview/");
+  expect(reads).toContain("/api/workspaces/test/lab/bounties/bounty/materials/material/download/");
+  expect(nativeProjectRequests).toEqual([]);
+});
+
+test("six document formats upload from the chooser, preserve a rejected private draft and hide upload on a read-only issue", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  const documents: LabDocument[] = [];
+  const uploads: string[] = [];
+  let rejectFirst = true;
+  const formats = [
+    ["txt", "text/plain"],
+    ["md", "text/markdown"],
+    ["doc", "application/msword"],
+    ["docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document"],
+    ["xls", "application/vnd.ms-excel"],
+    ["xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"],
+  ] as const;
+  await setupDocuments(page, documents);
+  await page.route("**/lab/projects/project/documents/upload/", async (route) => {
+    const body = route.request().postDataBuffer()?.toString("utf8") ?? "";
+    uploads.push(body);
+    if (rejectFirst) {
+      rejectFirst = false;
+      return route.fulfill({ status: 400, json: { error: "文档上传失败，请重试" } });
+    }
+    const selected = formats.find(([extension]) => body.includes(`filename="资料.${extension}"`));
+    if (!selected) throw new Error("Expected one of the six selected document files");
+    const [extension, contentType] = selected;
+    const document = fileDocument(
+      `保留名称-${extension}`,
+      extension,
+      contentType,
+      Buffer.from(`原始-${extension}-文件\r\n`),
+      extension
+    );
+    document.file!.name = `资料.${extension}`;
+    document.access = extension === "txt" ? 1 : 0;
+    documents.push(document);
+    await route.fulfill({ status: 201, json: document });
+  });
+  await page.goto(`${origin}/peek`);
+  const linked = page.getByRole("region", { name: "关联文档", exact: true });
+  const overview = page.locator('[data-issue-peek-overview="issue"]');
+  /* oxlint-disable no-await-in-loop -- Each browser dialog must finish before selecting the next format. */
+  for (const [extension, mimeType] of formats) {
+    await linked.getByRole("button", { name: "上传文档", exact: true }).click();
+    const dialog = page.getByRole("dialog", { name: "上传文档", exact: true });
+    const [chooser] = await Promise.all([
+      page.waitForEvent("filechooser"),
+      dialog.getByLabel("文件", { exact: true }).click(),
+    ]);
+    await chooser.setFiles({ name: `资料.${extension}`, mimeType, buffer: Buffer.from(`原始-${extension}-文件\r\n`) });
+    await dialog.getByLabel("文档名称", { exact: true }).fill(`保留名称-${extension}`);
+    if (extension === "txt") await dialog.getByLabel("私人", { exact: true }).check();
+    await dialog.getByRole("button", { name: "保存", exact: true }).click();
+    if (extension === "txt") {
+      await expect(dialog.getByRole("alert")).toHaveText("文档上传失败，请重试");
+      await expect(dialog.getByLabel("文档名称", { exact: true })).toHaveValue("保留名称-txt");
+      await expect(dialog.getByLabel("私人", { exact: true })).toBeChecked();
+      expect(
+        await dialog
+          .getByLabel("文件", { exact: true })
+          .evaluate((input) => (input as HTMLInputElement).files?.[0]?.name)
+      ).toBe("资料.txt");
+      await expect(overview).toBeAttached();
+      await dialog.getByRole("button", { name: "保存", exact: true }).click();
+    }
+    await expect(dialog).toHaveCount(0);
+    await expect(linked.getByText(`保留名称-${extension}`, { exact: true })).toBeVisible();
+    await expect(overview).toBeVisible();
+    const body = uploads.at(-1)!;
+    expect(body).toContain(`filename="资料.${extension}"`);
+    expect(body).toContain(`原始-${extension}-文件\r\n`);
+    expect(body).toContain(`name="name"\r\n\r\n保留名称-${extension}`);
+    expect(body).toContain(`name="access"\r\n\r\n${extension === "txt" ? "1" : "0"}`);
+    expect(body).toContain('name="issue_id"\r\n\r\nissue');
+  }
+  /* oxlint-enable no-await-in-loop */
+  expect(uploads).toHaveLength(7);
+  // The HTTP permission remains editable; the real native issue's read-only prop controls the entry.
+  await page.goto(`${origin}/peek?readonly`);
+  await expect(linked.getByText("保留名称-txt", { exact: true })).toBeVisible();
+  await expect(linked.getByRole("button", { name: "上传文档", exact: true })).toHaveCount(0);
+  await expect(linked.getByRole("button", { name: "新建实验记录", exact: true })).toHaveCount(0);
+  await expect(linked.getByRole("button", { name: "关联已有文档", exact: true })).toHaveCount(0);
+  await expect(linked.getByRole("button", { name: "阅读", exact: true })).toHaveCount(2);
+  await expect(linked.getByRole("button", { name: "下载", exact: true })).toHaveCount(6);
+});
+
+test("TXT and Markdown readers retry failed previews, render safely and download the original bytes", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  const txt =
+    "实验原文\r\n<script>window.documentFileExecuted=true</script>\r\n<img src=x onerror=window.documentFileExecuted=true>\r\n";
+  const markdown = [
+    "# 实验结果",
+    "",
+    "**频率：48000 Hz**",
+    "",
+    "[安全链接](https://example.org/experiment)",
+    "[危险链接](javascript:alert%281%29)",
+    "[数据链接](data:text/html;base64,PHNjcmlwdD4=)",
+    "![远程图片](https://untrusted.invalid/experiment.png)",
+    "<script>window.documentFileExecuted=true</script>",
+    "<img src=x onerror=window.documentFileExecuted=true>",
+  ].join("\n");
+  const original = Buffer.from(`\uFEFF${txt}`);
+  const documents = [
+    fileDocument("原始记录.txt", "txt", "text/plain", original, "txt"),
+    fileDocument("实验结果.md", "md", "text/markdown", Buffer.from(markdown), "md"),
+  ];
+  const externalRequests: string[] = [];
+  const previewReads: string[] = [];
+  let rejectPreview = true;
+  await setupDocuments(page, documents);
+  await page.route("https://untrusted.invalid/**", (route) => {
+    externalRequests.push(route.request().url());
+    return route.fulfill({ status: 204 });
+  });
+  await page.route("**/lab/documents/*/files/file-version/preview/", (route) => {
+    const path = new URL(route.request().url()).pathname;
+    previewReads.push(path);
+    if (path.includes("/txt/")) {
+      if (rejectPreview) {
+        rejectPreview = false;
+        return route.fulfill({ status: 403, json: { error: "文档读取失败，请重试" } });
+      }
+      return route.fulfill({ json: { text: txt, format: "txt", filename: "原始记录.txt" } });
+    }
+    return route.fulfill({ json: { text: markdown, format: "md", filename: "实验结果.md" } });
+  });
+  await page.route("**/lab/documents/txt/files/file-version/download/", (route) =>
+    route.fulfill({
+      contentType: "text/plain",
+      headers: { "Content-Disposition": 'attachment; filename="original.txt"' },
+      body: original,
+    })
+  );
+  await page.goto(`${origin}/peek`);
+  const overview = page.locator('[data-issue-peek-overview="issue"]');
+  const linked = page.getByRole("region", { name: "关联文档", exact: true });
+  const txtRow = linked.getByRole("listitem").filter({ hasText: "原始记录.txt" });
+  await txtRow.getByRole("button", { name: "阅读", exact: true }).click();
+  const reader = page.getByRole("dialog", { name: "阅读文档", exact: true });
+  await expect(reader.getByRole("alert")).toHaveText("文档读取失败，请重试");
+  await reader.getByRole("button", { name: "重试", exact: true }).click();
+  await expect(reader.locator("pre")).toHaveText(txt);
+  await expect(reader.locator("script,img")).toHaveCount(0);
+  const [download] = await Promise.all([
+    page.waitForEvent("download"),
+    reader.getByRole("button", { name: "下载", exact: true }).click(),
+  ]);
+  expect(download.suggestedFilename()).toBe("原始记录.txt");
+  expect(await readFile((await download.path())!)).toEqual(original);
+  await reader.getByRole("button", { name: "关闭", exact: true }).click();
+  await expect(overview).toBeVisible();
+  const mdRow = linked.getByRole("listitem").filter({ hasText: "实验结果.md" });
+  await mdRow.getByRole("button", { name: "阅读", exact: true }).click();
+  await expect(reader.getByRole("heading", { name: "实验结果", exact: true })).toBeVisible();
+  await expect(reader.getByRole("link", { name: "安全链接", exact: true })).toHaveAttribute(
+    "href",
+    "https://example.org/experiment"
+  );
+  await expect(reader.getByRole("link", { name: "安全链接", exact: true })).toHaveAttribute(
+    "rel",
+    "noopener noreferrer"
+  );
+  await expect(reader.getByText("危险链接", { exact: true })).toBeVisible();
+  await expect(reader.getByText("数据链接", { exact: true })).toBeVisible();
+  await expect(reader.locator('script,img,a[href^="javascript:"],a[href^="data:"]')).toHaveCount(0);
+  await expect(reader.getByText("远程图片", { exact: true })).toBeVisible();
+  expect(
+    await page.evaluate(() => (window as Window & { documentFileExecuted?: boolean }).documentFileExecuted)
+  ).toBeUndefined();
+  expect(externalRequests).toEqual([]);
+  await reader.getByRole("button", { name: "关闭", exact: true }).click();
+  await expect(overview).toBeVisible();
+  await mdRow.getByRole("button", { name: "阅读", exact: true }).click();
+  await expect(reader.getByRole("heading", { name: "实验结果", exact: true })).toBeVisible();
+  expect(previewReads.filter((path) => path.includes("/txt/"))).toHaveLength(2);
+  expect(previewReads.filter((path) => path.includes("/md/"))).toHaveLength(2);
+});
+
+test("the native PagesListView uploads a private document by dropping a file and refreshes its project list", async ({
+  page,
+}) => {
+  const content = "# 项目实验记录\n\n频率：48000 Hz\n";
+  const uploads: string[] = [];
+  const pageReads: string[] = [];
+  const unexpected: string[] = [];
+  await page.route("**/api/**", (route) => {
+    unexpected.push(`${route.request().method()} ${new URL(route.request().url()).pathname}`);
+    return route.fulfill({ status: 404, json: { error: "Unexpected native API request" } });
+  });
+  await page.route("**/api/instances/", (route) =>
+    route.fulfill({ json: { config: { file_size_limit: 5 * 1024 * 1024 } } })
+  );
+  await page.route("**/auth/get-csrf-token/", (route) => route.fulfill({ json: { csrf_token: "test" } }));
+  await page.route("**/api/workspaces/test/projects/project/pages/**", (route) => {
+    pageReads.push(route.request().url());
+    return route.fulfill({ json: [] });
+  });
+  await page.route("**/lab/projects/project/documents/upload/", (route) => {
+    uploads.push(route.request().postDataBuffer()?.toString("utf8") ?? "");
+    const document = fileDocument("拖放项目记录.md", "md", "text/markdown", Buffer.from(content), "project-document");
+    document.access = 1;
+    return route.fulfill({ status: 201, json: document });
+  });
+  await page.goto(`${origin}/native-project-documents?private`);
+  await page.getByRole("button", { name: "上传文档", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "上传文档", exact: true });
+  await expect(dialog.getByLabel("私人", { exact: true })).toBeChecked();
+  const dataTransfer = await page.evaluateHandle((text) => {
+    const transfer = new DataTransfer();
+    transfer.items.add(new File([text], "拖放项目记录.md", { type: "text/markdown" }));
+    return transfer;
+  }, content);
+  await dialog.getByLabel("文件拖放区域", { exact: true }).dispatchEvent("drop", { dataTransfer });
+  await expect(dialog.getByLabel("文档名称", { exact: true })).toHaveValue("拖放项目记录.md");
+  await dataTransfer.dispose();
+  await dialog.getByRole("button", { name: "保存", exact: true }).click();
+  await expect(dialog).toHaveCount(0);
+  await expect.poll(() => pageReads.length).toBe(2);
+  expect(uploads).toHaveLength(1);
+  expect(uploads[0]).toContain('filename="拖放项目记录.md"');
+  expect(uploads[0]).toContain(content);
+  expect(uploads[0]).toContain('name="access"\r\n\r\n1');
+  expect(uploads[0]).not.toContain('name="issue_id"');
+  expect(unexpected).toEqual([]);
+  await page.goto(`${origin}/native-project-documents?readonly`);
+  await expect(page.getByRole("button", { name: "上传文档", exact: true })).toHaveCount(0);
+});
+
+test("the native PageRoot exposes its uploaded file for reading and download while a legacy Page has no file panel", async ({
+  page,
+}) => {
+  const bytes = Buffer.from("原始Page文件\r\n48000 Hz\r\n");
+  let document = fileDocument("Page记录.txt", "txt", "text/plain", bytes, "page");
+  const reads: string[] = [];
+  await setupDocuments(page, []);
+  await page.route("**/lab/documents/page/tasks/**", (route) =>
+    route.fulfill({ json: { tasks: [], can_edit: false } })
+  );
+  await page.route("**/lab/projects/project/documents/page/", (route) => {
+    reads.push(new URL(route.request().url()).pathname);
+    return route.fulfill({ json: document });
+  });
+  await page.route("**/lab/documents/page/files/file-version/preview/", (route) => {
+    reads.push(new URL(route.request().url()).pathname);
+    return route.fulfill({ json: { text: bytes.toString("utf8"), format: "txt", filename: "Page记录.txt" } });
+  });
+  await page.route("**/lab/documents/page/files/file-version/download/", (route) => {
+    reads.push(new URL(route.request().url()).pathname);
+    return route.fulfill({ contentType: "text/plain", body: bytes });
+  });
+  await page.goto(`${origin}/native-page`);
+  await expect(page.getByText("原生Page编辑器", { exact: true })).toBeVisible();
+  const panel = page.getByRole("region", { name: "文档文件", exact: true });
+  await expect(panel.getByText("Page记录.txt", { exact: true })).toBeVisible();
+  await panel.getByRole("button", { name: "阅读", exact: true }).click();
+  const reader = page.getByRole("dialog", { name: "阅读文档", exact: true });
+  await expect(reader.locator("pre")).toHaveText(bytes.toString("utf8"));
+  const [download] = await Promise.all([
+    page.waitForEvent("download"),
+    reader.getByRole("button", { name: "下载", exact: true }).click(),
+  ]);
+  expect(download.suggestedFilename()).toBe("Page记录.txt");
+  expect(await readFile((await download.path())!)).toEqual(bytes);
+  await reader.getByRole("button", { name: "关闭", exact: true }).click();
+  await expect(page.getByText("原生Page编辑器", { exact: true })).toBeVisible();
+  expect(reads).toEqual([
+    "/api/workspaces/test/lab/projects/project/documents/page/",
+    "/api/workspaces/test/lab/documents/page/files/file-version/preview/",
+    "/api/workspaces/test/lab/documents/page/files/file-version/download/",
+  ]);
+  document = { ...document, file: null };
+  const loaded = page.waitForResponse((response) =>
+    new URL(response.url()).pathname.endsWith("/projects/project/documents/page/")
+  );
+  await page.reload();
+  await loaded;
+  await expect(page.getByText("原生Page编辑器", { exact: true })).toBeVisible();
+  await expect(panel).toHaveCount(0);
+});
