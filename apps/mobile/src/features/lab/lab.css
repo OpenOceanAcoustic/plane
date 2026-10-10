@@ -1307,8 +1307,8 @@
 }
 .lab-week-labels {
   display: grid;
-  grid-template-columns: 35px repeat(7, minmax(0, 1fr));
-  min-width: 0;
+  grid-template-columns: 44px repeat(7, minmax(0, 1fr));
+  min-width: 650px;
   font-size: 12px;
   text-align: center;
   border-bottom: 1px solid var(--line);
@@ -1318,12 +1318,12 @@
 }
 .lab-week-grid {
   display: grid;
-  grid-template-columns: 35px repeat(7, minmax(0, 1fr));
-  min-width: 0;
+  grid-template-columns: 44px repeat(7, minmax(0, 1fr));
+  min-width: 650px;
   position: relative;
 }
 .lab-week-hours {
-  width: 35px;
+  width: 44px;
   display: flex;
   flex-direction: column;
   font-size: 12px;
