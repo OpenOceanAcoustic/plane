@@ -56,8 +56,11 @@ test.beforeAll(async () => {
         name: "native-editor-and-store-seams",
         setup(builder) {
           builder.onResolve({ filter: /.*/ }, (args) => {
+            if (args.path === "@plane/ui") return { path: resolve("packages/ui/src/index.ts") };
             if (args.path === "next/navigation") return { path: "navigation", namespace: "router-seam" };
             if (![viewPath, mainPath].includes(args.importer)) return;
+            if (args.path === "@/hooks/use-peek-overview-outside-click")
+              return { path: resolve("apps/web/core/hooks/use-peek-overview-outside-click.tsx") };
             if (args.path.startsWith("@/components/lab/"))
               return { path: resolve("apps/web/core", args.path.slice(2)) + ".tsx" };
             if (args.path.startsWith("@/") || args.path.startsWith("."))
@@ -386,6 +389,74 @@ test("native publication keeps the original work item through quota warnings, fa
     expect(query.get("publishable")).toBe("1");
   }
   expect(state.budgetReads).toBeGreaterThan(1);
+  expect(state.nativeWrites).toEqual([]);
+});
+
+for (const mode of ["side-peek", "full-screen"]) {
+  test(`clicking bounty form fields keeps the native work item overview and draft open in ${mode}`, async ({
+    page,
+  }) => {
+    const state = await setupPublication(page);
+    await page.goto(`${origin}/peek`);
+    if (mode === "full-screen") await page.getByRole("button", { name: "展开总览", exact: true }).click();
+    const overview = page.locator('[data-issue-peek-overview="issue"]');
+    await expect(overview).toBeVisible();
+    await page.getByRole("button", { name: "发布悬赏", exact: true }).click();
+    const dialog = page.getByRole("dialog", { name: "发布悬赏", exact: true });
+    await expect(dialog).toBeVisible();
+    await expect(overview).toBeAttached();
+    await page.evaluate(() => {
+      document.documentElement.dataset.nativeCloseCount = "0";
+      window.addEventListener("native-issue-closed", () => {
+        document.documentElement.dataset.nativeCloseCount = String(
+          Number(document.documentElement.dataset.nativeCloseCount) + 1
+        );
+      });
+    });
+    await dialog.getByLabel("VC配额", { exact: true }).click();
+    expect(await page.evaluate(() => document.documentElement.dataset.nativeCloseCount)).toBe("0");
+    await expect(overview).toBeAttached({ timeout: 3000 });
+    await expect(dialog).toBeVisible();
+    await dialog.getByLabel("VC配额", { exact: true }).fill("8.50");
+    await dialog.getByLabel("任务资料", { exact: true }).click();
+    await dialog.getByLabel("任务资料", { exact: true }).fill("未发布的实验资料");
+    await dialog.getByLabel("交付要求", { exact: true }).click();
+    await dialog.getByLabel("交付要求", { exact: true }).fill("实验结果");
+    await dialog.getByLabel("验收标准", { exact: true }).click();
+    await dialog.getByLabel("验收标准", { exact: true }).fill("复现实验");
+    await dialog.getByLabel("验收人", { exact: true }).click();
+    await dialog.getByLabel("验收人", { exact: true }).selectOption("reviewer");
+    await expect(dialog.getByLabel("VC配额", { exact: true })).toHaveValue("8.50");
+    await expect(dialog.getByLabel("任务资料", { exact: true })).toHaveValue("未发布的实验资料");
+    await expect(page.locator('[data-issue-peek-overview="issue"]')).toBeVisible();
+    await expect(page).toHaveURL(`${origin}/peek`);
+    expect(state.publications).toEqual([]);
+    expect(state.nativeWrites).toEqual([]);
+  });
+}
+
+test("cancelling bounty publication keeps the overview while a later outside click still closes it", async ({
+  page,
+}) => {
+  const state = await setupPublication(page);
+  await page.goto(`${origin}/peek`);
+  await page.getByRole("button", { name: "发布悬赏", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "发布悬赏", exact: true });
+  await dialog.getByLabel("VC配额", { exact: true }).click();
+  await dialog.getByLabel("VC配额", { exact: true }).fill("8.50");
+  await dialog.getByRole("button", { name: "取消", exact: true }).click();
+  await expect(dialog).toHaveCount(0);
+  const overview = page.locator('[data-issue-peek-overview="issue"]');
+  await expect(overview).toBeVisible();
+  await page.evaluate(() => {
+    const background = document.createElement("button");
+    background.textContent = "项目列表";
+    document.body.append(background);
+  });
+  await page.getByRole("button", { name: "项目列表", exact: true }).click();
+  await expect(overview).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "打开工作项", exact: true })).toBeVisible();
+  expect(state.publications).toEqual([]);
   expect(state.nativeWrites).toEqual([]);
 });
 

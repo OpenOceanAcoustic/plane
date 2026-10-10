@@ -127,9 +127,13 @@ export function LabDialog({
       }}
     >
       <DialogPrimitive.Portal>
-        <DialogPrimitive.Overlay className="fixed inset-0 z-[80] bg-black/40 backdrop-blur-[1px]" />
+        <DialogPrimitive.Overlay
+          data-prevent-outside-click
+          className="fixed inset-0 z-[80] bg-black/40 backdrop-blur-[1px]"
+        />
         <DialogPrimitive.Content
           aria-modal="true"
+          data-prevent-outside-click
           aria-describedby={description ? `${id}-description` : undefined}
           className="shadow-xl fixed top-1/2 left-1/2 z-[81] max-h-[85vh] w-[calc(100%_-_2rem)] max-w-lg -translate-x-1/2 -translate-y-1/2 overflow-y-auto rounded-xl border border-subtle bg-surface-1 p-6 text-primary"
         >
