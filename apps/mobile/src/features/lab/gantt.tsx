@@ -1,4 +1,5 @@
 /** Copyright (c) 2026 OpenOceanAcoustic and contributors. SPDX-License-Identifier: AGPL-3.0-only */
+import { MobileSelect } from "../../components/select";
 import { useState } from "react";
 import type { LabStore } from "./transport";
 import { useResource } from "./transport";
@@ -186,14 +187,14 @@ export function Gantt({
           {lead &&
             ["predecessor", "successor"].map((name, index) => (
               <LabField key={name} label={index ? "后续任务" : "前置任务"}>
-                <select name={name} required>
+                <MobileSelect name={name} required>
                   <option value="">请选择</option>
                   {data.data?.tasks.map((row) => (
                     <option key={row.id} value={row.id}>
                       {row.key} {row.title}
                     </option>
                   ))}
-                </select>
+                </MobileSelect>
               </LabField>
             ))}
         </LabDialog>

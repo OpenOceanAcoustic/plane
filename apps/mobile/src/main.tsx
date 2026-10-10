@@ -12,6 +12,12 @@ import "./features/lab/v6.css";
 // oxlint-disable-next-line import/no-unassigned-import -- native layout and shared V6 controls
 import "./v6.css";
 
+// oxlint-disable-next-line import/no-unassigned-import -- Material selection surfaces
+import "./components/select.css";
+
+// oxlint-disable-next-line import/no-unassigned-import -- Material typography and compact planner labels
+import "./m3-refinements.css";
+
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
     <App />

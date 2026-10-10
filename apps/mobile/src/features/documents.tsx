@@ -1,3 +1,4 @@
+import { MobileSelect } from "../components/select";
 import { useEffect, useMemo, useState } from "react";
 import { EditorContent, useEditor } from "@tiptap/react";
 import type { AnyExtension } from "@tiptap/core";
@@ -40,14 +41,14 @@ export default function Documents(props: Props) {
       {!props.projectId && (
         <label className="field">
           <span>项目</span>
-          <select aria-label="项目" value={selected} onChange={(e) => setSelected(e.target.value)}>
+          <MobileSelect aria-label="项目" value={selected} onChange={(e) => setSelected(e.target.value)}>
             <option value="">选择项目</option>
             {records(projects.data).map((project) => (
               <option key={project.id} value={project.id}>
                 {project.name}
               </option>
             ))}
-          </select>
+          </MobileSelect>
         </label>
       )}
       <ErrorMessage error={projects.error} />
@@ -398,7 +399,7 @@ function CollaborativeEditors({
       <EditorContent editor={title} />
       {writable && (
         <div className="editor-toolbar">
-          <select
+          <MobileSelect
             aria-label="段落样式"
             onChange={(e) => {
               if (e.target.value === "p") editor.chain().focus().setNode("paragraph").run();
@@ -414,7 +415,7 @@ function CollaborativeEditors({
             <option value="1">标题 1</option>
             <option value="2">标题 2</option>
             <option value="3">标题 3</option>
-          </select>
+          </MobileSelect>
           {[
             ["bold", "粗体"],
             ["italic", "斜体"],

@@ -1,25 +1,84 @@
 [
   {
-    "asset": "LiberationSans-Regular.woff2",
-    "source": "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
-    "collectionFace": null,
-    "version": "Version 2.1.5",
-    "glyphMappings": 2327,
+    "asset": "Roboto-Regular.woff2",
+    "source": "https://github.com/google/fonts/blob/1c627bfa375fc51cf86fabeca4f6e08a95f0aa5c/ofl/roboto/Roboto%5Bwdth%2Cwght%5D.ttf",
+    "upstreamRepository": "https://github.com/google/fonts",
+    "upstreamCommit": "1c627bfa375fc51cf86fabeca4f6e08a95f0aa5c",
+    "version": "Version 3.015; 2026",
+    "family": "Roboto",
+    "subfamily": "Regular",
+    "weight": 400,
+    "frozenAxes": {
+      "wght": 400,
+      "wdth": 100
+    },
+    "glyphs": 1326,
+    "glyphMappings": 927,
     "referenceSubset": false,
-    "sourceSha256": "075e71be4c58beda172ecb574a799308f04c3d054c6a5b7434954d3b0f1b28d8",
-    "assetSha256": "70ab7e0c16b79df22396196096e66491997b32dda188c065d60a0089f30d5397",
-    "bytes": 146912
+    "sourceSha256": "d7598e12c5dbef095ff8272cfc55da0250bd07fbdecbac8a530b9b277872a134",
+    "assetSha256": "9d867b7bbb3086a970c8351043d214d77daf9e217b1a708e1e296b328bd4cef5",
+    "bytes": 69264,
+    "conversion": {
+      "tool": "fontTools.varLib.instancer / WOFF2",
+      "fontToolsVersion": "4.63.0",
+      "allSourceGlyphsRetained": true
+    },
+    "licenseFile": "OFL-Roboto.txt",
+    "licenseSource": "https://github.com/google/fonts/blob/1c627bfa375fc51cf86fabeca4f6e08a95f0aa5c/ofl/roboto/OFL.txt"
   },
   {
-    "asset": "LiberationSans-Bold.woff2",
-    "source": "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf",
-    "collectionFace": null,
-    "version": "Version 2.1.5",
-    "glyphMappings": 2327,
+    "asset": "Roboto-Medium.woff2",
+    "source": "https://github.com/google/fonts/blob/1c627bfa375fc51cf86fabeca4f6e08a95f0aa5c/ofl/roboto/Roboto%5Bwdth%2Cwght%5D.ttf",
+    "upstreamRepository": "https://github.com/google/fonts",
+    "upstreamCommit": "1c627bfa375fc51cf86fabeca4f6e08a95f0aa5c",
+    "version": "Version 3.015; 2026",
+    "family": "Roboto Medium",
+    "subfamily": "Regular",
+    "weight": 500,
+    "frozenAxes": {
+      "wght": 500,
+      "wdth": 100
+    },
+    "glyphs": 1326,
+    "glyphMappings": 927,
     "referenceSubset": false,
-    "sourceSha256": "b72c65e551d653b54217ffad0d1454ce0657e4e8d4a28bcc79e0acd2598f4bf3",
-    "assetSha256": "068e097d429e3775d06c65bb483579cd6605012910a712a6685e0ea35f996d2c",
-    "bytes": 148460
+    "sourceSha256": "d7598e12c5dbef095ff8272cfc55da0250bd07fbdecbac8a530b9b277872a134",
+    "assetSha256": "79ba960e6deae716b5fc1747ea387214fe709b25e5a89496ee2aa7068a490f3e",
+    "bytes": 71052,
+    "conversion": {
+      "tool": "fontTools.varLib.instancer / WOFF2",
+      "fontToolsVersion": "4.63.0",
+      "allSourceGlyphsRetained": true
+    },
+    "licenseFile": "OFL-Roboto.txt",
+    "licenseSource": "https://github.com/google/fonts/blob/1c627bfa375fc51cf86fabeca4f6e08a95f0aa5c/ofl/roboto/OFL.txt"
+  },
+  {
+    "asset": "Roboto-Bold.woff2",
+    "source": "https://github.com/google/fonts/blob/1c627bfa375fc51cf86fabeca4f6e08a95f0aa5c/ofl/roboto/Roboto%5Bwdth%2Cwght%5D.ttf",
+    "upstreamRepository": "https://github.com/google/fonts",
+    "upstreamCommit": "1c627bfa375fc51cf86fabeca4f6e08a95f0aa5c",
+    "version": "Version 3.015; 2026",
+    "family": "Roboto",
+    "subfamily": "Bold",
+    "weight": 700,
+    "frozenAxes": {
+      "wght": 700,
+      "wdth": 100
+    },
+    "glyphs": 1326,
+    "glyphMappings": 927,
+    "referenceSubset": false,
+    "sourceSha256": "d7598e12c5dbef095ff8272cfc55da0250bd07fbdecbac8a530b9b277872a134",
+    "assetSha256": "744dd755269b1c1bafda73f51a342095fbe4f717ab2847054133eb37eb1a525e",
+    "bytes": 71312,
+    "conversion": {
+      "tool": "fontTools.varLib.instancer / WOFF2",
+      "fontToolsVersion": "4.63.0",
+      "allSourceGlyphsRetained": true
+    },
+    "licenseFile": "OFL-Roboto.txt",
+    "licenseSource": "https://github.com/google/fonts/blob/1c627bfa375fc51cf86fabeca4f6e08a95f0aa5c/ofl/roboto/OFL.txt"
   },
   {
     "asset": "NotoSansCJKSC-Regular.woff2",

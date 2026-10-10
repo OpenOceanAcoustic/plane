@@ -1,3 +1,4 @@
+import { MobileSelect } from "../../components/select";
 // oxlint-disable-next-line import/no-unassigned-import -- mobile settings presentation
 import "./settings.css";
 import { useEffect, useMemo, useState } from "react";
@@ -567,14 +568,14 @@ function ProjectSettings({ client, workspaceSlug, projectId }: Pick<Props, "clie
       <PageHeading title="项目设置" />
       <label className="field">
         <span>项目</span>
-        <select value={chosen} onChange={(event) => setChosen(event.target.value)}>
+        <MobileSelect value={chosen} onChange={(event) => setChosen(event.target.value)}>
           <option value="">请选择项目</option>
           {records(projects.data).map((item) => (
             <option key={item.id} value={item.id}>
               {item.name}
             </option>
           ))}
-        </select>
+        </MobileSelect>
       </label>
       {chosen && (
         <>

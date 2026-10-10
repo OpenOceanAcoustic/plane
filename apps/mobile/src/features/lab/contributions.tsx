@@ -1,4 +1,5 @@
 /** Copyright (c) 2026 OpenOceanAcoustic and contributors. SPDX-License-Identifier: AGPL-3.0-only */
+import { MobileSelect } from "../../components/select";
 import { useState, useRef } from "react";
 import { PageHeading } from "../../components/ui";
 import type { LabContributionsSummary, LabContributionsCalendar, LabContributionsEntries } from "@plane/types";
@@ -127,7 +128,7 @@ export function Contributions({
           />
         </LabField>
         <LabField label="项目">
-          <select
+          <MobileSelect
             value={project}
             onChange={(e) => {
               setProject(e.target.value);
@@ -140,7 +141,7 @@ export function Contributions({
                 {row.name}
               </option>
             ))}
-          </select>
+          </MobileSelect>
         </LabField>
       </div>
       {calendar.data && (

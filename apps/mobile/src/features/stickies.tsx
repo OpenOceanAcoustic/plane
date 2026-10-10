@@ -1,3 +1,4 @@
+import { MobileSelect } from "../components/select";
 import { useContext, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import useSWRInfinite from "swr/infinite";
@@ -220,14 +221,14 @@ export function StickyEditor({
           </div>
           <label className="field">
             <span>颜色</span>
-            <select aria-label="颜色" value={color} onChange={(event) => setColor(event.target.value)}>
+            <MobileSelect aria-label="颜色" value={color} onChange={(event) => setColor(event.target.value)}>
               <option value="">默认</option>
               {stickyColors.map((item) => (
                 <option key={item.key} value={item.key}>
                   {item.label}
                 </option>
               ))}
-            </select>
+            </MobileSelect>
           </label>
         </fieldset>
         <ErrorMessage error={error} />

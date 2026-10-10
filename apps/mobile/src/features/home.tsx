@@ -1,3 +1,4 @@
+import { MobileSelect } from "../components/select";
 import { useState } from "react";
 import { Search } from "lucide-react";
 import { CanonicalIcon } from "../components/navigation";
@@ -411,9 +412,10 @@ export function Inbox({
       </div>
       <ErrorMessage error={notifications.error ?? error} />
       {tab === "notifications" && (
-        <label className="field">
+        <label className="field" htmlFor="notification-filter">
           <span>通知筛选</span>
-          <select
+          <MobileSelect
+            id="notification-filter"
             aria-label="通知筛选"
             value={filter}
             onChange={(event) => {
@@ -425,7 +427,7 @@ export function Inbox({
             <option value="unread">未读</option>
             <option value="mentioned">提及</option>
             <option value="archived">已归档</option>
-          </select>
+          </MobileSelect>
         </label>
       )}
       {tab === "notifications" && (

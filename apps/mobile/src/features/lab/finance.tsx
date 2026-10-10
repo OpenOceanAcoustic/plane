@@ -1,4 +1,5 @@
 /** Copyright (c) 2026 OpenOceanAcoustic and contributors. SPDX-License-Identifier: AGPL-3.0-only */
+import { MobileSelect } from "../../components/select";
 import { useState, useEffect } from "react";
 import { PageHeading } from "../../components/ui";
 import { CanonicalIcon } from "../../components/navigation";
@@ -425,7 +426,7 @@ export function Finance({
                 {project && lead ? " · 负责人" : ""}
               </span>
               <CanonicalIcon name="down" size={16} />
-              <select aria-label="资金项目" value={project} onChange={(e) => setProject(e.target.value)}>
+              <MobileSelect aria-label="资金项目" value={project} onChange={(e) => setProject(e.target.value)}>
                 <option value="">实验室全部资金</option>
                 {overview.projects
                   .filter((row) => deleted || !row.deleted)
@@ -435,7 +436,7 @@ export function Finance({
                       {row.deleted ? " · 已删除" : row.is_lead ? " · 负责人" : ""}
                     </option>
                   ))}
-              </select>
+              </MobileSelect>
             </label>
             <div className="m3-tabs m3-finance-tabs" role="tablist">
               {tabs.slice(0, 4).map((item) => (
@@ -616,12 +617,12 @@ export function Finance({
               <>
                 <h3>{flow.data.title}</h3>
                 <LabField label="流程范围">
-                  <select value={workflowScope} onChange={(event) => setWorkflowScope(event.target.value)}>
+                  <MobileSelect value={workflowScope} onChange={(event) => setWorkflowScope(event.target.value)}>
                     <option value="finance">资金流程</option>
                     <option value="project" disabled={!project}>
                       选中项目的完整生命周期
                     </option>
-                  </select>
+                  </MobileSelect>
                 </LabField>
                 {flow.data.nodes.map((row) => (
                   <article className="lab-timeline-row" key={row.id}>

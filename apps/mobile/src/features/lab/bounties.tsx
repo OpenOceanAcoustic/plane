@@ -1,4 +1,5 @@
 /** Copyright (c) 2026 OpenOceanAcoustic and contributors. SPDX-License-Identifier: AGPL-3.0-only */
+import { MobileSelect } from "../../components/select";
 import { useState } from "react";
 import { CanonicalIcon } from "../../components/navigation";
 import { Html, PageHeading } from "../../components/ui";
@@ -182,14 +183,14 @@ export function Bounties({
               <label className="bx-scope-filter m3-chip v6-select-chip">
                 <span>{projectChoices.find((row) => row.id === project)?.name ?? "全实验室公开悬赏"}</span>
                 <CanonicalIcon name="down" size={18} />
-                <select aria-label="悬赏项目" value={project} onChange={(e) => setProject(e.target.value)}>
+                <MobileSelect aria-label="悬赏项目" value={project} onChange={(e) => setProject(e.target.value)}>
                   <option value="">全实验室公开悬赏</option>
                   {projectChoices.map((row) => (
                     <option key={row.id} value={row.id}>
                       {row.name}
                     </option>
                   ))}
-                </select>
+                </MobileSelect>
               </label>
               <button className="bx-wip-filter m3-chip" onClick={() => setExceptions(true)}>
                 WIP 例外
@@ -522,13 +523,13 @@ export function Bounties({
           {chosen.action.action === "accept" && (
             <>
               <LabField label="验收结果">
-                <select value={result} onChange={(e) => setResult(e.target.value)}>
+                <MobileSelect value={result} onChange={(e) => setResult(e.target.value)}>
                   {Object.entries(acceptanceLabels).map(([id, label]) => (
                     <option key={id} value={id}>
                       {label}
                     </option>
                   ))}
-                </select>
+                </MobileSelect>
               </LabField>
               {!["rework", "reject"].includes(result) &&
                 approved.map((row) => (
@@ -638,13 +639,13 @@ export function Bounties({
           }}
         >
           <LabField label="类型">
-            <select value={shareKind} onChange={(e) => setShareKind(e.target.value)}>
+            <MobileSelect value={shareKind} onChange={(e) => setShareKind(e.target.value)}>
               <option value="document_version">冻结文档版本</option>
               <option value="attachment">任务附件</option>
-            </select>
+            </MobileSelect>
           </LabField>
           <LabField label="具体资料">
-            <select name="source_id" required>
+            <MobileSelect name="source_id" required>
               <option value="">请选择</option>
               {(shareKind === "document_version"
                 ? materials.data?.sources?.document_versions
@@ -654,7 +655,7 @@ export function Bounties({
                   {row.name}
                 </option>
               ))}
-            </select>
+            </MobileSelect>
           </LabField>
           <LabField label="资料名称">
             <input name="label" maxLength={255} />
@@ -719,7 +720,7 @@ export function Bounties({
           }}
         >
           <LabField label="成员">
-            <select name="user_id" required>
+            <MobileSelect name="user_id" required>
               <option value="">请选择</option>
               {Array.from(
                 new Map(
@@ -733,7 +734,7 @@ export function Bounties({
                   {row.name}
                 </option>
               ))}
-            </select>
+            </MobileSelect>
           </LabField>
           <LabField label="截止时间（上海，90天内）">
             <input type="datetime-local" name="expires_at" required />

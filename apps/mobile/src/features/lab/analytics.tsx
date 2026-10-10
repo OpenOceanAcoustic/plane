@@ -1,4 +1,5 @@
 /** Copyright (c) 2026 OpenOceanAcoustic and contributors. SPDX-License-Identifier: AGPL-3.0-only */
+import { MobileSelect } from "../../components/select";
 import { useState } from "react";
 import type { LabAnalytics, LabChart, LabChartRow, LabChartDetails } from "@plane/types";
 import { CanonicalIcon } from "../../components/navigation";
@@ -99,14 +100,14 @@ export function Analytics({
             <CanonicalIcon name="folder" size={18} />
             <span>{resource.data?.projects.find((row) => row.id === project)?.name ?? "全部项目"}</span>
             <CanonicalIcon name="down" size={18} />
-            <select aria-label="统计项目" value={project} onChange={(event) => setProject(event.target.value)}>
+            <MobileSelect aria-label="统计项目" value={project} onChange={(event) => setProject(event.target.value)}>
               <option value="">全部项目</option>
               {resource.data?.projects.map((row) => (
                 <option key={row.id} value={row.id}>
                   {row.name}
                 </option>
               ))}
-            </select>
+            </MobileSelect>
           </label>
           <details className="bx-date-filter">
             <summary>
@@ -344,14 +345,14 @@ export function Analytics({
             />
           </LabField>
           <LabField label="成员">
-            <select value={member} onChange={(event) => setMember(event.target.value)}>
+            <MobileSelect value={member} onChange={(event) => setMember(event.target.value)}>
               <option value="">全部成员</option>
               {resource.data?.members.map((row) => (
                 <option key={row.id} value={row.id}>
                   {row.name}
                 </option>
               ))}
-            </select>
+            </MobileSelect>
           </LabField>
           {resource.data?.can_view_team && (
             <label className="lab-switch-field">

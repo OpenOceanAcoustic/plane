@@ -1,3 +1,4 @@
+import { MobileSelect } from "../../components/select";
 import { PageHeading } from "../../components/ui";
 import { useState } from "react";
 import { records, useData, type Entity } from "../../components/ui";
@@ -39,7 +40,7 @@ export default function Activity(props: WorkspaceProps) {
     <>
       <PageHeading title="我的活动" />
       <LabField label="项目筛选">
-        <select
+        <MobileSelect
           className={labInputClass}
           value={project}
           onChange={(event) => {
@@ -53,7 +54,7 @@ export default function Activity(props: WorkspaceProps) {
               {row.name}
             </option>
           ))}
-        </select>
+        </MobileSelect>
       </LabField>
       <Status loading={session.loading || result.loading} error={session.error ?? result.error} empty={!rows.length} />
       <div className="lab-list">

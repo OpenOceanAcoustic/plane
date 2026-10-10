@@ -1,4 +1,5 @@
 /** Copyright (c) 2026 OpenOceanAcoustic and contributors. SPDX-License-Identifier: AGPL-3.0-only */
+import { MobileSelect } from "../../components/select";
 import { useState } from "react";
 import { PageHeading } from "../../components/ui";
 import { CanonicalIcon } from "../../components/navigation";
@@ -441,14 +442,14 @@ export function Planner({
                 {view === "list" && (rows.length ? rows.map(card) : <Empty />)}
                 {["gantt", "fields"].includes(view) && (
                   <LabField label="项目">
-                    <select value={project} onChange={(event) => setProject(event.target.value)}>
+                    <MobileSelect value={project} onChange={(event) => setProject(event.target.value)}>
                       <option value="">{view === "gantt" ? "请选择项目" : "全部项目及个人事项"}</option>
                       {planner.projects.map((row) => (
                         <option key={row.id} value={row.id}>
                           {row.name}
                         </option>
                       ))}
-                    </select>
+                    </MobileSelect>
                   </LabField>
                 )}
                 {["agenda", "month", "week", "timeline"].includes(view) && (
@@ -515,26 +516,26 @@ export function Planner({
                     )}
                     {team && (
                       <LabField label="成员">
-                        <select value={member} onChange={(event) => setMember(event.target.value)}>
+                        <MobileSelect value={member} onChange={(event) => setMember(event.target.value)}>
                           <option value="">全部成员</option>
                           {calendar.data?.members.map((row) => (
                             <option key={row.id} value={row.id}>
                               {row.name}
                             </option>
                           ))}
-                        </select>
+                        </MobileSelect>
                       </LabField>
                     )}
                     {view !== "overview" && (
                       <LabField label="项目">
-                        <select value={project} onChange={(event) => setProject(event.target.value)}>
+                        <MobileSelect value={project} onChange={(event) => setProject(event.target.value)}>
                           <option value="">全部项目及个人事项</option>
                           {planner.projects.map((row) => (
                             <option key={row.id} value={row.id}>
                               {row.name}
                             </option>
                           ))}
-                        </select>
+                        </MobileSelect>
                       </LabField>
                     )}
                     {view === "month" ? (
@@ -832,30 +833,30 @@ export function Planner({
             />
           </LabField>
           <LabField label="项目">
-            <select value={project} onChange={(event) => setProject(event.target.value)}>
+            <MobileSelect value={project} onChange={(event) => setProject(event.target.value)}>
               <option value="">全部项目与个人事项</option>
               {planner.projects.map((row) => (
                 <option key={row.id} value={row.id}>
                   {row.name}
                 </option>
               ))}
-            </select>
+            </MobileSelect>
           </LabField>
           {team ? (
             <LabField label="成员">
-              <select value={member} onChange={(event) => setMember(event.target.value)}>
+              <MobileSelect value={member} onChange={(event) => setMember(event.target.value)}>
                 <option value="">全部成员</option>
                 {calendar.data?.members.map((row) => (
                   <option key={row.id} value={row.id}>
                     {row.name}
                   </option>
                 ))}
-              </select>
+              </MobileSelect>
             </LabField>
           ) : (
             <>
               <LabField label="显示的文件夹">
-                <select value={folder} onChange={(event) => setFolder(event.target.value)}>
+                <MobileSelect value={folder} onChange={(event) => setFolder(event.target.value)}>
                   <option value="all">全部文件夹</option>
                   {planner.folders.map((row) => (
                     <option key={row.id} value={row.id}>
@@ -863,17 +864,17 @@ export function Planner({
                     </option>
                   ))}
                   <option value="unclassified">未分类</option>
-                </select>
+                </MobileSelect>
               </LabField>
               <LabField label="状态">
-                <select value={status} onChange={(event) => setStatus(event.target.value)}>
+                <MobileSelect value={status} onChange={(event) => setStatus(event.target.value)}>
                   <option value="">全部状态</option>
                   {statuses.map((row) => (
                     <option key={row.id} value={row.id}>
                       {row.name}
                     </option>
                   ))}
-                </select>
+                </MobileSelect>
               </LabField>
               <label className="lab-switch-field">
                 <span>仅看待排事项</span>
@@ -1095,34 +1096,37 @@ export function Planner({
             </LabField>
           )}
           <LabField label="文件夹">
-            <select name="folder_id" defaultValue={chosenItem?.folder_id ?? ""}>
+            <MobileSelect name="folder_id" defaultValue={chosenItem?.folder_id ?? ""}>
               <option value="">未分类</option>
               {planner.folders.map((row) => (
                 <option key={row.id} value={row.id}>
                   {row.name}
                 </option>
               ))}
-            </select>
+            </MobileSelect>
           </LabField>
           <LabField label="分类">
-            <select name="category_id" defaultValue={chosenItem?.category_id ?? planner.default_category_id ?? ""}>
+            <MobileSelect
+              name="category_id"
+              defaultValue={chosenItem?.category_id ?? planner.default_category_id ?? ""}
+            >
               <option value="">未分类</option>
               {planner.categories?.map((row) => (
                 <option key={row.id} value={row.id}>
                   {row.name}
                 </option>
               ))}
-            </select>
+            </MobileSelect>
           </LabField>
           {!chosenItem?.bounty_id && !chosenItem?.is_bounty && chosenItem?.can_edit_issue !== false && (
             <LabField label="状态">
-              <select name="status" defaultValue={chosenItem?.status ?? "todo"}>
+              <MobileSelect name="status" defaultValue={chosenItem?.status ?? "todo"}>
                 {statuses.map((row) => (
                   <option key={row.id} value={row.id}>
                     {row.name}
                   </option>
                 ))}
-              </select>
+              </MobileSelect>
             </LabField>
           )}
           {!chosenItem?.issue_id && (
@@ -1167,14 +1171,14 @@ export function Planner({
           </LabField>
           <ErrorMessage error={search.error} />
           <LabField label="任务">
-            <select name="issue_id" required>
+            <MobileSelect name="issue_id" required>
               <option value="">请选择</option>
               {search.data?.map((row) => (
                 <option key={row.id} value={row.id}>
                   {row.project} · {row.key} {row.title}
                 </option>
               ))}
-            </select>
+            </MobileSelect>
           </LabField>
         </LabDialog>
       )}
@@ -1283,7 +1287,7 @@ export function Planner({
           }}
         >
           <LabField label="项目">
-            <select name="project_id" value={project} required onChange={(e) => setProject(e.target.value)}>
+            <MobileSelect name="project_id" value={project} required onChange={(e) => setProject(e.target.value)}>
               <option value="">请选择</option>
               {planner.projects
                 .filter((row) => row.lead)
@@ -1292,11 +1296,11 @@ export function Planner({
                     {row.name}
                   </option>
                 ))}
-            </select>
+            </MobileSelect>
           </LabField>
           {statuses.map((row) => (
             <LabField key={row.id} label={row.name}>
-              <select
+              <MobileSelect
                 key={`${project}-${row.id}`}
                 name={row.id}
                 defaultValue={planner.projects.find((p) => p.id === project)?.mapping[row.id as "todo"] ?? ""}
@@ -1309,7 +1313,7 @@ export function Planner({
                       {state.name}
                     </option>
                   ))}
-              </select>
+              </MobileSelect>
             </LabField>
           ))}
         </LabDialog>
@@ -1341,14 +1345,14 @@ export function Planner({
         >
           {schedule === "new" && (
             <LabField label="事项">
-              <select name="item_id" required defaultValue={scheduledItem}>
+              <MobileSelect name="item_id" required defaultValue={scheduledItem}>
                 <option value="">请选择</option>
                 {planner.items.map((row) => (
                   <option key={row.id} value={row.id}>
                     {row.title}
                   </option>
                 ))}
-              </select>
+              </MobileSelect>
             </LabField>
           )}
           <LabField label="开始时间（上海）">

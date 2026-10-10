@@ -1,7 +1,7 @@
 /** Copyright (c) 2026 OpenOceanAcoustic and contributors. SPDX-License-Identifier: AGPL-3.0-only */
 import { useEffect, useId, useRef, useState, Children, cloneElement, isValidElement } from "react";
 import type { ButtonHTMLAttributes, ReactNode } from "react";
-import { isTopDialog } from "../../lib/dialog";
+import { dialogFocusTargets, isTopDialog } from "../../lib/dialog";
 import { CanonicalIcon } from "../../components/navigation";
 import { PageHeading } from "../../components/ui";
 export { FloatingAction } from "../../components/ui";
@@ -59,12 +59,7 @@ export function LabDialog({
   callbacks.current = { onClose, busy, saving };
   useEffect(() => {
     const previous = document.activeElement as HTMLElement | null;
-    const targets = () =>
-      form.current
-        ?.closest(".lab-sheet")
-        ?.querySelectorAll<HTMLElement>(
-          "button:not(:disabled),input:not(:disabled),select:not(:disabled),textarea:not(:disabled),a[href]"
-        );
+    const targets = () => dialogFocusTargets(form.current?.closest(".lab-sheet") ?? null);
     targets()?.[0]?.focus();
     const close = (event: Event) => {
       if (!isTopDialog(form.current?.closest(".lab-sheet") ?? null) || event.defaultPrevented) return;

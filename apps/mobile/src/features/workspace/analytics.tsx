@@ -1,3 +1,4 @@
+import { MobileSelect } from "../../components/select";
 import { PageHeading } from "../../components/ui";
 import { useState } from "react";
 import { useData, records, type Entity } from "../../components/ui";
@@ -126,7 +127,7 @@ export default function WorkspaceAnalytics(props: WorkspaceProps) {
         </Button>
       </div>
       <LabField label="项目筛选">
-        <select
+        <MobileSelect
           className={labInputClass}
           value={project}
           onChange={(event) => {
@@ -140,10 +141,10 @@ export default function WorkspaceAnalytics(props: WorkspaceProps) {
               {row.name}
             </option>
           ))}
-        </select>
+        </MobileSelect>
       </LabField>
       <LabField label="日期范围">
-        <select
+        <MobileSelect
           className={labInputClass}
           value={duration}
           onChange={(event) => {
@@ -155,7 +156,7 @@ export default function WorkspaceAnalytics(props: WorkspaceProps) {
           <option value="last_7_days">最近 7 天</option>
           <option value="last_30_days">最近 30 天</option>
           <option value="last_3_months">最近 3 个月</option>
-        </select>
+        </MobileSelect>
       </LabField>
       <Status loading={membership.loading || summary.loading} error={summary.error} />
       <div className="workspace-stat-grid">
@@ -187,7 +188,7 @@ export default function WorkspaceAnalytics(props: WorkspaceProps) {
           <section className="lab-card">
             <h2>任务分布</h2>
             <LabField label="分析维度">
-              <select
+              <MobileSelect
                 className={labInputClass}
                 value={axis}
                 onChange={(event) => {
@@ -200,10 +201,10 @@ export default function WorkspaceAnalytics(props: WorkspaceProps) {
                     {item.name}
                   </option>
                 ))}
-              </select>
+              </MobileSelect>
             </LabField>
             <LabField label="分组">
-              <select className={labInputClass} value={group} onChange={(event) => setGroup(event.target.value)}>
+              <MobileSelect className={labInputClass} value={group} onChange={(event) => setGroup(event.target.value)}>
                 <option value="">不分组</option>
                 {axes
                   .filter((item) => item.key !== axis)
@@ -212,7 +213,7 @@ export default function WorkspaceAnalytics(props: WorkspaceProps) {
                       {item.name}
                     </option>
                   ))}
-              </select>
+              </MobileSelect>
             </LabField>
             <Status loading={custom.loading} error={custom.error} empty={!custom.data?.data?.length} />
             <Bars

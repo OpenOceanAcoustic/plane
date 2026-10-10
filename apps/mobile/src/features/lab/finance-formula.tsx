@@ -1,4 +1,5 @@
 /** Copyright (c) 2026 OpenOceanAcoustic and contributors. SPDX-License-Identifier: AGPL-3.0-only */
+import { MobileSelect } from "../../components/select";
 import { useEffect, useState } from "react";
 import useSWR from "swr";
 import { newRequestKey as uuidv4 } from "./business";
@@ -82,7 +83,7 @@ export function LabFormulaEditor({
     >
       {data && (
         <LabField label="从模板开始">
-          <select
+          <MobileSelect
             className={labInputClass}
             defaultValue=""
             onChange={(event) => {
@@ -100,7 +101,7 @@ export function LabFormulaEditor({
                 {template.name}
               </option>
             ))}
-          </select>
+          </MobileSelect>
         </LabField>
       )}
       <LabField label="任务预计奖励公式">
@@ -156,7 +157,7 @@ export function LabFormulaEditor({
               />
             </LabField>
             <LabField label="作用范围">
-              <select
+              <MobileSelect
                 className={labInputClass}
                 value={parameter.scope}
                 onChange={(event) =>
@@ -166,7 +167,7 @@ export function LabFormulaEditor({
                 <option value="task">任务</option>
                 <option value="member">成员</option>
                 <option value="stage">阶段</option>
-              </select>
+              </MobileSelect>
             </LabField>
             <LabField label="单位">
               <input
@@ -215,14 +216,14 @@ export function LabFormulaEditor({
       <fieldset className="lab-form-section">
         <legend className="lab-section-title">样例试算</legend>
         <LabField label="试算对象">
-          <select
+          <MobileSelect
             className={labInputClass}
             value={kind}
             onChange={(event) => setKind(event.target.value as "task" | "member")}
           >
             <option value="task">任务预计奖励</option>
             <option value="member">成员阶段预计奖励</option>
-          </select>
+          </MobileSelect>
         </LabField>
         <div className="lab-form-fields">
           {[
@@ -366,7 +367,12 @@ export function LabForecastDialog({
       }}
     >
       <LabField label="阶段">
-        <select className={labInputClass} required value={stageId} onChange={(event) => setStageId(event.target.value)}>
+        <MobileSelect
+          className={labInputClass}
+          required
+          value={stageId}
+          onChange={(event) => setStageId(event.target.value)}
+        >
           <option value="">请选择</option>
           {data.stages
             .filter((row) => !row.deleted && (!projectId || row.project_id === projectId))
@@ -375,27 +381,27 @@ export function LabForecastDialog({
                 {row.name} · E ¥{row.E} · B {row.B}
               </option>
             ))}
-        </select>
+        </MobileSelect>
       </LabField>
       <LabField label="预测对象">
-        <select
+        <MobileSelect
           className={labInputClass}
           value={kind}
           onChange={(event) => setKind(event.target.value as "task" | "member")}
         >
           <option value="task">任务预计奖励</option>
           <option value="member">成员阶段预计奖励</option>
-        </select>
+        </MobileSelect>
       </LabField>
       <LabField label="计算口径">
-        <select name="basis" className={labInputClass}>
+        <MobileSelect name="basis" className={labInputClass}>
           <option value="budget">预算预测</option>
           <option value="received">到账测算</option>
-        </select>
+        </MobileSelect>
       </LabField>
       {kind === "task" ? (
         <LabField label="悬赏任务">
-          <select name="bounty_id" className={labInputClass} required>
+          <MobileSelect name="bounty_id" className={labInputClass} required>
             <option value="">请选择</option>
             {store.bounties
               .filter((row) => row.stage_id === stageId)
@@ -404,11 +410,11 @@ export function LabForecastDialog({
                   {row.title} · {row.budget} VC
                 </option>
               ))}
-          </select>
+          </MobileSelect>
         </LabField>
       ) : (
         <LabField label="成员">
-          <select name="user_id" className={labInputClass} required defaultValue={store.planner?.user_id}>
+          <MobileSelect name="user_id" className={labInputClass} required defaultValue={store.planner?.user_id}>
             <option value="">请选择</option>
             {data.members
               .filter((row) => stage?.can_manage || row.id === store.planner?.user_id)
@@ -417,7 +423,7 @@ export function LabForecastDialog({
                   {row.name}
                 </option>
               ))}
-          </select>
+          </MobileSelect>
         </LabField>
       )}
       {formula ? (

@@ -1,4 +1,5 @@
 /** Copyright (c) 2026 OpenOceanAcoustic and contributors. SPDX-License-Identifier: AGPL-3.0-only */
+import { MobileSelect } from "../../components/select";
 import { useState } from "react";
 import { newRequestKey as uuidv4 } from "./business";
 import type { LabFinanceOverview } from "@plane/types";
@@ -680,7 +681,7 @@ export function LabFinanceActionDialog({
       {fields.map((field) => (
         <LabField key={field.key} label={field.label}>
           {field.options ? (
-            <select
+            <MobileSelect
               name={field.key}
               required={field.required}
               value={valueOf(field.key)}
@@ -697,7 +698,7 @@ export function LabFinanceActionDialog({
                   {option.label}
                 </option>
               ))}
-            </select>
+            </MobileSelect>
           ) : field.type === "textarea" ? (
             <textarea
               name={field.key}
@@ -789,7 +790,7 @@ export function LabFinanceActionDialog({
             {shares.map((id) => (
               <div key={id} className="lab-form-fields">
                 <LabField label="成员">
-                  <select
+                  <MobileSelect
                     name={`share-user-${id}`}
                     className={labInputClass}
                     value={values[`share-user-${id}`] ?? ""}
@@ -801,7 +802,7 @@ export function LabFinanceActionDialog({
                         {member.label}
                       </option>
                     ))}
-                  </select>
+                  </MobileSelect>
                 </LabField>
                 <LabField label="计划 VC">
                   <LabAmountInput
@@ -864,14 +865,14 @@ export function LabFinanceActionDialog({
               {history.map((id) => (
                 <div key={id} className="lab-form-fields">
                   <LabField label="历史成员">
-                    <select name={`history-user-${id}`} required className={labInputClass}>
+                    <MobileSelect name={`history-user-${id}`} required className={labInputClass}>
                       <option value="">请选择</option>
                       {members.map((member) => (
                         <option key={member.value} value={member.value}>
                           {member.label}
                         </option>
                       ))}
-                    </select>
+                    </MobileSelect>
                   </LabField>
                   <LabField label="历史有效 VC">
                     <LabAmountInput

@@ -1,4 +1,5 @@
 /** Copyright (c) 2026 OpenOceanAcoustic and contributors. SPDX-License-Identifier: AGPL-3.0-only */
+import { MobileSelect } from "../../components/select";
 import { useState, useEffect } from "react";
 import type { LabCustomField, LabTaskTableData, LabTaskRow, LabFieldKind, LabMember } from "@plane/types";
 import type { LabStore } from "./transport";
@@ -231,7 +232,7 @@ export function Fields({
           submitLabel="应用"
         >
           <LabField label="任务分组">
-            <select value={groupBy} onChange={(event) => setGroupBy(event.target.value)}>
+            <MobileSelect value={groupBy} onChange={(event) => setGroupBy(event.target.value)}>
               <option value="none">不分组</option>
               {columns
                 .filter(
@@ -242,22 +243,22 @@ export function Fields({
                     {column.label}
                   </option>
                 ))}
-            </select>
+            </MobileSelect>
           </LabField>
           <LabField label="排序字段">
-            <select value={sortBy} onChange={(event) => setSortBy(event.target.value)}>
+            <MobileSelect value={sortBy} onChange={(event) => setSortBy(event.target.value)}>
               {columns.map((column) => (
                 <option key={column.key} value={column.key}>
                   {column.label}
                 </option>
               ))}
-            </select>
+            </MobileSelect>
           </LabField>
           <LabField label="排序方向">
-            <select value={direction} onChange={(event) => setDirection(event.target.value)}>
+            <MobileSelect value={direction} onChange={(event) => setDirection(event.target.value)}>
               <option value="asc">升序</option>
               <option value="desc">降序</option>
-            </select>
+            </MobileSelect>
           </LabField>
           <h3 className="lab-section-heading">显示列</h3>
           {columns.map((column) => (
@@ -307,13 +308,17 @@ export function Fields({
             <input name="name" maxLength={80} required defaultValue={editing === "new" ? "" : editing.name} />
           </LabField>
           <LabField label="类型">
-            <select value={kind} disabled={editing !== "new"} onChange={(e) => setKind(e.target.value as LabFieldKind)}>
+            <MobileSelect
+              value={kind}
+              disabled={editing !== "new"}
+              onChange={(e) => setKind(e.target.value as LabFieldKind)}
+            >
               {Object.entries(names).map(([id, label]) => (
                 <option key={id} value={id}>
                   {label}
                 </option>
               ))}
-            </select>
+            </MobileSelect>
           </LabField>
           {kind.includes("select") && (
             <LabField label="选项（每行一项）">
@@ -372,7 +377,7 @@ export function Fields({
                 field.kind === "multi_select" ||
                 field.kind === "boolean" ||
                 field.kind === "member" ? (
-                  <select
+                  <MobileSelect
                     name={field.id}
                     multiple={field.kind === "multi_select"}
                     defaultValue={
@@ -399,7 +404,7 @@ export function Fields({
                         {row.name}
                       </option>
                     ))}
-                  </select>
+                  </MobileSelect>
                 ) : (
                   <input
                     name={field.id}
