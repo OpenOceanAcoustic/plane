@@ -1,0 +1,52 @@
+{
+  "name": "@ooa/mobile",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 127.0.0.1 --port 4319",
+    "build": "tsc --noEmit && vite build",
+    "check:types": "tsc --noEmit",
+    "check:lint": "oxlint --max-warnings=0 src",
+    "check:format": "oxfmt --check src",
+    "test": "vitest run",
+    "android:sync": "cap sync android"
+  },
+  "dependencies": {
+    "@capacitor/android": "catalog:",
+    "@capacitor/app": "catalog:",
+    "@capacitor/core": "catalog:",
+    "@capacitor/keyboard": "catalog:",
+    "@hocuspocus/provider": "catalog:",
+    "@plane/editor": "workspace:*",
+    "@plane/shared-state": "workspace:*",
+    "@plane/types": "workspace:*",
+    "@tiptap/core": "catalog:",
+    "@tiptap/extension-collaboration": "catalog:",
+    "@tiptap/extension-image": "catalog:",
+    "@tiptap/extension-task-item": "catalog:",
+    "@tiptap/extension-task-list": "catalog:",
+    "@tiptap/extension-underline": "catalog:",
+    "@tiptap/pm": "catalog:",
+    "@tiptap/react": "catalog:",
+    "@tiptap/starter-kit": "catalog:",
+    "lucide-react": "catalog:",
+    "mobx": "catalog:",
+    "mobx-react": "catalog:",
+    "react": "catalog:",
+    "react-dom": "catalog:",
+    "sanitize-html": "catalog:",
+    "swr": "catalog:",
+    "yjs": "catalog:"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "catalog:",
+    "@types/node": "catalog:",
+    "@types/react": "catalog:",
+    "@types/react-dom": "catalog:",
+    "@types/sanitize-html": "catalog:",
+    "typescript": "catalog:",
+    "vite": "catalog:",
+    "vitest": "catalog:"
+  }
+}

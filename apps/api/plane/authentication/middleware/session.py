@@ -11,7 +11,7 @@ from django.contrib.sessions.exceptions import SessionInterrupted
 from django.utils.cache import patch_vary_headers
 from django.utils.deprecation import MiddlewareMixin
 from django.utils.http import http_date
-from plane.lab.middleware import admin_path
+from plane.lab.middleware import is_admin_request
 
 
 class SessionMiddleware(MiddlewareMixin):
@@ -21,11 +21,15 @@ class SessionMiddleware(MiddlewareMixin):
         self.SessionStore = engine.SessionStore
 
     def process_request(self, request):
-        if admin_path(request.path):
+        if self.is_admin_request(request):
             session_key = request.COOKIES.get(settings.ADMIN_SESSION_COOKIE_NAME)
         else:
             session_key = request.COOKIES.get(settings.SESSION_COOKIE_NAME)
         request.session = self.SessionStore(session_key)
+
+    @staticmethod
+    def is_admin_request(request):
+        return is_admin_request(request)
 
     def process_response(self, request, response):
         """
@@ -41,7 +45,7 @@ class SessionMiddleware(MiddlewareMixin):
             return response
         # First check if we need to delete this cookie.
         # The session should be deleted only if the session is entirely empty.
-        is_admin_path = admin_path(request.path)
+        is_admin_path = self.is_admin_request(request)
         cookie_name = settings.ADMIN_SESSION_COOKIE_NAME if is_admin_path else settings.SESSION_COOKIE_NAME
 
         if cookie_name in request.COOKIES and empty:

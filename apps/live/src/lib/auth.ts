@@ -3,6 +3,7 @@ import type { onAuthenticatePayload } from "@hocuspocus/server";
 import { env } from "@/env";
 import { collaborationLimits } from "./collaboration-limits";
 import { AppError } from "@/lib/errors";
+import { consumeMobileTicket } from "./mobile-auth";
 import { CollaborationService } from "@/services/collaboration.service";
 import type { CollaborationAccess } from "@/services/collaboration.service";
 import { UserService } from "@/services/user.service";
@@ -12,6 +13,10 @@ const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 export const allowedOrigin = () => env.PUBLIC_ORIGIN || env.WEB_BASE_URL;
 export const validOrigin = (origin: unknown): boolean =>
   typeof origin === "string" && !!allowedOrigin() && origin === allowedOrigin();
+// Capacitor's bundled UI has a fixed origin. It may authenticate only with a
+// one-use server ticket; this origin is never trusted for cookie-based HTTP.
+export const validMobileOrigin = (origin: unknown): boolean => origin === "https://localhost";
+export const validSocketOrigin = (origin: unknown): boolean => validOrigin(origin) || validMobileOrigin(origin);
 
 export async function authorizeDocument(
   session: HocusPocusServerContext,
@@ -49,20 +54,19 @@ export const onAuthenticate = async ({
   instance,
   socketId,
 }: onAuthenticatePayload) => {
-  if (!validOrigin(requestHeaders.origin)) throw new AppError("Origin denied");
+  if (!validSocketOrigin(requestHeaders.origin)) throw new AppError("Origin denied");
   if (token.length > 2048) throw new AppError("Invalid authentication request");
-  let identity: { id?: string; cookie?: string };
+  let identity: { id?: string; cookie?: string; ticket?: string };
   try {
-    identity = JSON.parse(token) as typeof identity;
+    const parsed: unknown = JSON.parse(token);
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error("Invalid identity");
+    identity = parsed as typeof identity;
   } catch {
     throw new AppError("Invalid authentication request");
   }
-  const cookie = requestHeaders.cookie?.toString() || identity.cookie;
   const projectId = requestParameters.get("projectId");
   const workspaceSlug = requestParameters.get("workspaceSlug");
   if (
-    !cookie ||
-    !identity.id ||
     requestParameters.get("documentType") !== "project_page" ||
     !uuid.test(documentName) ||
     !projectId ||
@@ -71,10 +75,31 @@ export const onAuthenticate = async ({
     !/^[a-zA-Z0-9_-]{1,100}$/.test(workspaceSlug)
   )
     throw new AppError("Invalid document credentials");
+
+  let cookie: string;
+  let userId: string;
+  let ticketReadOnly = false;
+  if ("ticket" in identity) {
+    if (typeof identity.ticket !== "string") throw new AppError("Invalid document credentials");
+    const credentials = await consumeMobileTicket(identity.ticket, documentName, requestParameters);
+    cookie = credentials.cookie;
+    userId = credentials.user_id;
+    ticketReadOnly = credentials.read_only;
+  } else {
+    // Admitting the native handshake does not grant the browser credential path.
+    if (!validOrigin(requestHeaders.origin) || validMobileOrigin(requestHeaders.origin))
+      throw new AppError("Mobile collaboration ticket required");
+    const browserCookie = requestHeaders.cookie?.toString() || identity.cookie;
+    if (typeof browserCookie !== "string" || !browserCookie || typeof identity.id !== "string" || !identity.id)
+      throw new AppError("Invalid document credentials");
+    cookie = browserCookie;
+    userId = identity.id;
+  }
+
   const session = context as HocusPocusServerContext;
   Object.assign(session, {
     cookie,
-    userId: identity.id,
+    userId,
     projectId,
     workspaceSlug,
     documentType: "project_page",
@@ -91,7 +116,7 @@ export const onAuthenticate = async ({
     credentialGeneration: access.credential_generation,
     expiresAt: Date.parse(access.session_expires_at),
   });
-  connection.readOnly = !access.can_write;
+  connection.readOnly = ticketReadOnly || !access.can_write;
   // Hocuspocus replaces the context object while running onConnect hooks.
   // Return the full context so concurrent hook merges retain authorization.
   return { ...session, user: { id: access.user.id, name: access.user.display_name } };

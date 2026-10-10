@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="colorPrimary">#2668EA</color>
+    <color name="colorPrimaryDark">#1E4CC3</color>
+    <color name="colorAccent">#2668EA</color>
+    <color name="ooa_surface">#F8FAFC</color>
+</resources>

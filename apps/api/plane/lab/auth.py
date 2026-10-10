@@ -432,7 +432,7 @@ def confirm_enrollment(data):
 
 
 @sensitive_variables()
-def authenticate(data, request, admin=False):
+def authenticate(data, request, admin=False, mobile=False):
     from django.contrib.auth import login, logout
     from .security import limit_auth, security_event
 
@@ -486,6 +486,8 @@ def authenticate(data, request, admin=False):
                         seconds=settings.ADMIN_SESSION_COOKIE_AGE if admin else settings.SESSION_COOKIE_AGE
                     )
                     request.session["lab_generation"] = str(credential.generation)
+                    # Android capabilities are granted only by dedicated server routes.
+                    request.session["lab_client"] = "android" if mobile else "web"
                     request.session["lab_purpose"] = "admin" if admin else "user"
                     request.session["lab_authenticated_at"] = int(now.timestamp())
                     request.session["lab_expires_at"] = int(expiry.timestamp())
@@ -581,14 +583,15 @@ def require_lab_session(request):
     if not settings.LAB_AUTH_ENABLED:
         return
     from rest_framework.exceptions import NotAuthenticated
-    from .middleware import admin_path, valid_lab_session
+    from .middleware import is_admin_request, valid_lab_session
 
     credential = (
         Credential.objects.select_for_update(of=("self",))
         .filter(user_id=request.user.id, enabled=True, user__is_active=True)
         .first()
     )
-    if not valid_lab_session(request, credential, admin_path(request.path)):
+    is_admin = is_admin_request(request)
+    if not valid_lab_session(request, credential, is_admin):
         raise NotAuthenticated("认证已失效，请重新登录")
     browser_id = request.session.get("lab_browser_id")
     if (
@@ -599,7 +602,7 @@ def require_lab_session(request):
             user_id=request.user.id,
             generation=credential.generation,
             revoked_at__isnull=True,
-            purpose="admin" if admin_path(request.path) else "user",
+            purpose="admin" if is_admin else "user",
         )
         .exists()
     ):

@@ -14,6 +14,13 @@ def admin_path(path):
         path.rstrip("/") == "/api/instances"
         or path.startswith("/api/instances/")
         or path.startswith("/auth/lab/admin/")
+        or path.startswith("/auth/lab/mobile/admin/")
+    )
+
+
+def is_admin_request(request):
+    return admin_path(request.path) or (
+        request.path.rstrip("/") == "/api/lab/session" and request.GET.get("admin") == "true"
     )
 
 
@@ -62,7 +69,7 @@ class LabAccessMiddleware:
                 return JsonResponse({"error": "请使用 Authenticator 登录"}, status=401)
             if request.user.is_authenticated:
                 credential = Credential.objects.filter(user=request.user, enabled=True, user__is_active=True).first()
-                is_admin = admin_path(path)
+                is_admin = is_admin_request(request)
                 if not valid_lab_session(request, credential, is_admin):
                     logout(request)
                     return JsonResponse(
@@ -85,6 +92,7 @@ class LabAccessMiddleware:
                     )
                 exempt = {
                     "/auth/lab/admin/sign-in/",
+                    "/auth/lab/mobile/admin/sign-in/",
                     "/auth/lab/admin/reauthenticate/",
                     "/auth/lab/admin/sign-out/",
                     "/auth/lab/admin/forget-browser/",
@@ -101,4 +109,11 @@ class LabAccessMiddleware:
                     )
                 ):
                     return JsonResponse({"error": "请重新验证动态码", "code": "ADMIN_REAUTH_REQUIRED"}, status=403)
+        if request.session.get("lab_client") == "android" and request.path.startswith("/api/"):
+            from .mobile import is_export_request
+
+            if is_export_request(request):
+                return JsonResponse(
+                    {"error": "手机端不支持数据导出", "code": "mobile_export_disabled"}, status=403
+                )
         return self.get_response(request)

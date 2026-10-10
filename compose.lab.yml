@@ -113,7 +113,7 @@ services:
       - ./tools/lab/Caddyfile:/etc/caddy/Caddyfile:ro
       - ./apps/web/build/client:/srv/web:ro
       - ./apps/admin/build/client:/srv/admin:ro
-    ports: ["${LAB_BIND_ADDRESS:-127.0.0.1}:8080:80"]
+    ports: ["${LAB_BIND_ADDRESS:-127.0.0.1}:${LAB_HTTP_PORT:-8080}:80"]
     depends_on: [api, live, space, plane-minio]
     restart: unless-stopped
 
