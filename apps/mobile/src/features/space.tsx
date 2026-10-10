@@ -1,5 +1,6 @@
 import { useState } from "react";
 import type { ApiClient } from "../lib/client";
+import { useMobileConfirmation } from "../components/confirm";
 import { spaceIssueProperties } from "./space-issue";
 import {
   ActionButton,
@@ -30,6 +31,7 @@ export function parseAnchor(input: string): string {
   return anchor;
 }
 export default function Space({ client }: { client: ApiClient }) {
+  const { ask, confirmation } = useMobileConfirmation();
   const [input, setInput] = useState("");
   const [anchor, setAnchor] = useState("");
   const [error, setError] = useState<unknown>();
@@ -239,7 +241,14 @@ export default function Space({ client }: { client: ApiClient }) {
                         <ActionButton
                           className="button danger"
                           action={async () => {
-                            if (window.confirm("删除此评论？")) {
+                            if (
+                              await ask({
+                                title: "删除评论",
+                                message: "删除此评论？",
+                                confirmLabel: "删除",
+                                destructive: true,
+                              })
+                            ) {
                               await client.request(`${prefix}issues/${issueId}/comments/${comment.id}/`, "DELETE");
                               await comments.refresh();
                             }
@@ -305,6 +314,7 @@ export default function Space({ client }: { client: ApiClient }) {
           }}
         />
       )}
+      {confirmation}
     </>
   );
 }

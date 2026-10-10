@@ -15,6 +15,9 @@ import "./v6.css";
 // oxlint-disable-next-line import/no-unassigned-import -- Material selection surfaces
 import "./components/select.css";
 
+// oxlint-disable-next-line import/no-unassigned-import -- Material confirmation surfaces
+import "./components/confirm.css";
+
 // oxlint-disable-next-line import/no-unassigned-import -- Material typography and compact planner labels
 import "./m3-refinements.css";
 

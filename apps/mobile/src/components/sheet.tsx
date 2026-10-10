@@ -40,10 +40,12 @@ export function Sheet({
         if (!targets?.length) return;
         const first = targets[0],
           last = targets[targets.length - 1];
-        if (event.shiftKey && document.activeElement === first) {
+        const active = document.activeElement;
+        const atContainer = active === ref.current || !ref.current?.contains(active);
+        if (event.shiftKey && (active === first || atContainer)) {
           event.preventDefault();
           last.focus();
-        } else if (!event.shiftKey && document.activeElement === last) {
+        } else if (!event.shiftKey && (active === last || atContainer)) {
           event.preventDefault();
           first.focus();
         }
