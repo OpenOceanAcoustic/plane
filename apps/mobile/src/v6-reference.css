@@ -2772,7 +2772,7 @@
   padding: 0 16px;
   font-size: 14px;
 }
-.m3-fund-selector > svg:last-child {
+.m3-fund-selector > svg:last-of-type {
   margin-left: 8px;
 }
 .m3-finance-tabs {
@@ -2822,7 +2822,6 @@
   grid-template-columns: 1fr 1fr;
   gap: 14px;
   border-top: 1px solid rgba(31, 31, 31, 0.14);
-  border-top-color: color-mix(in srgb, var(--text) 14%, transparent);
   padding-top: 16px;
   margin-top: 20px;
 }
@@ -2833,7 +2832,6 @@
 }
 :root[data-theme="dark"] .m3-cash-rewards {
   border-top-color: rgba(227, 227, 227, 0.14);
-  border-top-color: color-mix(in srgb, var(--text) 14%, transparent);
 }
 .m3-cash-rewards strong {
   font-family: "V6 Sans", sans-serif;

@@ -61,7 +61,7 @@ export default function Projects(props: CoreProps) {
   const base = `/api/workspaces/${encodeURIComponent(workspaceSlug)}`;
   const { data, error, loading, refresh } = useData<NamedEntity[]>(client, `${base}/projects/details/`);
   const projectStats = useData<Entity[]>(client, `${base}/project-stats/`);
-  const workspace = useData<Entity>(client, `${base}/`);
+  const workspaceMembership = useData<Pick<Member, "role">>(client, `${base}/workspace-members/me/`);
   const members = useData<Member[]>(client, `${base}/members/`);
   const session = useData<Session>(client, "/api/lab/session/");
   const [query, setQuery] = useState("");
@@ -93,8 +93,8 @@ export default function Projects(props: CoreProps) {
       ? String(right.updated_at).localeCompare(String(left.updated_at))
       : String(left.name).localeCompare(String(right.name), "zh-CN")
   );
-  const canCreate = Number(workspace.data?.role) >= 15;
-  const canAdmin = Number(selected?.member_role) >= 20 || Number(workspace.data?.role) >= 20;
+  const canCreate = Number(workspaceMembership.data?.role) >= 15;
+  const canAdmin = Number(selected?.member_role) >= 20 || Number(workspaceMembership.data?.role) >= 20;
   const close = () => {
     setModal(null);
     setSelected(undefined);
@@ -318,7 +318,7 @@ export default function Projects(props: CoreProps) {
           onClose={() => setFilterPanel(false)}
         />
       )}
-      <ErrorMessage error={workspace.error} />
+      <ErrorMessage error={workspaceMembership.error} />
       {(modal === "create" ||
         (modal === "edit" && fullSelected && !selectedDetail.loading && !selectedDetail.error)) && (
         <FormSheet

@@ -5,7 +5,7 @@ import { CanonicalIcon, MobileHeaderContext } from "../../components/navigation"
 import "./v6.css";
 import { ActionButton, Html, PageHeading, Sheet, useData, records, type Entity } from "../../components/ui";
 import { ProjectPicker, ResultState } from "./shared";
-import { CoreService, userName, type CoreProps } from "./model";
+import { CoreService, userName, type CoreProps, type Member } from "./model";
 import { RichHtmlEditor } from "../../components/rich-editor";
 import { plainText, safeTextHtml } from "./model";
 import { useProjectMembers } from "./members";
@@ -32,9 +32,10 @@ function ProjectOverview({ client, workspaceSlug, projectId, onNavigate }: CoreP
   const [panel, setPanel] = useState<"description" | "more" | null>(null);
   const header = useContext(MobileHeaderContext);
   const [description, setDescription] = useState<string>();
-  const workspace = useData<Entity>(client, `${base}/`);
+  const workspaceMembership = useData<Pick<Member, "role">>(client, `${base}/workspace-members/me/`);
   const canEditDescription =
-    !project.data?.archived_at && (Number(project.data?.member_role) >= 20 || Number(workspace.data?.role) >= 20);
+    !project.data?.archived_at &&
+    (Number(project.data?.member_role) >= 20 || Number(workspaceMembership.data?.role) >= 20);
   const originalDescription = String(
     project.data?.description_html || safeTextHtml(String(project.data?.description || "暂无项目描述"))
   );
