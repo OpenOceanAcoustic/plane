@@ -14,7 +14,7 @@ export ANDROID_HOME=/absolute/path/to/android-sdk
 # Create this once. Keep the directory and its backup for all future updates.
 tools/mobile/create-release-key.sh /private/path/to/ooa-release
 export OOA_ANDROID_SIGNING_FILE=/private/path/to/ooa-release/signing.properties
-tools/mobile/build-apk.sh /absolute/path/to/output
+tools/mobile/build-apk.sh /absolute/path/to/output --skip-tests
 ```
 
 Signing properties and the keystore are private files, excluded from Git. A new key cannot update an
@@ -85,3 +85,18 @@ light/dark themes and Activity/Bridge recreation with the persisted session. It 
 WebView debugging or add a product test mode. Fixtures are required and skipped UI tests fail the
 helper. Authenticated home screenshots are saved under the app external files directory in
 `native-ui-evidence`; login forms and credentials are not captured.
+
+## Android 1.0.1 delivery
+
+Version 1.0.1 uses Android versionCode 2 and the retained release signing key, so it can update
+version 1.0.0 while preserving app data. God Mode writes that require renewed authentication open
+a six-digit code sheet. Concurrent writes share the same renewal, cancellation keeps the original
+form, and success replays each original request once without changing its body or idempotency key.
+An incorrect renewal code stays in the sheet; an invalid session returns to administrator login.
+
+The 1.0.1 delivery uses compilation, packaging and signature verification only. Previously recorded
+business, browser and emulator checks apply to 1.0.0; they are not acceptance results for 1.0.1.
+The user performs APK testing. `--skip-tests` excludes the Gradle unit test task. The default build
+still includes it. `--skip-dependencies` is only for an integration workspace whose shared package
+outputs are already built; omit it when rebuilding a clean checkout. APK filenames follow
+`apps/mobile/package.json` version rather than a hard-coded prior release.

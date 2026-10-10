@@ -18,6 +18,7 @@ import { SettingsImage } from "./assets";
 import { ApiTokenSettings, PreferencesSettings, type ThemeChange } from "./preferences";
 import { ProjectAutomations, ProjectEstimates, ProjectFeatures } from "./project-options";
 import { WebhookSettings } from "./webhooks";
+import { AdminReauthentication } from "./admin-reauthentication";
 
 type Props = {
   section: "personal" | "workspace" | "project" | "admin";
@@ -1156,6 +1157,7 @@ function AdminSettings({ client }: Pick<Props, "client">) {
       )}
       <ErrorMessage error={instance.error ?? configs.error ?? admins.error ?? workspaces.error} />
       <SettingsForms editor={editor} confirmation={confirmation} close={close} />
+      <AdminReauthentication client={adminClient} />
     </>
   );
 }
