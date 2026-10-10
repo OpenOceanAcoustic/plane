@@ -499,7 +499,7 @@ export default function Stickies({ client, workspaceSlug }: { client: ApiClient;
           </div>
         </Sheet>
       )}
-      {header?.composer ? createPortal(createAction, header.composer) : createAction}
+      {!editing && (header?.composer ? createPortal(createAction, header.composer) : createAction)}
     </div>
   );
 }
