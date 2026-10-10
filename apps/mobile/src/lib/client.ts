@@ -13,7 +13,6 @@ export type PickedFile = { fileId: string; name: string; mimeType: string; size:
 export type DownloadResult =
   | { name: string; uri: string; mimeType: string; status?: number; opened?: boolean }
   | ResponseData;
-export type AdminReauthenticationChallenge = { isCurrent: () => boolean };
 export interface Transport {
   request(options: RequestData): Promise<ResponseData>;
   clearSession(options: { server?: string }): Promise<unknown>;
@@ -147,10 +146,7 @@ export class ApiClient {
   private generation = 0;
   private csrf?: string;
   private csrfPending?: Promise<void>;
-  private adminReauthenticationPending?: Promise<void>;
-  private adminReauthenticationRevision = 0;
   onSessionExpired?: () => void;
-  onAdminReauthenticationRequired?: (challenge: AdminReauthenticationChallenge) => Promise<void>;
   constructor(
     public server: string,
     private transport: Transport = Capacitor.isNativePlatform() ? nativeTransport : browserTransport
@@ -179,9 +175,7 @@ export class ApiClient {
     }
     if (generation !== this.generation) throw new ApiError(409, { error: "服务器连接已变更" });
     if (response.status >= 400) {
-      const code = this.responseCode(response.data);
-      if (response.status === 401 && !(path === "/auth/lab/admin/reauthenticate/" && code === "INVALID_CREDENTIALS"))
-        this.onSessionExpired?.();
+      if (response.status === 401) this.onSessionExpired?.();
       throw new ApiError(response.status, response.data);
     }
     return response;
@@ -204,51 +198,10 @@ export class ApiClient {
   async request<T = unknown>(path: string, method = "GET", body?: unknown): Promise<T> {
     const generation = this.generation;
     const server = this.server;
-    const reauthenticationRevision = this.adminReauthenticationRevision;
     if (!["GET", "HEAD", "OPTIONS"].includes(method) && !this.csrf) await this.refreshCsrf();
-    const isCurrent = () => generation === this.generation && server === this.server;
-    if (!isCurrent()) throw new ApiError(409, { error: "服务器已切换，请重新打开表单" });
-    try {
-      return (await this.send(path, method, body)).data as T;
-    } catch (error) {
-      if (
-        !(error instanceof ApiError) ||
-        error.status !== 403 ||
-        this.responseCode(error.data) !== "ADMIN_REAUTH_REQUIRED" ||
-        ["GET", "HEAD", "OPTIONS"].includes(method) ||
-        path === "/auth/lab/admin/reauthenticate/" ||
-        !this.onAdminReauthenticationRequired
-      )
-        throw error;
-      if (!isCurrent()) throw new ApiError(409, { error: "服务器已切换，请重新打开表单" });
-      if (reauthenticationRevision === this.adminReauthenticationRevision) {
-        const required = this.onAdminReauthenticationRequired;
-        const pending =
-          this.adminReauthenticationPending ??
-          Promise.resolve()
-            .then(() => {
-              if (!isCurrent()) throw new ApiError(409, { error: "服务器已切换，请重新打开表单" });
-              if (this.onAdminReauthenticationRequired !== required)
-                throw new ApiError(403, { code: "ADMIN_REAUTH_REQUIRED", error: "已取消动态码验证" });
-              return required({ isCurrent });
-            })
-            .then(() => {
-              if (isCurrent()) this.adminReauthenticationRevision++;
-              return undefined;
-            })
-            .finally(() => {
-              if (this.adminReauthenticationPending === pending) this.adminReauthenticationPending = undefined;
-            });
-        this.adminReauthenticationPending = pending;
-        await pending;
-      }
-      if (!isCurrent()) throw new ApiError(409, { error: "服务器已切换，请重新打开表单" });
-      // Replay only once with the original body, including its idempotency key.
-      return (await this.send(path, method, body)).data as T;
-    }
-  }
-  private responseCode(data: unknown): unknown {
-    return typeof data === "object" && data !== null ? (data as Record<string, unknown>).code : undefined;
+    if (generation !== this.generation || server !== this.server)
+      throw new ApiError(409, { error: "服务器已切换，请重新打开表单" });
+    return (await this.send(path, method, body)).data as T;
   }
   async binary(path: string): Promise<Uint8Array> {
     const data = (await this.send(path, "GET", undefined, "base64")).data as string;
@@ -263,8 +216,6 @@ export class ApiClient {
     this.generation++;
     this.csrf = undefined;
     this.csrfPending = undefined;
-    this.adminReauthenticationPending = undefined;
-    this.adminReauthenticationRevision = 0;
     await this.transport.clearSession({ server: this.server });
   }
   async pickFile(mimeType?: string): Promise<PickedFile> {

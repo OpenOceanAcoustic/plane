@@ -36,29 +36,57 @@ export function Gantt({
     .sort();
   const from = dates.length ? new Date(dates[0]!).getTime() : Date.now(),
     to = dates.length ? new Date(dates.at(-1)!).getTime() + 86400000 : from + 86400000;
+  const days = Math.max(1, Math.ceil((to - from) / 86400000));
+  const tickCount = Math.min(7, days);
+  const ticks = Array.from({ length: tickCount }, (_, index) =>
+    new Date(from + Math.floor((index * (days - 1)) / Math.max(1, tickCount - 1)) * 86400000).toISOString().slice(0, 10)
+  );
   return (
     <>
-      <div className="lab-heading">
+      <div className="lab-section-heading">
         <h3>项目甘特排期</h3>
         <Button onClick={() => setDependency(true)}>任务依赖</Button>
       </div>
       <ErrorMessage error={data.error || error} />
+      {dates.length > 0 && (
+        <div className="lab-range-timeline">
+          <div className="lab-range-labels">
+            <span>任务</span>
+            <div style={{ gridTemplateColumns: `repeat(${ticks.length}, 1fr)` }}>
+              {ticks.map((date) => (
+                <span key={date}>{date.slice(5)}</span>
+              ))}
+            </div>
+          </div>
+          {data.data?.tasks
+            .filter((row) => row.start_date && row.target_date)
+            .map((row) => (
+              <div className="lab-range-row" key={row.id}>
+                <span title={`${row.key} · ${row.title}`}>{row.key}</span>
+                <div className="lab-range-track">
+                  <button
+                    className="lab-range-event"
+                    disabled={!lead && !onOpenIssue}
+                    style={{
+                      left: `${(100 * (new Date(row.start_date!).getTime() - from)) / (to - from)}%`,
+                      width: `${Math.max(2, (100 * (new Date(row.target_date!).getTime() + 86400000 - new Date(row.start_date!).getTime())) / (to - from))}%`,
+                    }}
+                    onClick={() => (lead ? setEditing(row) : onOpenIssue?.(projectId, row.id))}
+                  >
+                    {row.title}
+                  </button>
+                </div>
+              </div>
+            ))}
+        </div>
+      )}
+      <h3 className="lab-section-heading">任务排期记录</h3>
       {data.data?.tasks.map((row) => (
         <article key={row.id} className="lab-card">
           <h3>
             {row.key} · {row.title}
           </h3>
           <KeyValues values={{ 开始: row.start_date, 截止: row.target_date }} />
-          {row.start_date && row.target_date && (
-            <div className="lab-bar" aria-label={`${row.start_date} 至 ${row.target_date}`}>
-              <span
-                style={{
-                  marginLeft: `${(100 * (new Date(row.start_date).getTime() - from)) / (to - from)}%`,
-                  width: `${Math.max(2, (100 * (new Date(row.target_date).getTime() + 86400000 - new Date(row.start_date).getTime())) / (to - from))}%`,
-                }}
-              />
-            </div>
-          )}
           <div className="lab-actions">
             {onOpenIssue && <Button onClick={() => onOpenIssue(projectId, row.id)}>任务详情</Button>}
             {lead && <Button onClick={() => setEditing(row)}>调整日期</Button>}

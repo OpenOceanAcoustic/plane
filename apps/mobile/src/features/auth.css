@@ -1,0 +1,180 @@
+.auth-page.mobile-auth {
+  padding: var(--native-inset-top) 0 var(--native-inset-bottom);
+  max-width: 460px;
+  min-height: 100vh;
+  min-height: 100dvh;
+  margin: 0 auto;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  background: var(--canvas);
+}
+.mobile-auth .auth-masthead {
+  padding: 24px 24px 0;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-height: 78px;
+  flex-shrink: 0;
+}
+.mobile-auth .auth-masthead .icon-button {
+  margin-left: -12px;
+}
+.mobile-auth .auth-wordmark {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  font-size: 16px;
+  font-weight: 600;
+  letter-spacing: -0.35px;
+}
+.mobile-auth .auth-symbol {
+  display: grid;
+  place-items: center;
+  width: 31px;
+  height: 31px;
+  border-radius: 8px;
+  background: var(--ink);
+  color: var(--surface);
+  flex-shrink: 0;
+}
+.mobile-auth .auth-wordmark svg {
+  width: 21px;
+  height: 21px;
+}
+.mobile-auth .auth-content {
+  padding: 48px 24px 28px;
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+  background: var(--canvas);
+}
+.mobile-auth .auth-intro {
+  margin: 0 0 16px;
+}
+.mobile-auth .auth-intro h1 {
+  font-size: 28px;
+  font-weight: 550;
+  line-height: 1.45;
+  letter-spacing: -0.75px;
+  margin: 0;
+}
+.mobile-auth form {
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+}
+.mobile-auth .field {
+  font-size: 14px;
+  gap: 9px;
+  margin: 0;
+}
+.mobile-auth .field input {
+  min-height: 48px;
+  padding: 13px 14px;
+  font-size: 16px;
+}
+.mobile-auth .field em {
+  color: #bc4b51;
+  font-style: normal;
+}
+.mobile-auth .button.primary {
+  min-height: 48px;
+  margin: 9px 0 0;
+  font-size: 16px;
+  width: 100%;
+}
+.mobile-auth .auth-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0;
+}
+.mobile-auth .auth-options .text-button {
+  padding: 8px 0;
+  margin-right: 10px;
+}
+.mobile-auth .auth-stepper {
+  display: flex;
+  gap: 3px;
+  margin: 6px 0 15px;
+}
+.mobile-auth .auth-step {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  position: relative;
+  color: var(--muted);
+}
+.mobile-auth .auth-step:before {
+  content: "";
+  height: 1px;
+  position: absolute;
+  left: -50%;
+  right: 50%;
+  top: 13px;
+  background: var(--border);
+}
+.mobile-auth .auth-step:first-child:before {
+  display: none;
+}
+.mobile-auth .auth-step > span {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: var(--subtle);
+  display: grid;
+  place-items: center;
+  z-index: 1;
+  font-size: 12px;
+}
+.mobile-auth .auth-step.active > span {
+  background: var(--ink);
+  color: var(--surface);
+}
+.mobile-auth .auth-step small {
+  font-size: 12px;
+}
+.mobile-auth .auth-qr {
+  align-self: center;
+  text-align: center;
+  background: white;
+  padding: 15px;
+  border-radius: 9px;
+  border: 1px solid var(--border);
+  color: #1d1f20;
+}
+.mobile-auth .totp-qr {
+  width: 200px;
+  height: 200px;
+  object-fit: contain;
+  display: block;
+  margin: 0;
+}
+.mobile-auth .auth-qr > span {
+  display: block;
+  font-size: 12px;
+  color: #676c6f;
+  margin-top: 10px;
+}
+.mobile-auth .auth-success {
+  padding: 14px;
+  background: var(--soft);
+  border: 0;
+  border-radius: 8px;
+  display: flex;
+  gap: 9px;
+  align-items: flex-start;
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--accent);
+  margin: 0;
+}
+.mobile-auth .error {
+  padding: 14px;
+  border-radius: 8px;
+  font-size: 14px;
+  line-height: 1.6;
+}

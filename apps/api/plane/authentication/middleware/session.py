@@ -21,8 +21,15 @@ class SessionMiddleware(MiddlewareMixin):
         self.SessionStore = engine.SessionStore
 
     def process_request(self, request):
+        request._lab_android_user_session = False
         if self.is_admin_request(request):
             session_key = request.COOKIES.get(settings.ADMIN_SESSION_COOKIE_NAME)
+            user_session_key = request.COOKIES.get(settings.SESSION_COOKIE_NAME)
+            if user_session_key:
+                # Admin URLs select a different cookie. Inspect the ordinary
+                # session too so the native client cannot switch to Web login.
+                user_session = self.SessionStore(user_session_key)
+                request._lab_android_user_session = user_session.get("lab_client") == "android"
         else:
             session_key = request.COOKIES.get(settings.SESSION_COOKIE_NAME)
         request.session = self.SessionStore(session_key)

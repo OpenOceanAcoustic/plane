@@ -1,3 +1,4 @@
+import { PageHeading } from "../../components/ui";
 import { useState } from "react";
 import { useData, records, type Entity } from "../../components/ui";
 import { Button, LabDialog, LabField, labInputClass } from "../lab/ui";
@@ -102,14 +103,14 @@ export default function WorkspaceAnalytics(props: WorkspaceProps) {
   if (!membership.loading && role < 15)
     return (
       <>
-        <h1>工作区分析</h1>
+        <PageHeading title="工作区统计" />
         <p className="lab-muted">无权访问</p>
         <Status error={membership.error} />
       </>
     );
   return (
     <>
-      <h1>工作区分析</h1>
+      <PageHeading title="工作区统计" />
       <div className="lab-tabs">
         <Button
           variant={tab === "overview" ? "primary" : ""}

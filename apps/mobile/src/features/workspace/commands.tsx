@@ -1,3 +1,4 @@
+import { PageHeading } from "../../components/ui";
 import { useState } from "react";
 import { useData, type Entity } from "../../components/ui";
 import { Button, LabDialog, LabField, labInputClass } from "../lab/ui";
@@ -19,7 +20,7 @@ export default function Commands(props: WorkspaceProps) {
     [selected, setSelected] = useState<Entity>();
   return (
     <>
-      <h1>快捷操作</h1>
+      <PageHeading title="快捷入口" />
       <div className="lab-list">
         {commands.map((command) => (
           <button

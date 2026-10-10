@@ -1,16 +1,20 @@
+# Latest status: Android 1.0.2 V4 alignment
+
+The earlier sections below are historical evidence for 1.0.0 and 1.0.1. They do not verify the current APK. Following the user instruction to self-test, no business, unit, device-installation or emulator tests are run for 1.0.2. Current checks cover types, lint, formatting, builds, signed APK metadata, and read-only browser visual rendering with fixture data. God Mode is removed from mobile; computer Web administration and one-time SSH registration links remain. See [V4 alignment](android-v4-alignment.md) and [current delivery](android-delivery.md).
+
 # Android delivery record
 
 Baseline: `98c234c4227e5265cb3f2a97ab3ae4469c67af1c`. Specification: [android-app-spec.md](android-app-spec.md).
 
-| Ticket | Outcome                                                                                                | State       |
-| ------ | ------------------------------------------------------------------------------------------------------ | ----------- |
-| 1      | Native bootstrap, server configuration, real authentication, encrypted session and export restrictions | implemented |
-| 2      | Workspaces, projects, tasks and attachments                                                            | implemented |
-| 3      | Personal/team planning                                                                                 | implemented |
-| 4      | Collaborative documents and Space                                                                      | implemented |
-| 5      | Bounties and acceptance                                                                                | implemented |
-| 6      | Finance, analytics and My Projects & VC                                                                | implemented |
-| 7      | Settings and God Mode                                                                                  | implemented |
+| Ticket | Outcome                                                                                                | State                               |
+| ------ | ------------------------------------------------------------------------------------------------------ | ----------------------------------- |
+| 1      | Native bootstrap, server configuration, real authentication, encrypted session and export restrictions | implemented                         |
+| 2      | Workspaces, projects, tasks and attachments                                                            | implemented                         |
+| 3      | Personal/team planning                                                                                 | implemented                         |
+| 4      | Collaborative documents and Space                                                                      | implemented                         |
+| 5      | Bounties and acceptance                                                                                | implemented                         |
+| 6      | Finance, analytics and My Projects & VC                                                                | implemented                         |
+| 7      | Settings and God Mode                                                                                  | implemented                         |
 | 8      | Coverage, integration, reviews and signed APK                                                          | delivered; UI acceptance handed off |
 
 Verification results must be appended with exact commands and actual environments. A state is completed only after its acceptance criteria pass.

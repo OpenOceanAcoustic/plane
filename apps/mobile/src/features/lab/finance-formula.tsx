@@ -56,7 +56,7 @@ export function LabFormulaEditor({
   };
   return (
     <LabDialog
-      title="配置项目预计奖励公式"
+      title="项目预计奖励公式"
       busy={busy}
       onClose={onClose}
       error={localError || (error instanceof Error ? error.message : "")}
@@ -125,13 +125,27 @@ export function LabFormulaEditor({
           }}
         />
       </LabField>
-      <p className="text-12 text-secondary">
-        E：阶段奖励预算／到账奖励额度；B：冻结 VC 预算；VC：计划／有效贡献；b、r：冻结基础／职责份额。
-      </p>
-      <fieldset className="space-y-3 rounded border border-subtle p-3">
-        <legend className="text-13 font-medium">自定义数值参数</legend>
+      <section>
+        <h3 className="lab-section-heading">参数定义</h3>
+        <dl className="lab-kv">
+          {[
+            ["E", "阶段奖励预算／到账奖励额度"],
+            ["B", "冻结 VC 预算"],
+            ["VC", "计划／有效贡献"],
+            ["b", "冻结基础份额"],
+            ["r", "冻结职责份额"],
+          ].map(([key, value]) => (
+            <div key={key}>
+              <dt>{key}</dt>
+              <dd>{value}</dd>
+            </div>
+          ))}
+        </dl>
+      </section>
+      <fieldset className="lab-form-section">
+        <legend className="lab-section-title">自定义数值参数</legend>
         {parameters.map((parameter) => (
-          <div key={parameter.id} className="grid grid-cols-2 gap-2">
+          <div key={parameter.id} className="lab-form-fields">
             <LabField label="参数名（英文字母／数字／下划线）">
               <input
                 className={labInputClass}
@@ -198,8 +212,8 @@ export function LabFormulaEditor({
           添加数值参数
         </Button>
       </fieldset>
-      <fieldset className="space-y-3 rounded border border-subtle p-3">
-        <legend className="text-13 font-medium">样例试算</legend>
+      <fieldset className="lab-form-section">
+        <legend className="lab-section-title">样例试算</legend>
         <LabField label="试算对象">
           <select
             className={labInputClass}
@@ -210,7 +224,7 @@ export function LabFormulaEditor({
             <option value="member">成员阶段预计奖励</option>
           </select>
         </LabField>
-        <div className="grid grid-cols-2 gap-2">
+        <div className="lab-form-fields">
           {[
             { name: "E", label: "预算 E（元）", value: "70000" },
             { name: "B", label: "预算 B（VC）", value: "1000" },
@@ -272,9 +286,10 @@ export function LabFormulaEditor({
           计算样例预计金额
         </Button>
         {result !== undefined && (
-          <p role="status" className="text-14 font-semibold">
-            参考预计奖励：¥{result}
-          </p>
+          <div role="status" className="lab-hero">
+            <span>参考预计奖励</span>
+            <strong>¥{result}</strong>
+          </div>
         )}
       </fieldset>
       <LabField label="新版本原因">
@@ -303,17 +318,19 @@ export function LabForecastDialog({
   store,
   data,
   projectId,
+  initialKind = "task",
   onClose,
   onSaved,
 }: {
   store: LabStore;
   data: LabFinanceOverview;
   projectId: string;
+  initialKind?: "task" | "member";
   onClose: () => void;
   onSaved: () => Promise<void>;
 }) {
   const [stageId, setStageId] = useState(data.stages.find((stage) => stage.project_id === projectId)?.stage_id ?? "");
-  const [kind, setKind] = useState<"task" | "member">("task");
+  const [kind, setKind] = useState<"task" | "member">(initialKind);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const stage = data.stages.find((row) => row.stage_id === stageId);
@@ -404,10 +421,18 @@ export function LabForecastDialog({
         </LabField>
       )}
       {formula ? (
-        <p className="text-12 text-secondary">
-          公式 v{formula.version}：
-          <code className="break-words">{kind === "task" ? formula.task_expression : formula.member_expression}</code>
-        </p>
+        <dl className="lab-kv">
+          <div>
+            <dt>公式版本</dt>
+            <dd>v{formula.version}</dd>
+          </div>
+          <div>
+            <dt>表达式</dt>
+            <dd>
+              <code>{kind === "task" ? formula.task_expression : formula.member_expression}</code>
+            </dd>
+          </div>
+        </dl>
       ) : (
         <p role="alert" className="text-12 text-danger-primary">
           请负责人先配置本项目公式。

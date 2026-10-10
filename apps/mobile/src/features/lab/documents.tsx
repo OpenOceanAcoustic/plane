@@ -1,10 +1,11 @@
 /** Copyright (c) 2026 OpenOceanAcoustic and contributors. SPDX-License-Identifier: AGPL-3.0-only */
 import { useState } from "react";
+import { PageHeading } from "../../components/ui";
 import type { LabTask } from "@plane/types";
 import type { LabDocument, LabDocumentList, LabDocumentTaskList } from "./document-types";
 import type { LabStore } from "./transport";
 import { useResource } from "./transport";
-import { Button, LabDialog, LabField, Empty, ErrorMessage, KeyValues } from "./ui";
+import { Button, LabDialog, LabField, Empty, ErrorMessage, FloatingAction } from "./ui";
 export function Documents({
   store,
   onOpenDocument,
@@ -35,14 +36,8 @@ export function Documents({
   );
   return (
     <>
-      <div className="lab-heading">
-        <h2>实验文档</h2>
-        {docs.data?.can_edit && (
-          <Button variant="primary" onClick={() => setCreating(true)}>
-            新建实验记录
-          </Button>
-        )}
-      </div>
+      <PageHeading title="实验文档" />
+      {docs.data?.can_edit && <FloatingAction label="新建实验记录" onClick={() => setCreating(true)} />}
       <ErrorMessage error={docs.error} />
       <LabField label="项目">
         <select
@@ -69,16 +64,19 @@ export function Documents({
       />
       {docs.data?.documents.map((row) => (
         <article key={row.id} className="lab-card">
-          <h3>{row.name}</h3>
-          <KeyValues
-            values={{
-              权限: row.access === 1 ? "私人" : "项目成员",
-              状态: row.archived_at ? "已归档" : row.is_locked ? "已冻结" : "可编辑",
-              更新时间: row.updated_at,
-            }}
-          />
+          <button
+            className="lab-card-row"
+            disabled={!onOpenDocument}
+            onClick={() => onOpenDocument?.(row.project_id, row.id)}
+          >
+            <h3>{row.name}</h3>
+          </button>
+          <div className="lab-card-meta">
+            <span>{row.access === 1 ? "私人" : "项目成员"}</span>
+            <span>{row.archived_at ? "已归档" : row.is_locked ? "已冻结" : "可编辑"}</span>
+            <span title={row.updated_at}>{row.updated_at.slice(0, 16).replace("T", " ")}</span>
+          </div>
           <div className="lab-actions">
-            {onOpenDocument && <Button onClick={() => onOpenDocument(row.project_id, row.id)}>打开文档</Button>}
             <Button onClick={() => setSelected(row)}>关联任务</Button>
           </div>
         </article>
@@ -101,9 +99,9 @@ export function Documents({
           <LabField label="名称">
             <input name="name" required maxLength={255} defaultValue="实验记录" />
           </LabField>
-          <label>
+          <label className="lab-switch-field">
+            <span>私人文档，仅本人可见</span>
             <input name="private" type="checkbox" />
-            私人文档，仅本人可见
           </label>
         </LabDialog>
       )}
@@ -191,7 +189,7 @@ export function TaskDocuments({
   const choices = useResource<LabDocumentList>(store, linking ? `projects/${projectId}/documents/` : null);
   return (
     <section>
-      <div className="lab-heading">
+      <div className="lab-section-heading">
         <h3>关联实验文档</h3>
         {resource.data?.can_edit && (
           <div className="lab-actions">
@@ -230,9 +228,9 @@ export function TaskDocuments({
           <LabField label="名称">
             <input name="name" maxLength={255} defaultValue="实验记录" required />
           </LabField>
-          <label>
+          <label className="lab-switch-field">
+            <span>私人文档</span>
             <input name="private" type="checkbox" />
-            私人文档
           </label>
         </LabDialog>
       )}

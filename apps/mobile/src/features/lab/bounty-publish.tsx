@@ -206,9 +206,16 @@ export const LabBountyPublish = observer(function LabBountyPublish({
           正在加载项目预算
         </p>
       ) : source?.configured && !source.deleted ? (
-        <p className="text-13" aria-label="项目 VC 预算">
-          VC预算 {source.budget} · 已占用 {source.reserved} · 剩余 {source.available}
-        </p>
+        <div className="lab-stats two" aria-label="项目 VC 预算">
+          <div className="lab-stat">
+            <span>项目 VC 预算</span>
+            <strong>{source.budget} VC</strong>
+          </div>
+          <div className="lab-stat">
+            <span>未占用</span>
+            <strong>{source.available} VC</strong>
+          </div>
+        </div>
       ) : (
         <div className="flex items-center justify-between gap-3 text-13">
           <span>
@@ -253,20 +260,22 @@ export const LabBountyPublish = observer(function LabBountyPublish({
         </select>
       </LabField>
       {!fixedTask && (
-        <input
-          aria-label="搜索工作项"
-          placeholder="搜索工作项"
-          className={labInputClass}
-          value={query}
-          disabled={!projectId}
-          onChange={(event) => {
-            setQuery(event.target.value);
-            setTasks([]);
-            setIssueId("");
-          }}
-        />
+        <LabField label="搜索工作项">
+          <input
+            aria-label="搜索工作项"
+            placeholder="搜索工作项"
+            className={labInputClass}
+            value={query}
+            disabled={!projectId}
+            onChange={(event) => {
+              setQuery(event.target.value);
+              setTasks([]);
+              setIssueId("");
+            }}
+          />
+        </LabField>
       )}
-      <LabField label="VC配额">
+      <LabField label="VC 配额">
         <LabAmountInput
           aria-label="VC配额"
           name="budget"
@@ -317,9 +326,9 @@ export const LabBountyPublish = observer(function LabBountyPublish({
           </select>
         </LabField>
       )}
-      <details className="rounded border border-subtle p-3">
-        <summary className="cursor-pointer text-13">更多设置</summary>
-        <div className="mt-3 flex flex-col gap-3">
+      <section className="lab-form-section">
+        <h3 className="lab-section-heading">更多设置</h3>
+        <div className="lab-form-fields">
           <LabField label="现金承诺（元）">
             <input
               name="cash_commitment"
@@ -342,17 +351,18 @@ export const LabBountyPublish = observer(function LabBountyPublish({
               onChange={(event) => setPersonDays(event.target.value)}
             />
           </LabField>
-          <label className="flex items-center gap-2 text-13">
+          <label className="lab-switch-field">
+            <span>重大路线或安全事项</span>
             <input
               name="route_or_safety"
               type="checkbox"
               checked={safety}
               onChange={(event) => setSafety(event.target.checked)}
             />
-            重大路线或安全事项
           </label>
         </div>
-      </details>
+      </section>
+      {major && <p className="lab-badge">重大任务 · 发布与验收须独立复核</p>}
     </LabDialog>
   );
 });

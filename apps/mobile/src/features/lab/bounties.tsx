@@ -1,6 +1,6 @@
 /** Copyright (c) 2026 OpenOceanAcoustic and contributors. SPDX-License-Identifier: AGPL-3.0-only */
 import { useState } from "react";
-import { Html } from "../../components/ui";
+import { Html, PageHeading } from "../../components/ui";
 import type { LabBounty, LabTodo, LabBountyMaterial, LabMember } from "@plane/types";
 import type { LabStore } from "./transport";
 import { useResource } from "./transport";
@@ -12,6 +12,7 @@ import { calendarInstant } from "./calendar-time";
 import {
   Button,
   LabDialog,
+  LabDetail,
   LabField,
   Tabs,
   Empty,
@@ -21,6 +22,7 @@ import {
   labAmountError,
   labDecimalUnits,
   labDecimalText,
+  FloatingAction,
 } from "./ui";
 const statusNames: Record<string, string> = {
   draft: "草稿",
@@ -45,17 +47,23 @@ export function Bounties({
   initialId = "",
   onOpenIssue,
   onDownload,
+  onCloseDetail,
 }: {
   store: LabStore;
   initialId?: string;
   onOpenIssue?: (project: string, issue: string) => void;
   onDownload?: (path: string, name: string) => Promise<void>;
+  onCloseDetail?: () => void;
 }) {
-  const [view, setView] = useState("all");
+  const [view, setView] = useState("open");
   const [project, setProject] = useState("");
   const [query, setQuery] = useState("");
   const [publish, setPublish] = useState(false);
   const [selected, setSelected] = useState(initialId);
+  const closeDetail = () => {
+    setSelected("");
+    onCloseDetail?.();
+  };
   const [publicSummary, setPublicSummary] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [exception, setException] = useState(false);
@@ -133,217 +141,315 @@ export function Bounties({
         : false;
   return (
     <>
-      <div className="lab-heading">
-        <h2>悬赏大厅</h2>
-        <Button onClick={() => void refresh().catch(() => {})}>刷新</Button>
-      </div>
-      <ErrorMessage error={list.error || todos.error || detail.error || flow.error || store.error} />
-      <div className="lab-actions">
-        {store.planner?.projects.some((row) => row.lead) && (
-          <Button variant="primary" onClick={() => setPublish(true)}>
-            发布悬赏
-          </Button>
-        )}
-        <Button onClick={() => setExceptions(true)}>WIP 例外</Button>
-      </div>
-      {todos.data && todos.data.length > 0 && (
-        <section>
-          <h3>我的待办</h3>
-          {todos.data.map((row) => (
-            <button key={row.id} className="lab-card-row" onClick={() => setSelected(row.id)}>
-              {row.title}
-              <small className="lab-muted">
-                {" "}
-                · {row.action}
-                {row.overdue ? " · 已逾期" : ""}
-              </small>
-            </button>
-          ))}
-        </section>
+      {!selected && (
+        <>
+          <PageHeading title="悬赏大厅">
+            <Button onClick={() => void refresh().catch(() => {})}>刷新</Button>
+            <Button onClick={() => setExceptions(true)}>WIP 例外</Button>
+          </PageHeading>
+          {store.planner?.projects.some((row) => row.lead) && (
+            <FloatingAction label="发布悬赏" onClick={() => setPublish(true)} />
+          )}
+          <ErrorMessage error={list.error || todos.error || detail.error || flow.error || store.error} />
+          <LabField label="按项目查看">
+            <select value={project} onChange={(e) => setProject(e.target.value)}>
+              <option value="">全实验室公开悬赏</option>
+              {Array.from(
+                new Map(
+                  [
+                    ...(store.planner?.projects ?? []).map((row) => ({ id: row.id, name: row.name })),
+                    ...(list.data ?? []).map((row) => ({ id: row.project_id, name: row.project })),
+                  ].map((row) => [row.id, row])
+                ).values()
+              ).map((row) => (
+                <option key={row.id} value={row.id}>
+                  {row.name}
+                </option>
+              ))}
+            </select>
+          </LabField>
+          <Tabs
+            value={view}
+            onChange={setView}
+            items={[
+              { id: "open", name: "开放认领" },
+              { id: "mine", name: "我的参与" },
+              { id: "all", name: "全部悬赏" },
+            ]}
+          />
+          {todos.data && todos.data.length > 0 && (
+            <section>
+              <h3 className="lab-section-heading">我的待办</h3>
+              <div className="lab-action-list">
+                {todos.data.map((row) => (
+                  <button key={row.id} className="lab-action-row" onClick={() => setSelected(row.id)}>
+                    <span>
+                      {row.action} · {row.title}
+                      {row.overdue ? " · 已逾期" : ""}
+                    </span>
+                    <span aria-hidden>›</span>
+                  </button>
+                ))}
+              </div>
+            </section>
+          )}
+          <input
+            className="lab-input"
+            aria-label="搜索悬赏"
+            placeholder="搜索任务、交付物"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+          />
+          <h3 className="lab-section-heading">
+            {view === "open" ? "开放认领" : view === "mine" ? "我的参与" : "全部悬赏"}
+          </h3>
+          {list.data
+            ?.filter(
+              (row) =>
+                (!project || row.project_id === project) &&
+                (view !== "open" || row.status === "open") &&
+                (view !== "mine" ||
+                  row.allocations.some((member) => member.user_id === store.planner?.user_id) ||
+                  row.is_lead ||
+                  row.is_reviewer ||
+                  row.is_independent_reviewer) &&
+                `${row.title} ${row.public_summary} ${row.deliverable}`.toLowerCase().includes(query.toLowerCase())
+            )
+            .map((row) => (
+              <article className="lab-card" key={row.id}>
+                <button className="lab-card-row" onClick={() => setSelected(row.id)}>
+                  <div className="lab-heading">
+                    <small className="lab-muted">{row.issue_key ?? "悬赏任务"}</small>
+                    <span className={`lab-badge ${row.status}`}>{statusNames[row.status] ?? row.status}</span>
+                  </div>
+                  <h3>{row.title}</h3>
+                  <p className="lab-muted">
+                    {row.project} · {row.public_summary}
+                  </p>
+                  <div className="lab-card-meta">
+                    <span>{row.budget} VC 配额</span>
+                    <span>
+                      预算预计{" "}
+                      {(row.estimated_reward ?? row.reward_estimate?.amount)
+                        ? `¥${row.estimated_reward ?? row.reward_estimate?.amount}`
+                        : "—"}
+                      {(row.reward_formula_version ?? row.reward_estimate?.formula_version)
+                        ? ` · v${row.reward_formula_version ?? row.reward_estimate?.formula_version}`
+                        : ""}
+                    </span>
+                    {row.major && <span>重大任务</span>}
+                    {row.due_at && <span>{row.due_at.slice(0, 10)} 截止</span>}
+                  </div>
+                </button>
+              </article>
+            ))}
+          {list.data &&
+            !list.data.some(
+              (row) =>
+                (!project || row.project_id === project) &&
+                (view !== "open" || row.status === "open") &&
+                (view !== "mine" ||
+                  row.allocations.some((member) => member.user_id === store.planner?.user_id) ||
+                  row.is_lead ||
+                  row.is_reviewer ||
+                  row.is_independent_reviewer) &&
+                `${row.title} ${row.public_summary} ${row.deliverable}`.toLowerCase().includes(query.toLowerCase())
+            ) && <Empty>所选范围暂无悬赏。</Empty>}
+        </>
       )}
-      <Tabs
-        value={view}
-        onChange={setView}
-        items={[
-          { id: "all", name: "全部" },
-          { id: "open", name: "可认领" },
-          { id: "mine", name: "我参与的" },
-        ]}
-      />
-      <input
-        className="lab-input"
-        aria-label="搜索悬赏"
-        placeholder="搜索任务、交付物"
-        value={query}
-        onChange={(e) => setQuery(e.target.value)}
-      />
-      <LabField label="项目">
-        <select value={project} onChange={(e) => setProject(e.target.value)}>
-          <option value="">全部公开悬赏</option>
-          {Array.from(
-            new Map(
-              [
-                ...(store.planner?.projects ?? []).map((row) => ({ id: row.id, name: row.name })),
-                ...(list.data ?? []).map((row) => ({ id: row.project_id, name: row.project })),
-              ].map((row) => [row.id, row])
-            ).values()
-          ).map((row) => (
-            <option key={row.id} value={row.id}>
-              {row.name}
-            </option>
-          ))}
-        </select>
-      </LabField>
-      {list.data
-        ?.filter(
-          (row) =>
-            (!project || row.project_id === project) &&
-            (view !== "open" || row.status === "open") &&
-            (view !== "mine" ||
-              row.allocations.some((member) => member.user_id === store.planner?.user_id) ||
-              row.is_lead ||
-              row.is_reviewer ||
-              row.is_independent_reviewer) &&
-            `${row.title} ${row.public_summary} ${row.deliverable}`.toLowerCase().includes(query.toLowerCase())
-        )
-        .map((row) => (
-          <article className="lab-card" key={row.id}>
-            <button className="lab-card-row" onClick={() => setSelected(row.id)}>
-              <span className="lab-badge">{statusNames[row.status] ?? row.status}</span>
-              <h3>{row.title}</h3>
-              <p className="lab-muted">
-                {row.project} · {row.public_summary}
-              </p>
-              <KeyValues
-                values={{
-                  "VC 配额": row.budget,
-                  剩余可认领: row.claim_available,
-                  参考奖励: row.estimated_reward ?? row.reward_estimate?.amount ?? "—",
-                  截止: row.due_at,
-                  重大事项: row.major ? "是" : "否",
-                }}
-              />
-            </button>
-          </article>
-        ))}
-      {list.data && !list.data.length && <Empty />}
       {selected && (
-        <LabDialog title={bounty?.title ?? "悬赏详情"} onClose={() => setSelected("")}>
-          <ErrorMessage error={detail.error || flow.error} />
+        <LabDetail title="悬赏详情" onClose={closeDetail}>
+          <ErrorMessage error={detail.error || flow.error || store.error} />
+          {!bounty && !detail.error && <Empty>正在读取悬赏详情…</Empty>}
           {bounty && (
             <>
-              <span className="lab-badge">{statusNames[bounty.status] ?? bounty.status}</span>
-              <p>{bounty.public_summary}</p>
+              <article className="lab-card">
+                <div className="lab-heading">
+                  <small className="lab-muted">{bounty.issue_key ?? "悬赏任务"}</small>
+                  <span className={`lab-badge ${bounty.status}`}>{statusNames[bounty.status] ?? bounty.status}</span>
+                </div>
+                <h3>{bounty.title}</h3>
+                <p className="lab-muted">{bounty.project}</p>
+                <div className="lab-card-meta">
+                  {bounty.major && <span>重大任务</span>}
+                  {bounty.category_name && <span>{bounty.category_name}</span>}
+                </div>
+              </article>
+              {bounty.public_summary && <p className="lab-item-description">{bounty.public_summary}</p>}
+              {bounty.access_level === "public" ? (
+                <div className="lab-hero">
+                  <span>VC 配额</span>
+                  <strong>{bounty.budget} VC</strong>
+                </div>
+              ) : (
+                <div className="lab-stats two">
+                  <div className="lab-stat">
+                    <span>VC 配额</span>
+                    <strong>{bounty.budget} VC</strong>
+                  </div>
+                  <div className="lab-stat">
+                    <span>已授予</span>
+                    <strong>{bounty.awarded ?? "0.00"} VC</strong>
+                  </div>
+                </div>
+              )}
               <KeyValues
                 values={{
-                  项目: bounty.project,
-                  "VC 配额": bounty.budget,
-                  已授予: bounty.awarded,
-                  可认领: bounty.claim_available,
-                  参考奖励: bounty.estimated_reward ?? bounty.reward_estimate?.amount,
-                  交付物: bounty.deliverable,
-                  验收标准: bounty.criteria,
-                  提交成果: bounty.evidence,
+                  预算预计奖励: bounty.estimated_reward ?? bounty.reward_estimate?.amount,
+                  到账奖励测算: bounty.received_estimate?.amount,
+                  公式版本: bounty.reward_formula_version ?? bounty.reward_estimate?.formula_version,
+                  剩余可认领: bounty.claim_available,
+                  截止日期: bounty.due_at,
                   重大原因: bounty.major_reasons.join("；"),
                 }}
               />
+              <section>
+                <h3 className="lab-section-heading">{bounty.access_level === "public" ? "公开交付要求" : "交付物"}</h3>
+                <div className="lab-editor-block">
+                  <p className="lab-item-description">{bounty.deliverable}</p>
+                </div>
+              </section>
+              <section>
+                <h3 className="lab-section-heading">
+                  {bounty.access_level === "public" ? "公开验收条件" : "验收条件"}
+                </h3>
+                <div className="lab-editor-block">
+                  <p className="lab-item-description">{bounty.criteria}</p>
+                </div>
+              </section>
+              {bounty.evidence && (
+                <section>
+                  <h3 className="lab-section-heading">提交成果</h3>
+                  <p className="lab-item-description">{bounty.evidence}</p>
+                </section>
+              )}
               {bounty.issue_id && bounty.access_level === "project" && onOpenIssue && (
                 <Button onClick={() => onOpenIssue(bounty.project_id, bounty.issue_id!)}>打开项目任务</Button>
               )}
-              <h3>分工与贡献</h3>
+              <h3 className="lab-section-heading">团队分工</h3>
               {bounty.allocations.map((row) => (
                 <article className="lab-card" key={row.id}>
                   <h3>{row.name}</h3>
-                  <KeyValues
-                    values={{
-                      交付物: row.deliverable,
-                      计划VC: row.planned,
-                      授予VC: row.awarded,
-                      认领核准: row.approved ? "已核准" : "待核准",
-                      本人确认: row.confirmed ? "已确认" : "待确认",
-                      状态: row.closed ? "已结束" : "进行中",
-                    }}
-                  />
-                </article>
-              ))}
-              <h3>验收记录</h3>
-              {bounty.acceptances.map((row) => (
-                <article className="lab-card" key={row.id}>
-                  <h3>{acceptanceLabels[row.result]}</h3>
-                  <KeyValues values={{ 验收人: row.reviewer, 原因: row.reason, 复核时间: row.approved_at }} />
-                  {Object.entries(row.targets).map(([id, value]) => (
-                    <p key={id}>
-                      {bounty.allocations.find((a) => a.id === id)?.name ?? "参与者"}：{value} VC
-                    </p>
-                  ))}
-                </article>
-              ))}
-              <h3>当前流程与操作</h3>
-              {flow.data?.nodes.map((row) => (
-                <article key={row.id} className="lab-timeline-row">
-                  <h3>{row.label}</h3>
-                  <small className="lab-muted">
-                    {row.state === "current" ? "当前阶段" : row.state === "completed" ? "已完成" : "待发生"}
-                  </small>
-                  <div className="lab-actions">
-                    {flow.data?.actions
-                      .filter((action) => action.node_id === row.id)
-                      .map((action) => (
-                        <Button
-                          key={action.id}
-                          disabled={!action.enabled}
-                          title={action.reason}
-                          onClick={() => openAction(action)}
-                        >
-                          {action.label}
-                        </Button>
-                      ))}
+                  <p className="lab-muted">{row.deliverable}</p>
+                  <div className="lab-card-meta">
+                    <span>
+                      {row.awarded} / {row.planned} VC
+                    </span>
+                    <span>{row.approved ? "已核准" : "待核准"}</span>
+                    <span>{row.confirmed ? "已确认" : "待确认"}</span>
+                    <span>{row.closed ? "已结束" : "进行中"}</span>
                   </div>
                 </article>
               ))}
-              {flow.data?.history
-                .slice()
-                // oxlint-disable-next-line unicorn/no-array-reverse -- ES2022 target; reverses a new local copy
-                .reverse()
-                .map((row) => (
+              <h3 className="lab-section-heading">执行资料与流程</h3>
+              <details className="lab-disclosure">
+                <summary>执行资料 · {materials.data?.materials.length ?? 0}</summary>
+                <ErrorMessage error={materials.error || readError} />
+                {bounty.can_manage_materials && <Button onClick={() => setSharing(true)}>共享文档版本或附件</Button>}
+                {materials.data?.materials.map((row) => (
                   <article className="lab-card" key={row.id}>
                     <h3>{row.label}</h3>
-                    <KeyValues values={{ 处理人: row.actor, 时间: row.created_at, 依据: row.reason }} />
+                    <small className="lab-muted">{row.kind === "document_version" ? "冻结文档版本" : "附件"}</small>
+                    <div className="lab-actions">
+                      <Button
+                        onClick={() => {
+                          setReadError("");
+                          const path = `/api/workspaces/${encodeURIComponent(store.slug)}/lab/bounties/${selected}/materials/${row.id}/`;
+                          void (
+                            row.kind === "document_version"
+                              ? store
+                                  .request<SharedDocument>(`bounties/${selected}/materials/${row.id}/`)
+                                  .then(setViewed)
+                              : onDownload
+                                ? onDownload(path, row.label)
+                                : Promise.reject(new Error("附件下载服务尚未初始化"))
+                          ).catch((e) => setReadError(e instanceof Error ? e.message : "资料读取失败"));
+                        }}
+                      >
+                        打开资料
+                      </Button>
+                      {bounty.can_manage_materials && <Button onClick={() => setRevoking(row)}>撤回共享</Button>}
+                    </div>
                   </article>
                 ))}
-              <h3>负责人共享的执行资料</h3>
-              <ErrorMessage error={materials.error || readError} />
-              {bounty.can_manage_materials && <Button onClick={() => setSharing(true)}>共享文档版本或附件</Button>}
-              {materials.data?.materials.map((row) => (
-                <article className="lab-card" key={row.id}>
-                  <h3>{row.label}</h3>
-                  <small className="lab-muted">{row.kind === "document_version" ? "冻结文档版本" : "附件"}</small>
-                  <div className="lab-actions">
-                    <Button
-                      onClick={() => {
-                        setReadError("");
-                        const path = `/api/workspaces/${encodeURIComponent(store.slug)}/lab/bounties/${selected}/materials/${row.id}/`;
-                        void (
-                          row.kind === "document_version"
-                            ? store.request<SharedDocument>(`bounties/${selected}/materials/${row.id}/`).then(setViewed)
-                            : onDownload
-                              ? onDownload(path, row.label)
-                              : Promise.reject(new Error("附件下载服务尚未初始化"))
-                        ).catch((e) => setReadError(e instanceof Error ? e.message : "资料读取失败"));
-                      }}
-                    >
-                      打开资料
+                {materials.data && !materials.data.materials.length && <Empty>尚无共享资料</Empty>}
+              </details>
+              <details className="lab-disclosure">
+                <summary>验收记录 · {bounty.acceptances.length}</summary>
+                {bounty.acceptances.map((row) => (
+                  <article className="lab-card" key={row.id}>
+                    <h3>{acceptanceLabels[row.result]}</h3>
+                    <KeyValues values={{ 验收人: row.reviewer, 原因: row.reason, 复核时间: row.approved_at }} />
+                    {Object.entries(row.targets).map(([id, value]) => (
+                      <p key={id}>
+                        {bounty.allocations.find((a) => a.id === id)?.name ?? "参与者"}：{value} VC
+                      </p>
+                    ))}
+                  </article>
+                ))}
+              </details>
+              <details className="lab-disclosure">
+                <summary>团队悬赏流程</summary>
+                {flow.data?.nodes.map((row) => (
+                  <article key={row.id} className="lab-timeline-row">
+                    <h3>{row.label}</h3>
+                    <small className="lab-muted">
+                      {row.state === "current" ? "当前阶段" : row.state === "completed" ? "已完成" : "待发生"}
+                    </small>
+                    <div className="lab-actions">
+                      {flow.data?.actions
+                        .filter((action) => action.node_id === row.id)
+                        .map((action) => (
+                          <Button
+                            key={action.id}
+                            disabled={!action.enabled}
+                            title={action.reason}
+                            onClick={() => openAction(action)}
+                          >
+                            {action.label}
+                          </Button>
+                        ))}
+                    </div>
+                  </article>
+                ))}
+                {flow.data?.history
+                  .slice()
+                  // oxlint-disable-next-line unicorn/no-array-reverse -- ES2022 target; reverses a new local copy
+                  .reverse()
+                  .map((row) => (
+                    <article className="lab-card" key={row.id}>
+                      <h3>{row.label}</h3>
+                      <KeyValues values={{ 处理人: row.actor, 时间: row.created_at, 依据: row.reason }} />
+                    </article>
+                  ))}
+              </details>
+              <div className="lab-actions">
+                {flow.data?.actions
+                  .filter(
+                    (action) =>
+                      action.enabled &&
+                      [
+                        "claim",
+                        "submit",
+                        "accept",
+                        "start",
+                        "approve",
+                        "confirm",
+                        "publication-review",
+                        "acceptance-review",
+                      ].includes(action.action)
+                  )
+                  .map((action) => (
+                    <Button key={action.id} variant="primary" onClick={() => openAction(action)}>
+                      {action.label}
                     </Button>
-                    {bounty.can_manage_materials && <Button onClick={() => setRevoking(row)}>撤回共享</Button>}
-                  </div>
-                </article>
-              ))}
-              {materials.data && !materials.data.materials.length && <Empty>尚无共享资料</Empty>}
+                  ))}
+              </div>
               {bounty.is_lead && <Button onClick={() => setPublicSummary(true)}>编辑公开摘要</Button>}
               {bounty.can_delete && <Button onClick={() => setDeleting(true)}>删除悬赏</Button>}
             </>
           )}
-        </LabDialog>
+        </LabDetail>
       )}
       {chosen && bounty && (
         <LabDialog
@@ -479,13 +585,12 @@ export function Bounties({
           onSubmit={async (form) => {
             await store.request(`bounties/${bounty.id}/detail/`, "DELETE", { reason: form.get("reason") });
             setDeleting(false);
-            setSelected("");
+            closeDetail();
             await list.refresh();
             await todos.refresh();
             await store.loadPlanner();
           }}
         >
-          <p>已产生的贡献与资金记录将按服务端规则保留。</p>
           <LabField label="删除原因">
             <textarea name="reason" required />
           </LabField>

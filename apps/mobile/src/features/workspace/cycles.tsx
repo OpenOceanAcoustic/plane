@@ -1,3 +1,4 @@
+import { PageHeading } from "../../components/ui";
 import { useState } from "react";
 import { records, useData, type Entity } from "../../components/ui";
 import { Button, LabField, labInputClass } from "../lab/ui";
@@ -22,16 +23,15 @@ export default function ActiveCycles(props: WorkspaceProps) {
   );
   return (
     <>
-      <div className="lab-heading">
-        <h1>{selected ? String(selected.name) : "活跃周期"}</h1>
-        {selected && <Button onClick={() => setSelected(undefined)}>返回</Button>}
-      </div>
+      <PageHeading
+        title={selected ? String(selected.name) : "活跃周期"}
+        onBack={selected ? () => setSelected(undefined) : undefined}
+      />
       {selected ? (
         <>
           <p>{String(selected.description ?? "")}</p>
           <CycleProgress cycle={selected} />
           <Status loading={tasks.loading} error={tasks.error} empty={role >= 15 && !records(tasks.data).length} />
-          {role < 15 && <p className="lab-muted">周期任务列表向项目成员开放。</p>}
           <TaskRows
             rows={records(tasks.data).map((row) => {
               const issue = row.issue_detail as Entity | undefined;

@@ -3,6 +3,7 @@ import { EditorContent, useEditor } from "@tiptap/react";
 import { Extension, type AnyExtension } from "@tiptap/core";
 import { CoreEditorExtensionsWithoutProps, DocumentEditorExtensionsWithoutProps } from "@plane/editor/lib";
 import type { ApiClient } from "../lib/client";
+import { CanonicalIcon } from "./navigation";
 
 export const MobileClientContext = createContext<ApiClient | null>(null);
 export function bitmapMime(bytes: Uint8Array): string | null {
@@ -91,7 +92,17 @@ export function mobileEditorExtensions(client: ApiClient | null, collaboration =
     return extension;
   }) as AnyExtension[];
 }
-export function RichHtmlEditor({ value, onChange }: { value: string; onChange: (html: string) => void }) {
+export function RichHtmlEditor({
+  value,
+  onChange,
+  compact = false,
+  heading,
+}: {
+  value: string;
+  onChange: (html: string) => void;
+  compact?: boolean;
+  heading?: string;
+}) {
   const client = useContext(MobileClientContext);
   const [link, setLink] = useState("");
   const [showLink, setShowLink] = useState(false);
@@ -108,30 +119,52 @@ export function RichHtmlEditor({ value, onChange }: { value: string; onChange: (
   }, [editor, value]);
   if (!editor) return null;
   return (
-    <div className="rich-input">
+    <div className={`rich-input ${compact ? "compact-rich-input" : ""}`}>
       <div className="editor-toolbar">
-        <button type="button" className="chip" onClick={() => editor.chain().focus().toggleMark("bold").run()}>
-          粗体
-        </button>
-        <button type="button" className="chip" onClick={() => editor.chain().focus().toggleMark("italic").run()}>
-          斜体
+        <button
+          type="button"
+          className="chip"
+          aria-label="粗体"
+          onClick={() => editor.chain().focus().toggleMark("bold").run()}
+        >
+          {compact ? <b>B</b> : "粗体"}
         </button>
         <button
           type="button"
           className="chip"
+          aria-label="斜体"
+          onClick={() => editor.chain().focus().toggleMark("italic").run()}
+        >
+          {compact ? <i>I</i> : "斜体"}
+        </button>
+        {compact && (
+          <button
+            type="button"
+            className="chip"
+            aria-label="一级标题"
+            onClick={() => editor.chain().focus().toggleNode("heading", "paragraph", { level: 1 }).run()}
+          >
+            H₁
+          </button>
+        )}
+        <button
+          type="button"
+          className="chip"
+          aria-label="列表"
           onClick={() => editor.chain().focus().toggleList("bulletList", "listItem").run()}
         >
-          列表
+          {compact ? <CanonicalIcon name="list" size={16} /> : "列表"}
         </button>
         <button
           type="button"
           className="chip"
+          aria-label="待办"
           onClick={() => editor.chain().focus().toggleList("taskList", "taskItem").run()}
         >
-          待办
+          {compact ? <CanonicalIcon name="files" size={16} /> : "待办"}
         </button>
-        <button type="button" className="chip" onClick={() => setShowLink(!showLink)}>
-          链接
+        <button type="button" className="chip" aria-label="链接" onClick={() => setShowLink(!showLink)}>
+          {compact ? <CanonicalIcon name="link" size={16} /> : "链接"}
         </button>
       </div>
       {showLink && (
@@ -161,6 +194,7 @@ export function RichHtmlEditor({ value, onChange }: { value: string; onChange: (
           {linkError}
         </p>
       )}
+      {heading && <h3 className="rich-editor-heading">{heading}</h3>}
       <EditorContent editor={editor} />
     </div>
   );

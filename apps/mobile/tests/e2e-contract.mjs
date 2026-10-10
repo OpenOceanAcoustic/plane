@@ -92,7 +92,7 @@ async function checkEmptyWorkspace(session, issue) {
     emptyWorkspaceRequests += 1;
     return route.fulfill({ status: 200, contentType: "application/json", body: "[]" });
   };
-  // Only membership discovery is a fixture. Session, settings, admin, and Space
+  // Only membership discovery is a fixture. Session, settings, and Space
   // continue using the real isolated backend; no actual membership is changed.
   await page.route("**/api/users/me/workspaces/**", emptyWorkspaces);
   const emptyWorkspaceResponse = page.waitForResponse(isResponse("/api/users/me/workspaces/"));
@@ -105,11 +105,6 @@ async function checkEmptyWorkspace(session, issue) {
   await expect(page.getByRole("heading", { name: "个人设置", exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "编辑个人资料", exact: true })).toBeVisible();
   await expect(page.getByText("暂无工作区", { exact: true })).toHaveCount(0);
-  await page.getByRole("button", { name: "God Mode", exact: true }).click();
-  await expect(page.getByRole("heading", { name: "God Mode 登录", exact: true })).toBeVisible();
-  await expect(page.getByLabel("动态码", { exact: true })).toBeVisible();
-  await expect(page.getByText("暂无工作区", { exact: true })).toHaveCount(0);
-  await page.locator(".topbar").getByRole("button", { name: "返回", exact: true }).click();
   await page.getByRole("button", { name: "共享页面", exact: true }).click();
   await expect(page.getByLabel("共享链接或标识")).toBeVisible();
   await expect(page.getByText("暂无工作区", { exact: true })).toHaveCount(0);
@@ -128,9 +123,7 @@ async function checkEmptyWorkspace(session, issue) {
       membershipsAfter.some((after) => after.id === before.id && after.slug === before.slug)
     )
   ).toBe(true);
-  checks.push(
-    "empty-workspace fixture preserves real session and access to personal settings, God Mode, and shared page"
-  );
+  checks.push("empty-workspace fixture preserves real session and access to personal settings and shared page");
 }
 try {
   if (onlyEmptyWorkspace) {
@@ -295,21 +288,6 @@ try {
     await page.getByRole("button", { name: "保存", exact: true }).click();
     await page.getByText(publicComment, { exact: true }).waitFor();
     checks.push("Space project/detail/vote toggle/rich comment");
-    await home("设置");
-    await page.getByRole("button", { name: "God Mode", exact: true }).click();
-    await page.getByLabel("用户名", { exact: true }).fill(fixture.accounts.admin.username);
-    // A code used for ordinary login must never be replayed for independent administrator login.
-    await page.waitForTimeout(30000 - (Date.now() % 30000) + 1000);
-    await signIn("动态码", "/auth/lab/mobile/admin/sign-in/");
-    await page.getByRole("button", { name: "退出管理账号", exact: true }).waitFor({ timeout: 15000 });
-    const adminSession = await api("/api/lab/session/?admin=true");
-    expect(adminSession.client_platform).toBe("android");
-    await page.getByRole("button", { name: "配置", exact: true }).click();
-    expect(await page.getByRole("alert").allTextContents()).toEqual([]);
-    await page.getByRole("button", { name: "退出管理账号", exact: true }).click();
-    const retainedSession = await api("/api/lab/session/");
-    expect(retainedSession.user.id).toBe(session.user.id);
-    checks.push("independent God Mode sign-in/configuration/logout preserves ordinary session");
     await checkEmptyWorkspace(session, issue);
   }
   expect(errors).toEqual([]);

@@ -11,6 +11,7 @@ import {
   ActionButton,
   ErrorMessage,
   FormSheet,
+  FloatingAction,
   Html,
   Loading,
   PageHeading,
@@ -35,7 +36,7 @@ export default function Documents(props: Props) {
   const projectId = props.projectId || selected;
   return (
     <>
-      <PageHeading title="文档" />
+      {!props.pageId && <PageHeading title="文档" />}
       {!props.projectId && (
         <label className="field">
           <span>项目</span>
@@ -65,9 +66,7 @@ function DocumentList({ client, workspaceSlug, projectId, onOpen }: Props & { pr
   const [create, setCreate] = useState(false);
   return (
     <>
-      <button className="button" onClick={() => setCreate(true)}>
-        新建文档
-      </button>
+      <FloatingAction label="新建文档" onClick={() => setCreate(true)} />
       <ErrorMessage error={pages.error} />
       {pages.loading ? (
         <Loading />
@@ -176,12 +175,13 @@ function DocumentDetail({
   }, [client, workspaceSlug, projectId, pageId, connectionVersion]);
   return (
     <>
-      <div className="section-heading">
-        <span className="muted" role="status">
+      <PageHeading title={String(page.data?.name ?? "文档")} />
+      <div className="document-status-chips">
+        <span className="chip active" role="status">
           {status}
         </span>
-        <button className="button" onClick={() => setMenu(true)}>
-          文档操作
+        <button className="chip" onClick={() => setMenu(true)}>
+          信息
         </button>
       </div>
       <ErrorMessage error={page.error ?? error} />

@@ -1,5 +1,7 @@
 /** Copyright (c) 2026 OpenOceanAcoustic and contributors. SPDX-License-Identifier: AGPL-3.0-only */
 import { useState, useEffect } from "react";
+import { PageHeading } from "../../components/ui";
+import { CanonicalIcon } from "../../components/navigation";
 import type { LabBountyBudget, LabFinanceOverview, LabRecordWorkflow, LabLedgerEntry } from "@plane/types";
 import type { LabStore } from "./transport";
 import { useResource } from "./transport";
@@ -8,7 +10,18 @@ import type { LabFinanceChosenAction } from "./finance-form";
 import { LabFormulaEditor, LabForecastDialog } from "./finance-formula";
 import { LabFinanceDeleteDialog } from "./finance-delete";
 import type { LabFinanceDeletion } from "./finance-delete";
-import { Button, LabDialog, LabField, Tabs, ErrorMessage, Empty, KeyValues } from "./ui";
+import {
+  Button,
+  LabDialog,
+  LabField,
+  Tabs,
+  ErrorMessage,
+  Empty,
+  KeyValues,
+  labDecimalText,
+  labDecimalUnits,
+  FloatingAction,
+} from "./ui";
 import { newRequestKey } from "./business";
 const labels: Record<string, string> = {
   balance: "实际余额",
@@ -20,6 +33,7 @@ const labels: Record<string, string> = {
   B: "冻结 VC 预算",
   E: "执行奖励预算",
   purposes: "预算用途",
+  inputs: "公式输入快照",
   execution_funded: "执行实际资金",
   history_funded: "历史实际资金",
   formula_version: "公式版本",
@@ -67,21 +81,50 @@ const labels: Record<string, string> = {
   r: "职责份额",
 };
 const tabs = [
-  { id: "accounts", name: "分池账户" },
-  { id: "stages", name: "阶段预算" },
-  { id: "batches", name: "到账批次" },
-  { id: "forecasts", name: "奖励预测" },
-  { id: "settlements", name: "奖励核准" },
-  { id: "commitments", name: "支付安排" },
-  { id: "payments", name: "支付登记" },
-  { id: "public_awards", name: "公共职责" },
-  { id: "public_commitments", name: "公共支付安排" },
-  { id: "public_payments", name: "公共支付登记" },
-  { id: "operations", name: "操作记录" },
-  { id: "entries", name: "资金明细" },
-  { id: "ledger", name: "VC账本" },
-  { id: "workflow", name: "资金流程" },
+  { id: "accounts", name: "真实余额与到账" },
+  { id: "stages", name: "预算与参考预测" },
+  { id: "settlements", name: "核准与付款" },
+  { id: "entries", name: "账目明细" },
+  { id: "ledger", name: "VC 明细" },
+  { id: "workflow", name: "资金与项目流程" },
 ];
+const legacyTabs: Record<string, string> = {
+  batches: "accounts",
+  forecasts: "stages",
+  commitments: "settlements",
+  payments: "settlements",
+  public_awards: "settlements",
+  public_commitments: "settlements",
+  public_payments: "settlements",
+  operations: "entries",
+};
+const actionGroups = [
+  { title: "预算与到账", actions: ["vc-stage", "stage", "receipt", "opening", "transfer", "expense"] },
+  {
+    title: "核准与支付",
+    actions: ["settlement", "history-settlement", "commit", "cancel-commit", "payment", "tax-remit"],
+  },
+  {
+    title: "准备金与结转",
+    actions: ["risk-release", "risk-use", "stage-allocation", "dispute", "resolve-dispute", "carryover"],
+  },
+  {
+    title: "公共资金",
+    actions: [
+      "future-plan",
+      "exploration-allocation",
+      "public-duty",
+      "public-commit",
+      "public-cancel-commit",
+      "public-payment",
+      "manager",
+    ],
+  },
+  { title: "公式与参考预测", actions: ["formula", "forecast-task", "forecast-member"] },
+  { title: "更正与恢复", actions: ["reverse", "delete", "stage-restore", "project-restore"] },
+];
+const sumAmount = (values: (string | null | undefined)[]) =>
+  labDecimalText(values.reduce((total, value) => total + (value ? (labDecimalUnits(value) ?? 0n) : 0n), 0n));
 export function Finance({
   store,
   onOpenIssue,
@@ -92,12 +135,13 @@ export function Finance({
   onOpenIssue?: (project: string, issue: string) => void;
 }) {
   const [project, setProject] = useState("");
-  const [tab, setTab] = useState(initialTab);
+  const [tab, setTab] = useState(legacyTabs[initialTab] ?? initialTab);
   const [workflowScope, setWorkflowScope] = useState("finance");
   const [chosen, setChosen] = useState<LabFinanceChosenAction>();
   const [formula, setFormula] = useState(false);
-  const [forecast, setForecast] = useState(false);
+  const [forecast, setForecast] = useState<"task" | "member">();
   const [deletion, setDeletion] = useState<LabFinanceDeletion>();
+  const [deletePickerOpen, setDeletePickerOpen] = useState(false);
   const [actionsOpen, setActionsOpen] = useState(false);
   const [ledgerReverse, setLedgerReverse] = useState<{ entry: LabLedgerEntry; key: string }>();
   const [deleted, setDeleted] = useState(false);
@@ -116,7 +160,7 @@ export function Finance({
   );
   const ledger = useResource<LabLedgerEntry[]>(
     store,
-    tab === "ledger" ? `ledger/${project ? `?project_id=${project}` : ""}` : null
+    ["accounts", "ledger"].includes(tab) ? `ledger/${project ? `?project_id=${project}` : ""}` : null
   );
   const data = resource.data;
   const loadMarket = store.loadMarket;
@@ -129,7 +173,7 @@ export function Finance({
       budgets.refresh(),
       store.loadMarket(),
       ...(tab === "workflow" ? [flow.refresh()] : []),
-      ...(tab === "ledger" ? [ledger.refresh()] : []),
+      ...(["accounts", "ledger"].includes(tab) ? [ledger.refresh()] : []),
     ]);
   };
   const open = (action: string, body?: Record<string, string>) => {
@@ -139,6 +183,7 @@ export function Finance({
   if (!data)
     return (
       <>
+        <PageHeading title="资金与奖励" />
         <ErrorMessage error={resource.error} />
         <Empty>正在加载资金…</Empty>
       </>
@@ -147,7 +192,7 @@ export function Finance({
     ? !!data.projects.find((row) => row.id === project && row.is_lead && !row.deleted)
     : data.projects.some((row) => row.is_lead && !row.deleted);
   const manageable = lead || data.is_manager;
-  const actions = [
+  const actions = new Set([
     "stage",
     "receipt",
     "opening",
@@ -176,7 +221,7 @@ export function Finance({
           "public-payment",
         ]
       : []),
-  ];
+  ]);
   function recordValues(row: object) {
     return Object.fromEntries(
       Object.entries(row)
@@ -193,176 +238,374 @@ export function Finance({
         ])
     );
   }
-  const group = tab in data ? data[tab as keyof LabFinanceOverview] : undefined;
-  const records = Array.isArray(group) ? group : [];
+  const overview = data;
+  const currentBudgets = (budgets.data ?? []).filter(
+    (row) => (!project || row.project_id === project) && (deleted || !row.deleted)
+  );
+  const activeBatches = overview.batches.filter((row) => !row.reversed && row.kind !== "opening");
+  const executionAccounts = overview.accounts.filter((row) => row.kind === "execution");
+  const deletable: LabFinanceDeletion[] = [
+    ...overview.batches
+      .filter((row) => row.can_delete)
+      .map((row) => ({
+        kind: "receipt" as const,
+        id: row.id,
+        name: row.source,
+        amount: row.gross,
+        blockedReason: row.delete_reason ?? undefined,
+      })),
+    ...overview.stages
+      .filter((row) => row.can_delete)
+      .map((row) => ({
+        kind: "stage" as const,
+        id: row.stage_id,
+        name: row.name,
+        blockedReason: row.delete_reason ?? undefined,
+      })),
+    ...overview.projects
+      .filter((row) => row.can_delete)
+      .map((row) => ({
+        kind: "project" as const,
+        id: row.id,
+        name: row.name,
+        blockedReason: row.delete_reason ?? undefined,
+      })),
+  ];
+  function recordSection(collection: keyof LabFinanceOverview, title: string) {
+    const group = overview[collection];
+    const records = Array.isArray(group) ? group : [];
+    return (
+      <section className="lab-record-section">
+        <div className="lab-section-heading">
+          <h3>{title}</h3>
+        </div>
+        {records.map((row) => {
+          const record = row as {
+            id?: string;
+            stage_id?: string;
+            name?: string;
+            label?: string;
+            kind?: string;
+            user_name?: string;
+            source?: string;
+            gross?: string;
+            can_manage?: boolean;
+            can_delete?: boolean;
+            can_restore?: boolean;
+            delete_reason?: string;
+            deleted?: boolean;
+            cancelled?: boolean;
+            reversed?: boolean;
+          };
+          if (record.deleted && !deleted) return null;
+          return (
+            <article key={record.id ?? record.stage_id} className="lab-card">
+              <h3>
+                {record.name ??
+                  record.source ??
+                  record.user_name ??
+                  record.label ??
+                  financeActionLabels[record.kind ?? ""] ??
+                  accountKindLabels[record.kind ?? ""] ??
+                  title}
+              </h3>
+              <KeyValues values={recordValues(row)} />
+              {((collection === "batches" && record.can_delete) ||
+                (collection === "stages" && (record.can_delete || record.can_restore)) ||
+                (["settlements", "public_awards"].includes(collection) && record.can_manage) ||
+                (["commitments", "public_commitments"].includes(collection) &&
+                  record.can_manage &&
+                  !record.cancelled) ||
+                (collection === "operations" && record.can_manage && !record.reversed)) && (
+                <details className="lab-disclosure">
+                  <summary>记录操作</summary>
+                  <div className="lab-actions">
+                    {collection === "batches" && record.can_delete && (
+                      <Button
+                        onClick={() =>
+                          setDeletion({
+                            kind: "receipt",
+                            id: record.id!,
+                            name: record.source ?? "到账记录",
+                            amount: record.gross,
+                            blockedReason: record.delete_reason,
+                          })
+                        }
+                      >
+                        删除到账
+                      </Button>
+                    )}
+                    {collection === "stages" && record.can_delete && (
+                      <Button
+                        onClick={() =>
+                          setDeletion({
+                            kind: "stage",
+                            id: record.stage_id!,
+                            name: record.name ?? "阶段预算",
+                            blockedReason: record.delete_reason,
+                          })
+                        }
+                      >
+                        删除预算
+                      </Button>
+                    )}
+                    {collection === "stages" && record.can_restore && (
+                      <Button onClick={() => open("stage-restore", { stage_id: record.stage_id! })}>恢复预算</Button>
+                    )}
+                    {collection === "settlements" && record.can_manage && (
+                      <Button onClick={() => open("commit", { settlement_id: record.id! })}>安排支付</Button>
+                    )}
+                    {collection === "public_awards" && record.can_manage && (
+                      <Button onClick={() => open("public-commit", { award_id: record.id! })}>安排公共支付</Button>
+                    )}
+                    {["commitments", "public_commitments"].includes(collection) &&
+                      record.can_manage &&
+                      !record.cancelled && (
+                        <>
+                          <Button
+                            onClick={() =>
+                              open(collection === "commitments" ? "payment" : "public-payment", {
+                                commitment_id: record.id!,
+                              })
+                            }
+                          >
+                            登记线下支付
+                          </Button>
+                          <Button
+                            onClick={() =>
+                              open(collection === "commitments" ? "cancel-commit" : "public-cancel-commit", {
+                                commitment_id: record.id!,
+                              })
+                            }
+                          >
+                            取消未付安排
+                          </Button>
+                        </>
+                      )}
+                    {collection === "operations" && record.can_manage && !record.reversed && (
+                      <Button onClick={() => open("reverse", { operation_id: record.id! })}>冲正</Button>
+                    )}
+                  </div>{" "}
+                </details>
+              )}
+            </article>
+          );
+        })}
+        {!records.length && <Empty />}
+      </section>
+    );
+  }
   return (
     <>
-      <div className="lab-heading">
-        <h2>资金与奖励</h2>
-        <Button onClick={() => void refresh().catch(() => {})}>刷新</Button>
-      </div>
+      <PageHeading title="资金与奖励">
+        {manageable && (
+          <button
+            type="button"
+            className="icon-button"
+            aria-label="登记到账"
+            title="登记到账"
+            onClick={() => open("receipt", project ? { project_id: project } : undefined)}
+          >
+            <CanonicalIcon name="finance" />
+          </button>
+        )}
+        {!manageable && !data.can_designate_manager && (
+          <button
+            type="button"
+            className="icon-button"
+            aria-label="更多"
+            title="更多"
+            onClick={() => setActionsOpen(true)}
+          >
+            <CanonicalIcon name="menu" />
+          </button>
+        )}
+      </PageHeading>
+      {(manageable || data.can_designate_manager) && (
+        <FloatingAction label="办理资金事项" onClick={() => setActionsOpen(true)} />
+      )}
       <ErrorMessage error={resource.error || budgets.error || flow.error || ledger.error || store.error} />
       <LabField label="资金项目">
         <select value={project} onChange={(e) => setProject(e.target.value)}>
           <option value="">实验室全部资金</option>
-          {data.projects
+          {overview.projects
             .filter((row) => deleted || !row.deleted)
             .map((row) => (
               <option key={row.id} value={row.id}>
                 {row.name}
-                {row.deleted ? " · 已删除" : ""}
+                {row.deleted ? " · 已删除" : row.is_lead ? " · 负责人" : ""}
               </option>
             ))}
         </select>
       </LabField>
-      <div className="lab-actions">
-        {manageable && (
-          <Button variant="primary" onClick={() => setActionsOpen(true)}>
-            办理资金事项
-          </Button>
-        )}
-        {lead && <Button onClick={() => open("vc-stage", { project_id: project })}>设置 VC 预算</Button>}
-        {project && lead && <Button onClick={() => setFormula(true)}>奖励公式</Button>}
-        {manageable && <Button onClick={() => setForecast(true)}>创建参考预测</Button>}
-        {data.can_designate_manager && <Button onClick={() => open("manager")}>指定公共资金管理员</Button>}
-        <label>
-          <input type="checkbox" checked={deleted} onChange={(e) => setDeleted(e.target.checked)} />
-          查看已删除预算
-        </label>
-      </div>
-      <div className="lab-grid">
-        {data.public_summary?.map((row) => (
-          <article className="lab-card" key={row.kind}>
-            <span className="lab-muted">{row.label}</span>
-            <strong className="lab-amount-total">¥{row.available}</strong>
-            <KeyValues values={{ 实际余额: row.balance, 已安排: row.committed }} />
-          </article>
-        ))}
-      </div>
-      <details open>
-        <summary>项目 VC 预算</summary>
-        {budgets.data
-          ?.filter((row) => (!project || row.project_id === project) && (deleted || !row.deleted))
-          .map((row) => (
-            <article className="lab-card" key={row.project_id}>
-              <h3>{row.project}</h3>
-              <KeyValues
-                values={{
-                  预算: row.budget,
-                  已占用: row.reserved,
-                  可用: row.available,
-                  状态: row.deleted ? "已删除" : row.configured ? "已配置" : "尚未配置",
-                }}
-              />
-              <div className="lab-actions">
-                {row.can_delete && (
-                  <Button
-                    onClick={() =>
-                      setDeletion({
-                        kind: "stage",
-                        id: row.stage_id!,
-                        name: row.stage_name ?? row.project,
-                        blockedReason: row.delete_reason ?? undefined,
-                      })
-                    }
-                  >
-                    删除阶段预算
-                  </Button>
-                )}
-                {row.can_restore && (
-                  <Button onClick={() => open("stage-restore", { stage_id: row.stage_id! })}>恢复预算</Button>
-                )}
-              </div>
-            </article>
-          ))}
-      </details>
       <Tabs items={tabs} value={tab} onChange={setTab} />
-      {records.map((row) => {
-        const record = row as {
-          id?: string;
-          stage_id?: string;
-          name?: string;
-          source?: string;
-          gross?: string;
-          can_manage?: boolean;
-          can_delete?: boolean;
-          can_restore?: boolean;
-          delete_reason?: string;
-          deleted?: boolean;
-          cancelled?: boolean;
-          reversed?: boolean;
-        };
-        if (record.deleted && !deleted) return null;
-        return (
-          <article key={record.id} className="lab-card">
-            <KeyValues values={recordValues(row)} />
-            <div className="lab-actions">
-              {tab === "batches" && record.can_delete && (
-                <Button
-                  onClick={() =>
-                    setDeletion({
-                      kind: "receipt",
-                      id: record.id!,
-                      name: record.source ?? "到账记录",
-                      amount: record.gross,
-                      blockedReason: record.delete_reason,
-                    })
-                  }
-                >
-                  删除到账
-                </Button>
-              )}
-              {tab === "stages" && record.can_delete && (
-                <Button
-                  onClick={() =>
-                    setDeletion({
-                      kind: "stage",
-                      id: record.stage_id!,
-                      name: record.name ?? "阶段预算",
-                      blockedReason: record.delete_reason,
-                    })
-                  }
-                >
-                  删除预算
-                </Button>
-              )}
-              {tab === "stages" && record.can_restore && (
-                <Button onClick={() => open("stage-restore", { stage_id: record.stage_id! })}>恢复预算</Button>
-              )}
-              {tab === "settlements" && record.can_manage && (
-                <Button onClick={() => open("commit", { settlement_id: record.id! })}>安排支付</Button>
-              )}
-              {tab === "public_awards" && record.can_manage && (
-                <Button onClick={() => open("public-commit", { award_id: record.id! })}>安排公共支付</Button>
-              )}
-              {["commitments", "public_commitments"].includes(tab) && record.can_manage && !record.cancelled && (
-                <>
-                  <Button
-                    onClick={() =>
-                      open(tab === "commitments" ? "payment" : "public-payment", { commitment_id: record.id! })
-                    }
-                  >
-                    登记线下支付
-                  </Button>
-                  <Button
-                    onClick={() =>
-                      open(tab === "commitments" ? "cancel-commit" : "public-cancel-commit", {
-                        commitment_id: record.id!,
-                      })
-                    }
-                  >
-                    取消未付安排
-                  </Button>
-                </>
-              )}
-              {tab === "operations" && record.can_manage && !record.reversed && (
-                <Button onClick={() => open("reverse", { operation_id: record.id! })}>冲正</Button>
-              )}
+      {tab === "accounts" && (
+        <>
+          <div className="lab-hero">
+            <span>实际到账</span>
+            <strong>¥{sumAmount(activeBatches.map((row) => row.gross))}</strong>
+            <div className="lab-hero-details">
+              <p>累计核准 D ¥{sumAmount(activeBatches.map((row) => row.D))}</p>
+              <span className="lab-badge">{activeBatches.length} 笔到账</span>
             </div>
-          </article>
-        );
-      })}
-      {Array.isArray(group) && !records.length && <Empty />}
+          </div>
+          <div className="lab-stats two">
+            <div className="lab-stat">
+              <span>可用执行奖励</span>
+              <strong>¥{sumAmount(executionAccounts.map((row) => row.available))}</strong>
+            </div>
+            <div className="lab-stat">
+              <span>已安排支付</span>
+              <strong>¥{sumAmount(executionAccounts.map((row) => row.committed))}</strong>
+            </div>
+          </div>
+          <div className="lab-section-heading">
+            <h3>项目 VC 预算</h3>
+          </div>
+          {currentBudgets.map((row) => {
+            const stageBounties = new Set(
+              store.bounties.filter((bounty) => bounty.stage_id === row.stage_id).map((bounty) => bounty.id)
+            );
+            const awarded = ledger.data
+              ? sumAmount(ledger.data.filter((entry) => stageBounties.has(entry.bounty_id)).map((entry) => entry.delta))
+              : null;
+            const unawarded =
+              row.reserved && awarded
+                ? labDecimalText((labDecimalUnits(row.reserved) ?? 0n) - (labDecimalUnits(awarded) ?? 0n))
+                : null;
+            return (
+              <section key={row.project_id}>
+                {!project && <h3>{row.project}</h3>}
+                <div className="lab-stats two">
+                  {[
+                    { label: "当前预算", value: row.budget },
+                    { label: "占用未授予", value: unawarded },
+                    { label: "已授予净额", value: awarded },
+                    { label: "未占用", value: row.available },
+                  ].map((stat) => (
+                    <div className="lab-stat" key={stat.label}>
+                      <span>{stat.label}</span>
+                      <strong>
+                        {stat.value ?? "—"}
+                        {stat.value !== null && stat.value !== undefined ? " VC" : ""}
+                      </strong>
+                    </div>
+                  ))}
+                </div>
+                {overview.projects.some((entry) => entry.id === row.project_id && entry.is_lead && !entry.deleted) && (
+                  <Button onClick={() => open("vc-stage", { project_id: row.project_id })}>设置 VC 预算</Button>
+                )}
+                {(row.can_delete || row.can_restore) && (
+                  <details className="lab-disclosure">
+                    <summary>阶段预算管理</summary>
+                    {row.can_delete && (
+                      <Button
+                        onClick={() =>
+                          setDeletion({
+                            kind: "stage",
+                            id: row.stage_id!,
+                            name: row.stage_name ?? row.project,
+                            blockedReason: row.delete_reason ?? undefined,
+                          })
+                        }
+                      >
+                        删除阶段预算
+                      </Button>
+                    )}
+                    {row.can_restore && (
+                      <Button onClick={() => open("stage-restore", { stage_id: row.stage_id! })}>恢复预算</Button>
+                    )}
+                  </details>
+                )}
+              </section>
+            );
+          })}
+          {recordSection("accounts", "真实账户余额")}
+          {overview.public_summary?.length ? (
+            <section>
+              <h3 className="lab-section-heading">公共资金余额</h3>
+              <div className="lab-stats two">
+                {overview.public_summary.map((row) => (
+                  <div className="lab-stat" key={row.kind}>
+                    <span>{row.label}</span>
+                    <strong>¥{row.available}</strong>
+                  </div>
+                ))}
+              </div>
+            </section>
+          ) : null}
+          {recordSection("batches", "实际到账与准备金明细")}
+        </>
+      )}
+      {tab === "stages" && (
+        <>
+          {recordSection("stages", "负责人事前阶段预算")}
+          {overview.stages
+            .filter((stage) => deleted || !stage.deleted)
+            .map((stage) => (
+              <section key={stage.id}>
+                <h3 className="lab-section-heading">{stage.name} · 冻结参数</h3>
+                <KeyValues
+                  values={Object.fromEntries(stage.purposes.map((purpose) => [purpose.name, `¥${purpose.amount}`]))}
+                />
+                {stage.members.map((member) => (
+                  <article className="lab-card" key={member.user_id}>
+                    <h3>{overview.members.find((person) => person.id === member.user_id)?.name ?? "成员"}</h3>
+                    <KeyValues values={{ "计划 VC": member.planned_vc, b: member.b, r: member.r }} />
+                  </article>
+                ))}
+                {stage.history.length ? (
+                  <>
+                    <h3 className="lab-section-heading">历史资格</h3>
+                    {stage.history.map((member) => (
+                      <KeyValues
+                        key={member.user_id}
+                        values={{
+                          成员: overview.members.find((person) => person.id === member.user_id)?.name ?? "成员",
+                          份额: member.share,
+                          形成日期: member.qualified_at,
+                          依据: member.basis,
+                        }}
+                      />
+                    ))}
+                  </>
+                ) : null}
+              </section>
+            ))}
+          {recordSection("forecasts", "参考预测及公式快照")}
+          <div className="lab-actions">
+            {project && lead && <Button onClick={() => setFormula(true)}>项目奖励公式</Button>}
+            {manageable && <Button onClick={() => setForecast("task")}>新增参考预测</Button>}
+            {manageable && (
+              <Button onClick={() => open("stage", project ? { project_id: project } : undefined)}>
+                冻结阶段奖励预算
+              </Button>
+            )}
+          </div>
+        </>
+      )}
+      {tab === "settlements" && (
+        <>
+          {recordSection("settlements", "累计最终核准与参考差异")}
+          {recordSection("commitments", "现金承诺与支付安排")}
+          {recordSection("public_awards", "公共职责月度固定奖励")}
+          {recordSection("public_commitments", "公共职责支付安排")}
+          {recordSection("payments", "线下付款与扣缴记录")}
+          {recordSection("public_payments", "公共职责实付与扣缴")}
+        </>
+      )}
+      {tab === "entries" && (
+        <>
+          {recordSection("entries", "账目明细")}
+          {recordSection("operations", "操作依据与追加更正")}
+        </>
+      )}
+      {["accounts", "stages"].includes(tab) && (
+        <label className="lab-switch-field">
+          <span>显示已删除记录</span>
+          <input type="checkbox" checked={deleted} onChange={(e) => setDeleted(e.target.checked)} />
+        </label>
+      )}
       {tab === "workflow" && flow.data && (
         <>
           <h3>{flow.data.title}</h3>
@@ -475,11 +718,91 @@ export function Finance({
       )}
       {actionsOpen && (
         <LabDialog title="办理资金事项" onClose={() => setActionsOpen(false)}>
-          {actions.map((action) => (
-            <Button key={action} onClick={() => open(action, project ? { project_id: project } : undefined)}>
-              {financeActionLabels[action] ?? action}
-            </Button>
-          ))}
+          <div className="lab-action-list">
+            <button
+              type="button"
+              className="lab-action-row"
+              onClick={() => {
+                setActionsOpen(false);
+                void refresh().catch(() => {});
+              }}
+            >
+              刷新<span aria-hidden>›</span>
+            </button>
+          </div>
+          {actionGroups.map((group) => {
+            const available = group.actions.filter(
+              (action) =>
+                (manageable && actions.has(action)) ||
+                (action === "vc-stage" && lead) ||
+                (action === "formula" && !!project && lead) ||
+                (["forecast-task", "forecast-member"].includes(action) && manageable) ||
+                (action === "delete" && deletable.length > 0) ||
+                (action === "manager" && data.can_designate_manager) ||
+                (["stage-restore", "project-restore"].includes(action) && manageable)
+            );
+            if (!available.length) return null;
+            return (
+              <section key={group.title}>
+                <h3 className="lab-section-heading">{group.title}</h3>
+                <div className="lab-action-list">
+                  {available.map((action) => (
+                    <button
+                      className="lab-action-row"
+                      key={action}
+                      onClick={() => {
+                        if (action === "formula") {
+                          setActionsOpen(false);
+                          setFormula(true);
+                        } else if (action === "forecast-task" || action === "forecast-member") {
+                          setActionsOpen(false);
+                          setForecast(action === "forecast-task" ? "task" : "member");
+                        } else if (action === "delete") {
+                          setActionsOpen(false);
+                          setDeletePickerOpen(true);
+                        } else open(action, project ? { project_id: project } : undefined);
+                      }}
+                    >
+                      <span>
+                        {action === "formula"
+                          ? "项目奖励公式"
+                          : action === "forecast-task"
+                            ? "任务预计奖励"
+                            : action === "forecast-member"
+                              ? "成员阶段预计奖励"
+                              : action === "delete"
+                                ? "删除到账／阶段／资金项目"
+                                : (financeActionLabels[action] ?? action)}
+                      </span>
+                      <span aria-hidden>›</span>
+                    </button>
+                  ))}
+                </div>
+              </section>
+            );
+          })}
+        </LabDialog>
+      )}
+      {deletePickerOpen && (
+        <LabDialog title="选择删除记录" onClose={() => setDeletePickerOpen(false)}>
+          <div className="lab-action-list">
+            {deletable.map((row) => (
+              <button
+                className="lab-action-row"
+                key={`${row.kind}-${row.id}`}
+                onClick={() => {
+                  setDeletePickerOpen(false);
+                  setDeletion(row);
+                }}
+              >
+                <span>
+                  {row.kind === "receipt" ? "到账" : row.kind === "stage" ? "阶段预算" : "资金项目"} · {row.name}
+                </span>
+                <span aria-hidden>›</span>
+              </button>
+            ))}
+          </div>
+          {!deletable.length && <Empty>暂无可删除的资金记录。</Empty>}
         </LabDialog>
       )}
       {chosen && (
@@ -500,7 +823,8 @@ export function Finance({
           store={store}
           data={data}
           projectId={project}
-          onClose={() => setForecast(false)}
+          initialKind={forecast}
+          onClose={() => setForecast(undefined)}
           onSaved={refresh}
         />
       )}

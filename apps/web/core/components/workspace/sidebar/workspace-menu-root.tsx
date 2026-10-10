@@ -8,7 +8,7 @@ import { Fragment, useState, useEffect } from "react";
 import { observer } from "mobx-react";
 import Link from "next/link";
 // icons
-import { CirclePlus, LogOut, Mails } from "lucide-react";
+import { CirclePlus, LogOut } from "lucide-react";
 // ui
 import { Menu, Transition } from "@headlessui/react";
 // plane imports
@@ -198,16 +198,6 @@ export const WorkspaceMenuRoot = observer(function WorkspaceMenuRoot(props: Work
                         </Menu.Item>
                       </Link>
                     )}
-
-                    <Link href="/invitations" className="w-full" onClick={handleItemClick}>
-                      <Menu.Item
-                        as="div"
-                        className="flex items-center gap-2 rounded-sm px-2 py-1 text-13 font-medium text-secondary hover:bg-layer-transparent-hover"
-                      >
-                        <Mails className="h-4 w-4 flex-shrink-0" />
-                        {t("workspace_invites")}
-                      </Menu.Item>
-                    </Link>
 
                     <div className="w-full">
                       <Menu.Item

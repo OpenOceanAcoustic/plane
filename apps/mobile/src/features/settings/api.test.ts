@@ -12,41 +12,6 @@ describe("mobile settings public HTTP contracts", () => {
       parseThemeConfiguration('{"primary":"#006B9E","background":"#ffffff","darkPalette":"false"}')
     ).toThrow();
   });
-  it("sends workspace invitations with backend roles and normalized email", async () => {
-    const requests: RequestData[] = [];
-    const transport: Transport = {
-      async request(request) {
-        requests.push(request);
-        return { status: 200, data: request.path.includes("csrf") ? { csrf_token: "token" } : {}, headers: {} };
-      },
-      async clearSession() {},
-    };
-    const api = new SettingsApi(new ApiClient("http://example.test", transport));
-    await api.invite("research", " Member@Example.test ", "15");
-    expect(requests.at(-1)).toMatchObject({
-      path: "/api/workspaces/research/invitations/",
-      method: "POST",
-      data: { emails: [{ email: "member@example.test", role: 15 }] },
-      headers: { "X-CSRFToken": "token" },
-    });
-  });
-  it("uses the independent mobile administrator login and refreshes rotated CSRF", async () => {
-    const requests: RequestData[] = [];
-    const transport: Transport = {
-      async request(request) {
-        requests.push(request);
-        return { status: 200, data: request.path.includes("csrf") ? { csrf_token: "token" } : {}, headers: {} };
-      },
-      async clearSession() {},
-    };
-    await new SettingsApi(new ApiClient("https://example.test", transport)).adminLogin("admin", "123456");
-    expect(requests.map((request) => request.path)).toEqual([
-      "/auth/get-csrf-token/",
-      "/auth/lab/mobile/admin/sign-in/",
-      "/auth/get-csrf-token/",
-    ]);
-    expect(requests[1].data).toEqual({ username: "admin", code: "123456" });
-  });
   it("restricts settings management to backend administrator roles", () => {
     expect(canManage(20)).toBe(true);
     expect(canManage(15)).toBe(false);

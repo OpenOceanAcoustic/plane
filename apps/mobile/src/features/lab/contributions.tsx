@@ -1,5 +1,6 @@
 /** Copyright (c) 2026 OpenOceanAcoustic and contributors. SPDX-License-Identifier: AGPL-3.0-only */
 import { useState, useRef } from "react";
+import { PageHeading } from "../../components/ui";
 import type { LabContributionsSummary, LabContributionsCalendar, LabContributionsEntries } from "@plane/types";
 import type { LabStore } from "./transport";
 import { useResource } from "./transport";
@@ -61,19 +62,29 @@ export function Contributions({
   };
   return (
     <>
-      <div className="lab-heading">
-        <h2>我的项目与 VC</h2>
+      <PageHeading title="我的项目与 VC">
         <Button onClick={() => void refresh().catch(() => {})}>刷新</Button>
-      </div>
+      </PageHeading>
       <ErrorMessage error={summary.error || calendar.error || entries.error || error} />
       {summary.data && (
-        <section className="lab-card">
-          <span className="lab-muted">累计有效贡献 VC</span>
-          <strong className="lab-amount-total">{summary.data.totals.net}</strong>
-          <KeyValues values={{ 累计获得: summary.data.totals.earned, 已冲正: summary.data.totals.reversed }} />
-        </section>
+        <>
+          <div className="lab-hero">
+            <span>累计有效贡献 VC</span>
+            <strong>{summary.data.totals.net} VC</strong>
+          </div>
+          <div className="lab-stats two">
+            <div className="lab-stat">
+              <span>累计获得</span>
+              <strong>{summary.data.totals.earned} VC</strong>
+            </div>
+            <div className="lab-stat">
+              <span>已冲正</span>
+              <strong>{summary.data.totals.reversed} VC</strong>
+            </div>
+          </div>
+        </>
       )}
-      <h3>我参与的项目</h3>
+      <h3 className="lab-section-heading">我参与的项目</h3>
       {summary.data?.projects.map((row) => (
         <article className="lab-card" key={row.id}>
           <h3>{row.name}</h3>
@@ -83,7 +94,11 @@ export function Contributions({
               .join(" · ")}
             {row.historical ? " · 历史项目" : ""}
           </p>
-          <KeyValues values={{ 获得VC: row.earned, 冲正VC: row.reversed, 有效VC: row.net }} />
+          <div className="lab-card-meta">
+            <span>有效 {row.net} VC</span>
+            <span>获得 {row.earned} VC</span>
+            <span>冲正 {row.reversed} VC</span>
+          </div>
           <div className="lab-actions">
             <Button
               onClick={() => {
@@ -98,7 +113,8 @@ export function Contributions({
         </article>
       ))}
       {summary.data && !summary.data.projects.length && <Empty>尚无项目参与记录。</Empty>}
-      <div className="lab-grid">
+      <h3 className="lab-section-heading">贡献日历</h3>
+      <div className="lab-form-fields">
         <LabField label="贡献月份">
           <input
             type="month"
@@ -128,13 +144,18 @@ export function Contributions({
         </LabField>
       </div>
       {calendar.data && (
-        <KeyValues
-          values={{
-            本月获得: calendar.data.totals.earned,
-            本月冲正: calendar.data.totals.reversed,
-            本月有效: calendar.data.totals.net,
-          }}
-        />
+        <div className="lab-stats">
+          {[
+            ["本月获得", calendar.data.totals.earned],
+            ["本月冲正", calendar.data.totals.reversed],
+            ["本月有效", calendar.data.totals.net],
+          ].map(([label, value]) => (
+            <div className="lab-stat" key={label}>
+              <span>{label}</span>
+              <strong>{value}</strong>
+            </div>
+          ))}
+        </div>
       )}
       <div className="lab-month">
         {["一", "二", "三", "四", "五", "六", "日"].map((label) => (
@@ -149,8 +170,7 @@ export function Contributions({
           return (
             <button
               key={date}
-              className={day === date ? "active" : ""}
-              style={values.length ? { background: "var(--soft,#eef6f2)" } : undefined}
+              className={`${day === date ? "active" : ""} ${values.length ? "marked" : ""}`}
               aria-label={`${date} ${net} VC`}
               onClick={() => setDay(day === date ? "" : date)}
             >
@@ -160,7 +180,7 @@ export function Contributions({
           );
         })}
       </div>
-      <div className="lab-heading">
+      <div className="lab-section-heading">
         <h3>{day || "本月"}贡献记录</h3>
         {day && <Button onClick={() => setDay("")}>查看整月</Button>}
       </div>

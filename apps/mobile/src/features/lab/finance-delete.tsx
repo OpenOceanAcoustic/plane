@@ -64,10 +64,12 @@ export function LabFinanceDeleteDialog({
         }
       }}
     >
-      <p className="text-14 font-medium">
-        {target.name}
-        {target.amount !== undefined ? ` · ¥${target.amount}` : ""}
-      </p>
+      <article className="lab-card">
+        <h3>
+          {target.name}
+          {target.amount !== undefined ? ` · ¥${target.amount}` : ""}
+        </h3>
+      </article>
       <LabField label="删除原因">
         <textarea name="reason" required rows={2} readOnly={applied} className={labInputClass} />
       </LabField>

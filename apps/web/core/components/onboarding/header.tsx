@@ -20,11 +20,10 @@ import { SwitchAccountDropdown } from "./switch-account-dropdown";
 type OnboardingHeaderProps = {
   currentStep: EOnboardingSteps;
   updateCurrentStep: (step: EOnboardingSteps) => void;
-  hasInvitations: boolean;
 };
 
 export const OnboardingHeader = observer(function OnboardingHeader(props: OnboardingHeaderProps) {
-  const { currentStep, updateCurrentStep, hasInvitations } = props;
+  const { currentStep, updateCurrentStep } = props;
   // store hooks
   const { data: user } = useUser();
   const { config: instanceConfig } = useInstance();
@@ -48,13 +47,11 @@ export const OnboardingHeader = observer(function OnboardingHeader(props: Onboar
   // can go back
   const canGoBack = ![EOnboardingSteps.PROFILE_SETUP, EOnboardingSteps.INVITE_MEMBERS].includes(currentStep);
 
-  // step order for progress tracking — include INVITE_MEMBERS if user is currently on it
-  const showInviteStep = !hasInvitations || currentStep === EOnboardingSteps.INVITE_MEMBERS;
+  // step order for progress tracking
   const stepOrder: TOnboardingStep[] = [
     EOnboardingSteps.PROFILE_SETUP,
     ...(isSelfManaged ? [] : [EOnboardingSteps.ROLE_SETUP, EOnboardingSteps.USE_CASE_SETUP]),
     EOnboardingSteps.WORKSPACE_CREATE_OR_JOIN,
-    ...(showInviteStep ? [EOnboardingSteps.INVITE_MEMBERS] : []),
   ];
 
   // derived values

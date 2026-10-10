@@ -1,3 +1,5 @@
+// oxlint-disable-next-line import/no-unassigned-import -- mobile settings presentation
+import "./settings.css";
 import { useEffect, useMemo, useState } from "react";
 import {
   ActionButton,
@@ -12,16 +14,15 @@ import {
   type Entity,
   type FormField,
 } from "../../components/ui";
-import { ApiClient } from "../../lib/client";
+import type { ApiClient } from "../../lib/client";
 import { canManage, roleName, roleOptions, SettingsApi, stateOptions } from "./api";
 import { SettingsImage } from "./assets";
 import { ApiTokenSettings, PreferencesSettings, type ThemeChange } from "./preferences";
 import { ProjectAutomations, ProjectEstimates, ProjectFeatures } from "./project-options";
 import { WebhookSettings } from "./webhooks";
-import { AdminReauthentication } from "./admin-reauthentication";
 
 type Props = {
-  section: "personal" | "workspace" | "project" | "admin";
+  section: "personal" | "workspace" | "project";
   workspaceSlug: string;
   projectId?: string;
   client: ApiClient;
@@ -69,136 +70,187 @@ function PersonalSettings({
 }: Pick<Props, "client" | "onServerChange" | "onLogout" | "onThemeChange">) {
   const profile = useData<Entity>(client, "/api/users/me/");
   const preferences = useData<Entity>(client, "/api/users/me/notification-preferences/");
-  const [editor, setEditor] = useState<Editor>();
+  const [tab, setTab] = useState("profile");
+  const [assets, setAssets] = useState(false);
   const [confirmation, setConfirmation] = useState<Confirmation>();
   const [preferenceError, setPreferenceError] = useState<unknown>();
+  const [saveError, setSaveError] = useState<unknown>();
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
   const api = useMemo(() => new SettingsApi(client), [client]);
-  const fields: FormField[] = [
-    { key: "display_name", label: "显示名称", required: true },
-    { key: "first_name", label: "名" },
-    { key: "last_name", label: "姓" },
-    { key: "user_timezone", label: "时区", placeholder: "Asia/Shanghai" },
-  ];
+  const name = textValue(profile.data?.display_name ?? profile.data?.username);
   return (
     <>
-      <PageHeading title="个人设置" />
-      {profile.loading ? (
-        <Loading />
-      ) : (
-        profile.data && (
-          <article className="card">
-            <h2>{textValue(profile.data.display_name ?? profile.data.username)}</h2>
-            <SettingsImage
-              client={client}
-              title="头像"
-              source={profile.data.avatar_url}
-              path="/api/assets/v2/user-assets/"
-              entityType="USER_AVATAR"
-              refresh={profile.refresh}
-            />
-            <SettingsImage
-              client={client}
-              title="封面"
-              source={profile.data.cover_image_url}
-              path="/api/assets/v2/user-assets/"
-              entityType="USER_COVER"
-              refresh={profile.refresh}
-            />
-            <dl className="record-fields">
-              <div>
-                <dt>用户名</dt>
-                <dd>{textValue(profile.data.username)}</dd>
-              </div>
-              <div>
-                <dt>邮箱</dt>
-                <dd>{textValue(profile.data.email)}</dd>
-              </div>
-              <div>
-                <dt>时区</dt>
-                <dd>{textValue(profile.data.user_timezone)}</dd>
-              </div>
-            </dl>
-            <button
-              className="button"
-              onClick={() =>
-                setEditor({
-                  title: "编辑个人资料",
-                  fields: fields.map((field) => Object.assign({}, field, { value: profile.data?.[field.key] })),
-                  submit: async (values) => {
-                    await api.updatePersonal(values);
-                    await profile.refresh();
-                  },
-                })
-              }
-            >
-              编辑个人资料
-            </button>
-          </article>
-        )
-      )}
+      <PageHeading title={tab === "profile" ? "个人资料" : "个人设置"} />
+      <div className="settings-tabs" role="tablist">
+        {[
+          { id: "profile", name: "个人资料" },
+          { id: "preferences", name: "偏好与主题" },
+          { id: "notifications", name: "通知" },
+          { id: "tokens", name: "API 令牌" },
+          { id: "connection", name: "连接" },
+        ].map((row) => (
+          <button
+            type="button"
+            role="tab"
+            aria-selected={row.id === tab}
+            className={row.id === tab ? "active" : ""}
+            key={row.id}
+            onClick={() => setTab(row.id)}
+          >
+            {row.name}
+          </button>
+        ))}
+      </div>
       <ErrorMessage error={profile.error} />
-      <PreferencesSettings client={client} onThemeChange={onThemeChange} />
-      {preferences.data && (
-        <article className="card">
-          <h2>通知偏好</h2>
-          {Object.entries(preferences.data)
-            .filter(([, value]) => typeof value === "boolean")
-            .map(([key, value]) => (
-              <label className="field" key={key}>
-                <span>{notificationLabels[key] ?? key}</span>
-                <input
-                  type="checkbox"
-                  checked={Boolean(value)}
-                  onChange={async (event) => {
-                    try {
-                      await client.request("/api/users/me/notification-preferences/", "PATCH", {
-                        [key]: event.target.checked,
-                      });
-                      await preferences.refresh();
-                    } catch (error) {
-                      setPreferenceError(error);
-                    }
-                  }}
-                />
-              </label>
-            ))}
+      {tab === "profile" &&
+        (profile.loading ? (
+          <Loading />
+        ) : (
+          profile.data && (
+            <>
+              <button className="person-card card settings-person" onClick={() => setAssets(true)}>
+                <span className="profile-avatar">{name.slice(0, 1)}</span>
+                <div className="card-body">
+                  <h3>{name}</h3>
+                  <p className="secondary">{textValue(profile.data.email)}</p>
+                  <div className="card-meta">
+                    <span>头像 · 封面</span>
+                  </div>
+                </div>
+              </button>
+              <form
+                className="settings-profile-form"
+                onSubmit={async (event) => {
+                  event.preventDefault();
+                  if (saving) return;
+                  setSaving(true);
+                  setSaveError(undefined);
+                  setSaved(false);
+                  const data = new FormData(event.currentTarget);
+                  try {
+                    await api.updatePersonal(
+                      Object.fromEntries(
+                        ["first_name", "last_name", "display_name"].map((key) => [
+                          key,
+                          String(data.get(key) ?? "").trim(),
+                        ])
+                      )
+                    );
+                    await profile.refresh();
+                    setSaved(true);
+                  } catch (error) {
+                    setSaveError(error);
+                  } finally {
+                    setSaving(false);
+                  }
+                }}
+              >
+                <label className="field">
+                  <span>名字</span>
+                  <input name="first_name" defaultValue={String(profile.data.first_name ?? "")} />
+                </label>
+                <label className="field">
+                  <span>姓氏</span>
+                  <input name="last_name" defaultValue={String(profile.data.last_name ?? "")} />
+                </label>
+                <label className="field">
+                  <span>显示名称 *</span>
+                  <input name="display_name" required defaultValue={String(profile.data.display_name ?? "")} />
+                </label>
+                <ErrorMessage error={saveError} />
+                {saved && (
+                  <p className="muted" role="status">
+                    已保存
+                  </p>
+                )}
+                <button className="button primary" disabled={saving}>
+                  {saving ? "正在保存…" : "保存"}
+                </button>
+              </form>
+              <button className="button" onClick={() => setAssets(true)}>
+                更换头像
+              </button>
+              <button
+                className="button"
+                onClick={() =>
+                  setConfirmation({
+                    title: "停用账号？",
+                    action: async () => {
+                      await client.request("/api/users/me/", "DELETE");
+                      await onLogout();
+                    },
+                  })
+                }
+              >
+                停用账号
+              </button>
+            </>
+          )
+        ))}
+      {tab === "preferences" && <PreferencesSettings client={client} onThemeChange={onThemeChange} />}
+      {tab === "notifications" && (
+        <>
+          <h2 className="section-label">通知偏好</h2>
+          <ErrorMessage error={preferences.error} />
+          {preferences.loading && <Loading />}
+          {preferences.data &&
+            Object.entries(preferences.data)
+              .filter(([, value]) => typeof value === "boolean")
+              .map(([key, value]) => (
+                <label className="settings-switch-row" key={key}>
+                  <span>{notificationLabels[key] ?? key}</span>
+                  <input
+                    type="checkbox"
+                    checked={Boolean(value)}
+                    onChange={async (event) => {
+                      try {
+                        await client.request("/api/users/me/notification-preferences/", "PATCH", {
+                          [key]: event.target.checked,
+                        });
+                        await preferences.refresh();
+                      } catch (error) {
+                        setPreferenceError(error);
+                      }
+                    }}
+                  />
+                </label>
+              ))}
           <ErrorMessage error={preferenceError} />
-        </article>
+        </>
       )}
-      <article className="card">
-        <h2>连接</h2>
-        <p className="value">{client.server}</p>
-        <button className="button" onClick={onServerChange}>
-          切换服务器
-        </button>
-        <ActionButton action={async () => onLogout()}>退出登录</ActionButton>
-      </article>
-      <ApiTokenSettings client={client} />
-      <article className="card">
-        <h2>账号</h2>
-        <button
-          className="button danger"
-          onClick={() =>
-            setConfirmation({
-              title: "停用账号？操作会退出当前登录。",
-              action: async () => {
-                await client.request("/api/users/me/", "DELETE");
-                await onLogout();
-              },
-            })
-          }
-        >
-          停用账号
-        </button>
-      </article>
-      <SettingsForms
-        editor={editor}
-        confirmation={confirmation}
-        close={() => {
-          setEditor(undefined);
-          setConfirmation(undefined);
-        }}
-      />
+      {tab === "tokens" && <ApiTokenSettings client={client} />}
+      {tab === "connection" && (
+        <>
+          <h2 className="section-label">服务器</h2>
+          <p className="value">{client.server}</p>
+          <button className="button" onClick={onServerChange}>
+            切换服务器
+          </button>
+          <ActionButton action={async () => onLogout()}>退出登录</ActionButton>
+        </>
+      )}
+      {assets && (
+        <Sheet title="头像与封面" onClose={() => setAssets(false)}>
+          <SettingsImage
+            client={client}
+            title="头像"
+            source={profile.data?.avatar_url}
+            path="/api/assets/v2/user-assets/"
+            entityType="USER_AVATAR"
+            refresh={profile.refresh}
+          />
+          <SettingsImage
+            client={client}
+            title="封面"
+            source={profile.data?.cover_image_url}
+            path="/api/assets/v2/user-assets/"
+            entityType="USER_COVER"
+            refresh={profile.refresh}
+          />
+        </Sheet>
+      )}
+      <SettingsForms confirmation={confirmation} close={() => setConfirmation(undefined)} />
     </>
   );
 }
@@ -222,12 +274,10 @@ function WorkspaceSettings({
   const me = useData<Entity>(client, workspaceSlug ? `${base}workspace-members/me/` : null);
   const members = useData(client, workspaceSlug ? `${base}members/` : null);
   const manage = canManage(me.data?.role);
-  const invitations = useData(client, workspaceSlug && manage ? `${base}invitations/` : null);
   const [tab, setTab] = useState("general");
   const [memberSearch, setMemberSearch] = useState("");
   const [editor, setEditor] = useState<Editor>();
   const [confirmation, setConfirmation] = useState<Confirmation>();
-  const api = useMemo(() => new SettingsApi(client), [client]);
   const close = () => {
     setEditor(undefined);
     setConfirmation(undefined);
@@ -260,12 +310,7 @@ function WorkspaceSettings({
         {[
           { key: "general", title: "基本信息" },
           { key: "members", title: "成员" },
-          ...(manage
-            ? [
-                { key: "invites", title: "邀请" },
-                { key: "webhooks", title: "Webhooks" },
-              ]
-            : []),
+          ...(manage ? [{ key: "webhooks", title: "Webhooks" }] : []),
         ].map((item) => (
           <button className={tab === item.key ? "active" : ""} key={item.key} onClick={() => setTab(item.key)}>
             {item.title}
@@ -416,53 +461,6 @@ function WorkspaceSettings({
         </>
       )}
       {tab === "webhooks" && manage && <WebhookSettings client={client} workspaceSlug={workspaceSlug} />}
-      {tab === "invites" && (
-        <>
-          <button
-            className="button primary"
-            onClick={() =>
-              setEditor({
-                title: "邀请成员",
-                fields: [
-                  { key: "email", label: "邮箱", type: "email", required: true },
-                  { key: "role", label: "角色", type: "select", options: roleOptions, value: "15", required: true },
-                ],
-                submit: async (values) => {
-                  await api.invite(workspaceSlug, values.email, values.role);
-                  await invitations.refresh();
-                },
-              })
-            }
-          >
-            邀请成员
-          </button>
-          <div className="list">
-            {records(invitations.data).map((invitation) => (
-              <article className="card" key={invitation.id}>
-                <h3>{textValue(invitation.email)}</h3>
-                <p>
-                  {roleName(invitation.role)} · {invitation.accepted ? "已加入" : "待加入"}
-                </p>
-                <button
-                  className="button danger"
-                  onClick={() =>
-                    setConfirmation({
-                      title: "撤回邀请？",
-                      action: async () => {
-                        await client.request(`${base}invitations/${invitation.id}/`, "DELETE");
-                        await invitations.refresh();
-                      },
-                    })
-                  }
-                >
-                  撤回邀请
-                </button>
-              </article>
-            ))}
-          </div>
-          <ErrorMessage error={invitations.error} />
-        </>
-      )}
       <ErrorMessage error={workspace.error ?? me.error} />
       <SettingsForms editor={editor} confirmation={confirmation} close={close} />
     </>
@@ -864,307 +862,9 @@ function ProjectSettings({ client, workspaceSlug, projectId }: Pick<Props, "clie
   );
 }
 
-function AdminSettings({ client }: Pick<Props, "client">) {
-  const adminClient = useMemo(() => new ApiClient(client.server), [client.server]);
-  const api = useMemo(() => new SettingsApi(adminClient), [adminClient]);
-  const [logged, setLogged] = useState(false);
-  const [checking, setChecking] = useState(true);
-  const [loginError, setLoginError] = useState<unknown>();
-  const [username, setUsername] = useState("");
-  const [code, setCode] = useState("");
-  const [busy, setBusy] = useState(false);
-  useEffect(() => {
-    let live = true;
-    adminClient.onSessionExpired = () => {
-      if (live) setLogged(false);
-    };
-    void adminClient
-      .request<Entity>("/api/instances/admins/session/")
-      .then((session) => {
-        if (live) setLogged(Boolean(session.is_authenticated));
-        return session;
-      })
-      .catch(() => {})
-      .finally(() => {
-        if (live) setChecking(false);
-      });
-    return () => {
-      live = false;
-    };
-  }, [adminClient]);
-  const instance = useData<Entity>(adminClient, logged ? "/api/instances/" : null);
-  const configs = useData(adminClient, logged ? "/api/instances/configurations/" : null);
-  const admins = useData(adminClient, logged ? "/api/instances/admins/" : null);
-  const [workspacePage, setWorkspacePage] = useState("");
-  const workspaces = useData<Entity>(adminClient, logged ? `/api/instances/workspaces/${workspacePage}` : null);
-  const [tab, setTab] = useState("general");
-  const [editor, setEditor] = useState<Editor>();
-  const [confirmation, setConfirmation] = useState<Confirmation>();
-  const close = () => {
-    setEditor(undefined);
-    setConfirmation(undefined);
-  };
-  if (checking)
-    return (
-      <>
-        <PageHeading title="God Mode" />
-        <Loading />
-      </>
-    );
-  if (!logged)
-    return (
-      <>
-        <PageHeading title="God Mode 登录" />
-        <form
-          className="card"
-          onSubmit={async (event) => {
-            event.preventDefault();
-            if (busy) return;
-            setBusy(true);
-            setLoginError(undefined);
-            try {
-              await api.adminLogin(username, code);
-              await client.refreshCsrf();
-              setCode("");
-              setLogged(true);
-            } catch (error) {
-              setLoginError(error);
-            } finally {
-              setBusy(false);
-            }
-          }}
-        >
-          <label className="field">
-            <span>用户名</span>
-            <input
-              autoComplete="username"
-              value={username}
-              onChange={(event) => setUsername(event.target.value)}
-              required
-            />
-          </label>
-          <label className="field">
-            <span>动态码</span>
-            <input
-              inputMode="numeric"
-              autoComplete="one-time-code"
-              pattern="[0-9]{6}"
-              maxLength={6}
-              value={code}
-              onChange={(event) => setCode(event.target.value)}
-              required
-            />
-          </label>
-          <ErrorMessage error={loginError} />
-          <button className="button primary" disabled={busy}>
-            {busy ? "登录中…" : "登录"}
-          </button>
-        </form>
-      </>
-    );
-  const instanceData = (instance.data?.instance as Entity) ?? {};
-  return (
-    <>
-      <PageHeading title="God Mode">
-        <ActionButton
-          action={async () => {
-            await adminClient.request("/api/instances/admins/sign-out/", "POST", {});
-            await client.refreshCsrf();
-            setLogged(false);
-          }}
-        >
-          退出管理账号
-        </ActionButton>
-      </PageHeading>
-      <nav className="tabs">
-        {[
-          { key: "general", title: "实例" },
-          { key: "config", title: "配置" },
-          { key: "admins", title: "管理员" },
-          { key: "workspaces", title: "工作区" },
-        ].map((item) => (
-          <button key={item.key} className={tab === item.key ? "active" : ""} onClick={() => setTab(item.key)}>
-            {item.title}
-          </button>
-        ))}
-      </nav>
-      {tab === "general" && (
-        <article className="card">
-          <h2>{textValue(instanceData.instance_name)}</h2>
-          <dl className="record-fields">
-            <div>
-              <dt>版本</dt>
-              <dd>{textValue(instanceData.current_version)}</dd>
-            </div>
-            <div>
-              <dt>遥测</dt>
-              <dd>{instanceData.is_telemetry_enabled ? "已开启" : "已关闭"}</dd>
-            </div>
-          </dl>
-          <button
-            className="button"
-            onClick={() =>
-              setEditor({
-                title: "实例设置",
-                fields: [
-                  { key: "instance_name", label: "实例名称", required: true, value: instanceData.instance_name },
-                  {
-                    key: "is_telemetry_enabled",
-                    label: "遥测",
-                    type: "select",
-                    value: String(Boolean(instanceData.is_telemetry_enabled)),
-                    options: [
-                      { value: "true", label: "开启" },
-                      { value: "false", label: "关闭" },
-                    ],
-                  },
-                ],
-                submit: async (values) => {
-                  await adminClient.request("/api/instances/", "PATCH", {
-                    ...values,
-                    is_telemetry_enabled: values.is_telemetry_enabled === "true",
-                  });
-                  await instance.refresh();
-                },
-              })
-            }
-          >
-            编辑实例
-          </button>
-        </article>
-      )}
-      {tab === "config" && (
-        <div className="list">
-          {records(configs.data).map((config) => (
-            <article className="card" key={config.id}>
-              <h3>{textValue(config.key)}</h3>
-              <p className="value">{config.is_encrypted ? "••••••••" : textValue(config.value)}</p>
-              <button
-                className="button"
-                onClick={() =>
-                  setEditor({
-                    title: textValue(config.key),
-                    fields: [
-                      {
-                        key: "value",
-                        label: "值",
-                        type: config.is_encrypted ? "password" : "text",
-                        value: config.is_encrypted ? "" : config.value,
-                      },
-                    ],
-                    submit: async (values) => {
-                      await adminClient.request("/api/instances/configurations/", "PATCH", {
-                        [String(config.key)]: values.value,
-                      });
-                      await configs.refresh();
-                      await instance.refresh();
-                    },
-                  })
-                }
-              >
-                编辑
-              </button>
-            </article>
-          ))}
-        </div>
-      )}
-      {tab === "admins" && (
-        <div className="list">
-          {records(admins.data).map((admin) => (
-            <article className="card" key={admin.id}>
-              <h3>{textValue(admin.user_detail)}</h3>
-              <p>{roleName(admin.role)}</p>
-              <button
-                className="button danger"
-                onClick={() =>
-                  setConfirmation({
-                    title: "移除管理员？",
-                    action: async () => {
-                      await adminClient.request(`/api/instances/admins/${admin.id}/`, "DELETE");
-                      await admins.refresh();
-                    },
-                  })
-                }
-              >
-                移除管理员
-              </button>
-            </article>
-          ))}
-        </div>
-      )}
-      {tab === "workspaces" && (
-        <>
-          <button
-            className="button primary"
-            onClick={() =>
-              setEditor({
-                title: "创建工作区",
-                fields: [
-                  { key: "name", label: "名称", required: true },
-                  { key: "slug", label: "地址标识", required: true },
-                ],
-                submit: async (values) => {
-                  const availability = await adminClient.request<Entity>(
-                    `/api/instances/workspace-slug-check/?slug=${encodeURIComponent(values.slug)}`
-                  );
-                  if (!availability.status) throw new Error("工作区地址已占用");
-                  await adminClient.request("/api/instances/workspaces/", "POST", values);
-                  await workspaces.refresh();
-                },
-              })
-            }
-          >
-            创建工作区
-          </button>
-          <div className="list">
-            {records(workspaces.data).map((workspace) => (
-              <article className="card" key={workspace.id}>
-                <h3>{workspace.name}</h3>
-                <dl className="record-fields">
-                  <div>
-                    <dt>地址</dt>
-                    <dd>{textValue(workspace.slug)}</dd>
-                  </div>
-                  <div>
-                    <dt>项目</dt>
-                    <dd>{textValue(workspace.total_projects)}</dd>
-                  </div>
-                  <div>
-                    <dt>成员</dt>
-                    <dd>{textValue(workspace.total_members)}</dd>
-                  </div>
-                </dl>
-              </article>
-            ))}
-          </div>
-          <div className="actions">
-            <button
-              className="button"
-              disabled={!workspaces.data?.prev_page_results}
-              onClick={() => setWorkspacePage(`?cursor=${encodeURIComponent(String(workspaces.data?.prev_cursor))}`)}
-            >
-              上一页
-            </button>
-            <button
-              className="button"
-              disabled={!workspaces.data?.next_page_results}
-              onClick={() => setWorkspacePage(`?cursor=${encodeURIComponent(String(workspaces.data?.next_cursor))}`)}
-            >
-              下一页
-            </button>
-          </div>
-        </>
-      )}
-      <ErrorMessage error={instance.error ?? configs.error ?? admins.error ?? workspaces.error} />
-      <SettingsForms editor={editor} confirmation={confirmation} close={close} />
-      <AdminReauthentication client={adminClient} />
-    </>
-  );
-}
-
 export function SettingsFeature(props: Props) {
   if (props.section === "personal") return <PersonalSettings {...props} />;
   if (props.section === "workspace") return <WorkspaceSettings {...props} />;
   if (props.section === "project") return <ProjectSettings {...props} />;
-  return <AdminSettings client={props.client} />;
+  return null;
 }

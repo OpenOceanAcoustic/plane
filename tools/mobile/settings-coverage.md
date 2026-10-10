@@ -19,9 +19,9 @@ All 39 settings screens in the V4 design have functional counterparts. Sheets an
 | `settings-workspace`          | Workspace settings → General: /api/workspaces/{slug}/ CRUD, image assets; creation and deletion refresh the workspace selector.                             |
 | `settings-workspace-create`   | Workspace settings → General: /api/workspaces/{slug}/ CRUD, image assets; creation and deletion refresh the workspace selector.                             |
 | `settings-workspace-delete`   | Workspace settings → General: /api/workspaces/{slug}/ CRUD, image assets; creation and deletion refresh the workspace selector.                             |
-| `settings-members`            | Workspace settings → Members/invitations: backend roles, search, role update and confirmed removal.                                                         |
-| `settings-member-role`        | Workspace settings → Members/invitations: backend roles, search, role update and confirmed removal.                                                         |
-| `settings-member-remove`      | Workspace settings → Members/invitations: backend roles, search, role update and confirmed removal.                                                         |
+| `settings-members`            | Workspace settings → Members: backend roles, search, role update and confirmed removal.                                                                     |
+| `settings-member-role`        | Workspace settings → Members: backend roles, search, role update and confirmed removal.                                                                     |
+| `settings-member-remove`      | Workspace settings → Members: backend roles, search, role update and confirmed removal.                                                                     |
 | `settings-webhooks`           | Workspace settings → Webhooks: real create/edit/delete, event flags, delivery logs and signature-key regeneration.                                          |
 | `settings-webhook-edit`       | Workspace settings → Webhooks: real create/edit/delete, event flags, delivery logs and signature-key regeneration.                                          |
 | `settings-project-index`      | Project settings → General: real PATCH, visibility, lead/default assignee, cover, archive/restore and confirmed deletion.                                   |
@@ -47,7 +47,7 @@ All 39 settings screens in the V4 design have functional counterparts. Sheets an
 ## Scope and backend restrictions
 
 - API tokens are available with LAB session authentication, and are included.
-- God Mode creation of instance administrators is blocked by `LabAccessMiddleware` in LAB mode. The app exposes the supported administrator list/removal and independent dynamic-code login; administrator creation remains the existing SSH invitation flow.
+- God Mode is removed from Android. Server-side session checks reject new and restored Android administrator sessions, including Web administrator requests carrying an Android member cookie. Computer Web administrator login remains supported; SSH generates bootstrap and single-use member registration links.
 - Account language preference persists and synchronizes with the desktop application. This release uses Chinese mobile interface text.
 - High-contrast presets and custom themes persist through the same existing profile.theme format. JSON configuration import is supported; mobile configuration export is absent.
 - All administrative controls depend on returned membership roles and preserve backend rejection messages. Destructive project/workspace actions require the exact object name and the design confirmation phrase.

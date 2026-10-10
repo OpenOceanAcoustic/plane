@@ -1,3 +1,4 @@
+import { PageHeading } from "../../components/ui";
 import { useState } from "react";
 import { ErrorMessage, records, useData, type Entity } from "../../components/ui";
 import { groupNames, priorities, userName, type Member } from "../core/model";
@@ -34,14 +35,13 @@ export default function WorkspaceViews(props: WorkspaceProps) {
     canDelete = role >= 20 || row?.owned_by === session.data?.user.id;
   return (
     <>
-      <div className="lab-heading">
-        <h1>{row ? row.name : "工作区视图"}</h1>
+      <PageHeading title={row ? row.name : "工作区视图"}>
         {!row && role >= 5 && (
           <Button variant="primary" onClick={() => setModal("create")}>
             新建视图
           </Button>
         )}
-      </div>
+      </PageHeading>
       {row ? (
         <>
           <div className="lab-actions">
