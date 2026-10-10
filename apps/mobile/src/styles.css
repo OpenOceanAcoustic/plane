@@ -1246,3 +1246,240 @@ dd {
 .compact-rich-input .document-body p {
   margin: 0 0 10px;
 }
+
+.home-content {
+  padding-bottom: 94px;
+}
+.home-stickies.is-populated {
+  min-height: 0;
+  flex: none;
+  gap: 18px;
+}
+.home-stickies-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+}
+.home-stickies-all {
+  align-self: flex-start;
+  padding-left: 0;
+}
+.stickies-content {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  padding-bottom: 80px;
+}
+.sticky-search {
+  margin: 0;
+}
+.sticky-filters {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.sticky-more-colors {
+  width: 32px;
+  min-width: 32px;
+  height: 38px;
+}
+.sticky-list {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+.sticky-card {
+  position: relative;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+  padding: 16px;
+  min-width: 0;
+}
+.sticky-card-content {
+  min-width: 0;
+  padding-right: 24px;
+  pointer-events: none;
+}
+.sticky-card-open {
+  position: absolute;
+  inset: 0;
+  background: transparent;
+  border: 0;
+  padding: 0;
+  border-radius: inherit;
+  cursor: pointer;
+}
+.sticky-card-open:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 4px;
+}
+.sticky-card h3 {
+  margin: 0 0 8px;
+  font-size: 16px;
+  font-weight: 500;
+  line-height: 1.55;
+}
+.sticky-card .rich-content {
+  font-size: 14px;
+  line-height: 1.65;
+  color: var(--secondary);
+  max-height: 160px;
+  overflow: hidden;
+}
+.sticky-card .rich-content p {
+  margin: 0 0 6px;
+}
+.sticky-card .rich-content > :last-child {
+  margin-bottom: 0;
+}
+.sticky-placeholder {
+  color: var(--secondary);
+  font-size: 14px;
+  line-height: 1.65;
+  margin: 0;
+}
+.sticky-card-more {
+  position: absolute;
+  z-index: 1;
+  top: 8px;
+  right: 6px;
+  width: 32px;
+  min-width: 32px;
+  height: 32px;
+}
+.sticky-card-more svg {
+  width: 18px;
+  height: 18px;
+}
+.sticky-card-meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+  font-size: 12px;
+  color: var(--secondary);
+}
+.sticky-card-meta > span:not(.sticky-color-dot) {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border: 1px solid var(--border);
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+.sticky-color-dot {
+  width: 12px;
+  height: 12px;
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  background: var(--sticky-tone, var(--subtle));
+  flex-shrink: 0;
+}
+.sticky-color-gray {
+  --sticky-tone: #d6d6d8;
+}
+.sticky-color-peach {
+  --sticky-tone: #ffd5d7;
+}
+.sticky-color-pink {
+  --sticky-tone: #fdd4e3;
+}
+.sticky-color-orange {
+  --sticky-tone: #ffe3cd;
+}
+.sticky-color-green {
+  --sticky-tone: #c3f0de;
+}
+.sticky-color-light-blue {
+  --sticky-tone: #c5eff9;
+}
+.sticky-color-dark-blue {
+  --sticky-tone: #c9dafb;
+}
+.sticky-color-purple {
+  --sticky-tone: #e3d8fd;
+}
+:root[data-theme="dark"] .sticky-color-gray {
+  --sticky-tone: #404144;
+}
+:root[data-theme="dark"] .sticky-color-peach {
+  --sticky-tone: #593032;
+}
+:root[data-theme="dark"] .sticky-color-pink {
+  --sticky-tone: #562e3d;
+}
+:root[data-theme="dark"] .sticky-color-orange {
+  --sticky-tone: #583e2a;
+}
+:root[data-theme="dark"] .sticky-color-green {
+  --sticky-tone: #1d4a3b;
+}
+:root[data-theme="dark"] .sticky-color-light-blue {
+  --sticky-tone: #1f495c;
+}
+:root[data-theme="dark"] .sticky-color-dark-blue {
+  --sticky-tone: #223558;
+}
+:root[data-theme="dark"] .sticky-color-purple {
+  --sticky-tone: #3d325a;
+}
+.sticky-editor {
+  border-top: 1px solid var(--border);
+  padding-top: 10px;
+  scroll-margin-top: 14px;
+}
+.sticky-editor-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 18px;
+}
+.sticky-editor-heading h2 {
+  margin: 0;
+}
+.sticky-editor fieldset {
+  border: 0;
+  padding: 0;
+  margin: 0;
+  min-width: 0;
+}
+.sticky-editor .field {
+  margin-bottom: 18px;
+}
+.sticky-editor .compact-rich-input {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+}
+.sticky-editor .document-body,
+.sticky-saving-content {
+  min-height: 132px;
+  padding: 16px;
+  color: var(--ink);
+}
+.sticky-saving-content {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+.sticky-confirm-actions {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.sticky-loading {
+  color: var(--secondary);
+  font-size: 14px;
+  margin: 0;
+}
+.sticky-load-more {
+  align-self: flex-start;
+}
