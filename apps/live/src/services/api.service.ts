@@ -13,6 +13,8 @@ export abstract class APIService {
   protected baseURL: string;
   private axiosInstance: AxiosInstance;
   private header: Record<string, string> = {};
+  private csrf: Promise<{ cookie: string; token: string }> | undefined;
+  private csrfCookie: string | undefined;
 
   constructor(baseURL?: string) {
     this.baseURL = baseURL || env.API_BASE_URL;
@@ -25,6 +27,44 @@ export abstract class APIService {
   }
 
   private setupInterceptors() {
+    // oxlint-disable-next-line oxc/no-async-endpoint-handlers -- Axios awaits interceptor promises; this is not an Express handler.
+    this.axiosInstance.interceptors.request.use(async (request) => {
+      if (["get", "head", "options"].includes((request.method ?? "get").toLowerCase())) return request;
+      const cookie = request.headers.get("Cookie")?.toString() || this.header.Cookie;
+      const origin = env.PUBLIC_ORIGIN || env.WEB_BASE_URL;
+      if (!cookie || !origin) throw new AppError("Session and canonical Origin required for writes");
+      if (this.csrfCookie !== cookie) {
+        this.csrf = undefined;
+        this.csrfCookie = cookie;
+      }
+      this.csrf ??= this.axiosInstance
+        .get("/auth/get-csrf-token/", { headers: { Cookie: cookie, Origin: origin } })
+        .then((response) => {
+          const token = response.data.csrf_token;
+          if (typeof token !== "string" || !token) throw new AppError("CSRF token unavailable");
+          const cookies = new Map(
+            cookie.split(";").map((part) => {
+              const [key, ...value] = part.trim().split("=");
+              return [key!, value.join("=")] as const;
+            })
+          );
+          for (const item of response.headers["set-cookie"] ?? []) {
+            const [pair] = item.split(";");
+            const [key, ...value] = pair!.split("=");
+            cookies.set(key!, value.join("="));
+          }
+          return { token, cookie: [...cookies].map(([key, value]) => `${key}=${value}`).join("; ") };
+        })
+        .catch((error) => {
+          this.csrf = undefined;
+          throw error;
+        });
+      const csrf = await this.csrf;
+      request.headers.set("Cookie", csrf.cookie);
+      request.headers.set("X-CSRFToken", csrf.token);
+      request.headers.set("Origin", origin);
+      return request;
+    });
     this.axiosInstance.interceptors.response.use(
       (response) => response,
       (error) => {
@@ -34,6 +74,7 @@ export abstract class APIService {
   }
 
   setHeader(key: string, value: string) {
+    if (key.toLowerCase() === "cookie") this.csrf = undefined;
     this.header[key] = value;
   }
 

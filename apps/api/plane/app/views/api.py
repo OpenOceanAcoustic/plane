@@ -5,16 +5,21 @@
 # Python import
 from uuid import uuid4
 from typing import Optional
+from datetime import timedelta
+from django.conf import settings
 from django.db import transaction
+from django.db.models import Q
+from django.utils import timezone
 
 # Third party
 from rest_framework.response import Response
 from rest_framework.request import Request
 from rest_framework import status
+from rest_framework import serializers
 
 # Module import
 from .base import BaseAPIView
-from plane.db.models import APIToken
+from plane.db.models import APIToken, User
 from plane.app.serializers import APITokenSerializer, APITokenReadSerializer
 from plane.lab.auth import require_lab_session
 
@@ -23,9 +28,41 @@ class ApiTokenEndpoint(BaseAPIView):
     @transaction.atomic
     def post(self, request: Request) -> Response:
         require_lab_session(request)
+        # Credential/device locks (when enabled) precede the user lock used by all
+        # token-creation requests, keeping recovery and quota enforcement atomic.
+        User.objects.select_for_update().only("id").get(id=request.user.id)
+        if (
+            settings.LAB_AUTH_ENABLED
+            and APIToken.objects.filter(
+                Q(expired_at__isnull=True) | Q(expired_at__gt=timezone.now()),
+                user=request.user,
+                is_active=True,
+            ).count()
+            >= settings.LAB_API_TOKEN_LIMIT
+        ):
+            return Response(
+                {"error": "有效 API 密钥已达上限", "code": "API_TOKEN_LIMIT_REACHED"}, status=status.HTTP_409_CONFLICT
+            )
         label = request.data.get("label", str(uuid4().hex))
         description = request.data.get("description", "")
         expired_at = request.data.get("expired_at", None)
+        if settings.LAB_AUTH_ENABLED:
+            now = timezone.now()
+            if expired_at is None:
+                expired_at = now + timedelta(days=settings.LAB_API_TOKEN_DAYS)
+            else:
+                try:
+                    expired_at = serializers.DateTimeField().run_validation(expired_at)
+                except serializers.ValidationError:
+                    return Response(
+                        {"error": "请填写有效 API 密钥到期时间", "code": "INVALID_TOKEN_EXPIRY"},
+                        status=status.HTTP_400_BAD_REQUEST,
+                    )
+            if not now < expired_at <= now + timedelta(days=settings.LAB_API_TOKEN_MAX_DAYS):
+                return Response(
+                    {"error": "API 密钥到期时间须在未来 90 天内", "code": "INVALID_TOKEN_EXPIRY"},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
 
         # Check the user type
         user_type = 1 if request.user.is_bot else 0

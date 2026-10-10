@@ -4,12 +4,28 @@
 from django.conf import settings
 from django.contrib.auth import logout
 from django.http import JsonResponse
+from django.utils import timezone
 
-from .models import Credential
+from .models import Credential, TrustedBrowser
 
 
 def admin_path(path):
-    return path.startswith("/api/instances/") or path == "/auth/lab/admin/sign-in/"
+    return (
+        path.rstrip("/") == "/api/instances"
+        or path.startswith("/api/instances/")
+        or path.startswith("/auth/lab/admin/")
+    )
+
+
+def valid_lab_session(request, credential, admin=False):
+    expiry = request.session.get("lab_expires_at")
+    return bool(
+        credential
+        and request.session.get("lab_generation") == str(credential.generation)
+        and request.session.get("lab_purpose") == ("admin" if admin else "user")
+        and isinstance(expiry, (int, float))
+        and expiry > timezone.now().timestamp()
+    )
 
 
 class LabAccessMiddleware:
@@ -46,7 +62,43 @@ class LabAccessMiddleware:
                 return JsonResponse({"error": "请使用 Authenticator 登录"}, status=401)
             if request.user.is_authenticated:
                 credential = Credential.objects.filter(user=request.user, enabled=True, user__is_active=True).first()
-                if not credential or request.session.get("lab_generation") != str(credential.generation):
+                is_admin = admin_path(path)
+                if not valid_lab_session(request, credential, is_admin):
                     logout(request)
-                    return JsonResponse({"error": "认证已失效，请重新绑定或登录"}, status=401)
+                    return JsonResponse(
+                        {"error": "认证已失效，请重新绑定或登录", "code": "SESSION_INVALID"}, status=401
+                    )
+                browser_id = request.session.get("lab_browser_id")
+                if (
+                    browser_id
+                    and not TrustedBrowser.objects.filter(
+                        id=browser_id,
+                        user=request.user,
+                        purpose="admin" if is_admin else "user",
+                        generation=credential.generation,
+                        revoked_at__isnull=True,
+                    ).exists()
+                ):
+                    logout(request)
+                    return JsonResponse(
+                        {"error": "可信浏览器已撤销，请重新登录", "code": "SESSION_INVALID"}, status=401
+                    )
+                exempt = {
+                    "/auth/lab/admin/sign-in/",
+                    "/auth/lab/admin/reauthenticate/",
+                    "/auth/lab/admin/sign-out/",
+                    "/auth/lab/admin/forget-browser/",
+                    "/api/instances/admins/sign-out/",
+                }
+                fresh = request.session.get("lab_admin_reauthenticated_at")
+                if (
+                    is_admin
+                    and request.method not in ("GET", "HEAD", "OPTIONS")
+                    and path not in exempt
+                    and (
+                        not isinstance(fresh, (int, float))
+                        or timezone.now().timestamp() - fresh >= settings.LAB_ADMIN_REAUTH_AGE
+                    )
+                ):
+                    return JsonResponse({"error": "请重新验证动态码", "code": "ADMIN_REAUTH_REQUIRED"}, status=403)
         return self.get_response(request)

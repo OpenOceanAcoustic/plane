@@ -22,6 +22,10 @@ pytestmark = [pytest.mark.django_db(transaction=True), pytest.mark.contract]
 def lab_settings(settings):
     settings.LAB_AUTH_ENABLED = True
     settings.LAB_TOTP_KEY = Fernet.generate_key().decode()
+    # Resolve lazy SDK imports before freezegun replaces datetime classes.
+    from django.urls import resolve
+
+    resolve("/auth/lab/sign-in/")
 
 
 def bootstrap(client):
@@ -119,6 +123,300 @@ def test_totp_replay_and_durable_account_limit():
 
 def post(path, body, client=None):
     return (client or Client()).post("/auth/lab/" + path + "/", body, content_type="application/json")
+
+
+def test_unknown_username_has_no_persistent_account_quota():
+    # Unknown identities are covered by source/global limits, never durable identity rows.
+    for _ in range(6):
+        assert post("sign-in", {"username": "does-not-exist", "code": "invalid"}).status_code == 401
+
+
+def test_remembered_browser_can_login_while_stranger_quota_is_full(settings):
+    with freeze_time("2026-10-08 03:00:00"):
+        enrollment = bootstrap(Client())
+        totp = pyotp.parse_uri(enrollment["otpauth"])
+        assert post("confirm", {"token": enrollment["token"], "code": totp.now()}).status_code == 201
+    browser = Client()
+    with freeze_time("2026-10-08 03:00:30"):
+        assert (
+            post("sign-in", {"username": "alice", "code": totp.now(), "remember_browser": True}, browser).status_code
+            == 200
+        )
+        assert settings.LAB_TRUSTED_BROWSER_COOKIE_NAME in browser.cookies
+        for _ in range(4):
+            assert post("sign-in", {"username": "alice", "code": "invalid"}).status_code == 401
+        assert post("sign-in", {"username": "alice", "code": "invalid"}).status_code == 429
+    with freeze_time("2026-10-08 03:01:00"):
+        assert post("sign-in", {"username": "alice", "code": totp.now()}, browser).status_code == 200
+
+
+def test_member_session_cannot_be_relabelled_as_administrator_cookie(settings):
+    with freeze_time("2026-10-08 03:00:00"):
+        enrollment = bootstrap(Client())
+        totp = pyotp.parse_uri(enrollment["otpauth"])
+        assert post("confirm", {"token": enrollment["token"], "code": totp.now()}).status_code == 201
+    with freeze_time("2026-10-08 03:00:30"):
+        member = Client()
+        assert post("sign-in", {"username": "alice", "code": totp.now()}, member).status_code == 200
+        copied = Client()
+        copied.cookies[settings.ADMIN_SESSION_COOKIE_NAME] = member.cookies[settings.SESSION_COOKIE_NAME].value
+        assert copied.get("/api/instances/admins/me/").status_code == 401
+
+
+def test_admin_reauthentication_restores_writes_without_extending_session():
+    with freeze_time("2026-10-08 03:00:00"):
+        enrollment = bootstrap(Client())
+        totp = pyotp.parse_uri(enrollment["otpauth"])
+        assert post("confirm", {"token": enrollment["token"], "code": totp.now()}).status_code == 201
+    admin = Client()
+    with freeze_time("2026-10-08 03:00:30"):
+        assert post("admin/sign-in", {"username": "alice", "code": totp.now()}, admin).status_code == 200
+    with freeze_time("2026-10-08 03:11:00"):
+        blocked = admin.patch("/api/instances/configurations/", {}, content_type="application/json")
+        assert blocked.status_code == 403
+        assert blocked.json()["code"] == "ADMIN_REAUTH_REQUIRED"
+        for _ in range(5):
+            assert post("admin/sign-in", {"username": "alice", "code": "invalid"}).status_code == 401
+        assert post("admin/reauthenticate", {"code": totp.now()}, admin).status_code == 200
+        assert admin.patch("/api/instances/configurations/", {}, content_type="application/json").status_code == 200
+    with freeze_time("2026-10-08 04:00:30"):
+        assert admin.get("/api/instances/admins/me/").status_code == 401
+
+
+def test_trusted_browser_list_signout_and_forget(settings):
+    with freeze_time("2026-10-08 03:00:00"):
+        enrollment = bootstrap(Client())
+        totp = pyotp.parse_uri(enrollment["otpauth"])
+        assert post("confirm", {"token": enrollment["token"], "code": totp.now()}).status_code == 201
+    browser = Client()
+    with freeze_time("2026-10-08 03:00:30"):
+        assert (
+            post("sign-in", {"username": "alice", "code": totp.now(), "remember_browser": True}, browser).status_code
+            == 200
+        )
+        credential = browser.cookies[settings.LAB_TRUSTED_BROWSER_COOKIE_NAME].value
+        listed = browser.get("/auth/lab/browsers/")
+        assert listed.status_code == 200
+        entry = listed.json()["browsers"][0]
+        assert entry["current"] is True
+        assert "token" not in entry and "token_hash" not in entry
+        assert post("sign-out", {}, browser).status_code == 200
+        assert browser.cookies[settings.LAB_TRUSTED_BROWSER_COOKIE_NAME].value == credential
+    with freeze_time("2026-10-08 03:01:00"):
+        assert post("sign-in", {"username": "alice", "code": totp.now()}, browser).status_code == 200
+        assert browser.get("/auth/lab/browsers/").json()["browsers"][0]["expires_at"] == entry["expires_at"]
+        assert post("forget-browser", {}, browser).status_code == 200
+        assert browser.get("/api/users/me/").status_code == 401
+        # Copying the now-revoked credential cannot use the trusted quota.
+        for _ in range(4):
+            assert post("sign-in", {"username": "alice", "code": "invalid"}).status_code == 401
+    with freeze_time("2026-10-08 03:01:30"):
+        browser.cookies[settings.LAB_TRUSTED_BROWSER_COOKIE_NAME] = credential
+        assert post("sign-in", {"username": "alice", "code": totp.now()}, browser).status_code == 429
+
+
+@pytest.mark.parametrize("operation", ["sign-in", "admin/reauthenticate"])
+def test_device_and_admin_reauthentication_quotas_are_durable_under_concurrency(operation, settings):
+    with freeze_time("2026-10-08 03:00:00"):
+        enrollment = bootstrap(Client())
+        totp = pyotp.parse_uri(enrollment["otpauth"])
+        assert post("confirm", {"token": enrollment["token"], "code": totp.now()}).status_code == 201
+    browser = Client()
+    with freeze_time("2026-10-08 03:00:30"):
+        signin = "admin/sign-in" if operation.startswith("admin/") else "sign-in"
+        assert (
+            post(signin, {"username": "alice", "code": totp.now(), "remember_browser": True}, browser).status_code
+            == 200
+        )
+
+        def submit(_):
+            close_old_connections()
+            try:
+                parallel = Client()
+                parallel.cookies.update(browser.cookies)
+                return post(operation, {"username": "alice", "code": "invalid"}, parallel).status_code
+            finally:
+                close_old_connections()
+
+        with ThreadPoolExecutor(max_workers=8) as pool:
+            results = list(pool.map(submit, range(8)))
+        assert sorted(results) == [401] * 5 + [429] * 3
+
+
+def test_device_expiry_and_signature_tampering_fall_back_to_stranger_quota(settings):
+    with freeze_time("2026-10-08 03:00:00"):
+        enrollment = bootstrap(Client())
+        totp = pyotp.parse_uri(enrollment["otpauth"])
+        assert post("confirm", {"token": enrollment["token"], "code": totp.now()}).status_code == 201
+    browser = Client()
+    with freeze_time("2026-10-08 03:00:30"):
+        assert (
+            post("sign-in", {"username": "alice", "code": totp.now(), "remember_browser": True}, browser).status_code
+            == 200
+        )
+        cookie = browser.cookies[settings.LAB_TRUSTED_BROWSER_COOKIE_NAME]
+        assert cookie["secure"] and cookie["httponly"] and cookie["samesite"] == "Strict"
+        credential = cookie.value
+        for _ in range(4):
+            assert post("sign-in", {"username": "alice", "code": "invalid"}).status_code == 401
+        tampered = Client()
+        tampered.cookies[settings.LAB_TRUSTED_BROWSER_COOKIE_NAME] = credential + "x"
+        assert post("sign-in", {"username": "alice", "code": "invalid"}, tampered).status_code == 429
+    with freeze_time("2026-11-08 03:00:30"):
+        for _ in range(5):
+            assert post("sign-in", {"username": "alice", "code": "invalid"}).status_code == 401
+        expired = Client()
+        expired.cookies[settings.LAB_TRUSTED_BROWSER_COOKIE_NAME] = credential
+        assert post("sign-in", {"username": "alice", "code": totp.now()}, expired).status_code == 429
+
+
+@pytest.mark.parametrize("admin, cap", [(False, 5), (True, 2)])
+def test_browser_cap_does_not_fail_login_or_evict_another_browser(settings, admin, cap):
+    with freeze_time("2026-10-08 03:00:00"):
+        enrollment = bootstrap(Client())
+        totp = pyotp.parse_uri(enrollment["otpauth"])
+        assert post("confirm", {"token": enrollment["token"], "code": totp.now()}).status_code == 201
+    browsers = []
+    signin = "admin/sign-in" if admin else "sign-in"
+    listing = "/auth/lab/admin/browsers/" if admin else "/auth/lab/browsers/"
+    for minute in range(cap):
+        with freeze_time(f"2026-10-08 03:0{minute}:30"):
+            browser = Client()
+            response = post(signin, {"username": "alice", "code": totp.now(), "remember_browser": True}, browser)
+            assert response.status_code == 200 and response.json()["remembered_browser"] is True
+            browsers.append(browser)
+    with freeze_time("2026-10-08 03:15:00"):
+        extra = Client()
+        response = post(signin, {"username": "alice", "code": totp.now(), "remember_browser": True}, extra)
+        assert response.status_code == 200
+        assert response.json()["browser_limit_reached"] is True
+        assert response.json()["remembered_browser"] is False
+        assert len(browsers[0].get(listing).json()["browsers"]) == cap
+
+
+def test_browser_revocation_requires_csrf_and_revokes_current_session(settings):
+    with freeze_time("2026-10-08 03:00:00"):
+        enrollment = bootstrap(Client())
+        totp = pyotp.parse_uri(enrollment["otpauth"])
+        assert post("confirm", {"token": enrollment["token"], "code": totp.now()}).status_code == 201
+    with freeze_time("2026-10-08 03:00:30"):
+        original = Client()
+        assert (
+            post("sign-in", {"username": "alice", "code": totp.now(), "remember_browser": True}, original).status_code
+            == 200
+        )
+        browser = Client(enforce_csrf_checks=True)
+        browser.cookies.update(original.cookies)
+        entry = browser.get("/auth/lab/browsers/").json()["browsers"][0]
+        endpoint = f"/auth/lab/browsers/{entry['id']}/"
+        assert browser.delete(endpoint).status_code == 403
+        csrf = browser.get("/auth/get-csrf-token/").json()["csrf_token"]
+        assert browser.delete(endpoint, HTTP_X_CSRFTOKEN=csrf).status_code == 200
+        assert browser.get("/api/users/me/").status_code == 401
+
+
+def test_browser_management_is_bound_to_owner_and_purpose_and_remember_defaults_off(settings):
+    from datetime import datetime
+
+    with freeze_time("2026-10-08 03:00:00"):
+        enrollment = bootstrap(Client())
+        totp = pyotp.parse_uri(enrollment["otpauth"])
+        assert post("confirm", {"token": enrollment["token"], "code": totp.now()}).status_code == 201
+        output = io.StringIO()
+        call_command("lab_access", "invite", workspace="laboratory", stdout=output)
+        invitation = urlparse(output.getvalue().strip().splitlines()[-1]).fragment
+        other = post(
+            "enroll", {"token": invitation, "username": "bob", "display_name": "Bob", "email": "bob@example.org"}
+        ).json()
+        other_totp = pyotp.parse_uri(other["otpauth"])
+        assert post("confirm", {"token": other["token"], "code": other_totp.now()}).status_code == 201
+    with freeze_time("2026-10-08 03:00:30"):
+        member = Client()
+        assert (
+            post("sign-in", {"username": "alice", "code": totp.now(), "remember_browser": True}, member).status_code
+            == 200
+        )
+        browser_id = member.get("/auth/lab/browsers/").json()["browsers"][0]["id"]
+        bob = Client()
+        assert post("sign-in", {"username": "bob", "code": other_totp.now()}, bob).status_code == 200
+        assert settings.LAB_TRUSTED_BROWSER_COOKIE_NAME not in bob.cookies
+        assert bob.get("/auth/lab/browsers/").json()["browsers"] == []
+        assert bob.delete(f"/auth/lab/browsers/{browser_id}/").status_code == 404
+        assert len(member.get("/auth/lab/browsers/").json()["browsers"]) == 1
+    with freeze_time("2026-10-08 03:01:00"):
+        admin = Client()
+        assert (
+            post(
+                "admin/sign-in", {"username": "alice", "code": totp.now(), "remember_browser": True}, admin
+            ).status_code
+            == 200
+        )
+        entry = admin.get("/auth/lab/admin/browsers/").json()["browsers"][0]
+        assert datetime.fromisoformat(entry["expires_at"]) == datetime.fromisoformat("2026-10-15T03:01:00+00:00")
+        assert admin.delete(f"/auth/lab/admin/browsers/{browser_id}/").status_code == 404
+        assert admin.get("/auth/lab/browsers/").status_code == 401
+
+
+def test_trusted_login_survives_exhausted_anonymous_edge_budget(settings):
+    import uuid
+
+    with freeze_time("2026-10-08 03:00:00"):
+        enrollment = bootstrap(Client())
+        totp = pyotp.parse_uri(enrollment["otpauth"])
+        assert post("confirm", {"token": enrollment["token"], "code": totp.now()}).status_code == 201
+    trusted = Client()
+    with freeze_time("2026-10-08 03:00:30"):
+        assert (
+            post("sign-in", {"username": "alice", "code": totp.now(), "remember_browser": True}, trusted).status_code
+            == 200
+        )
+        settings.LAB_SECURITY_LIMITS_ENABLED = True
+        settings.LAB_SECURITY_NAMESPACE = "test-trusted-edge-" + uuid.uuid4().hex
+        settings.LAB_REQUEST_GLOBAL_LIMIT = 1
+        assert post("sign-in", {"username": "unknown", "code": "invalid"}).status_code == 401
+        assert post("sign-in", {"username": "another-unknown", "code": "invalid"}).status_code == 429
+    with freeze_time("2026-10-08 03:01:00"):
+        assert post("sign-in", {"username": "alice", "code": totp.now()}, trusted).status_code == 200
+
+
+def test_malformed_login_requests_still_use_anonymous_auth_budget(settings):
+    import uuid
+
+    settings.LAB_SECURITY_LIMITS_ENABLED = True
+    settings.LAB_SECURITY_NAMESPACE = "test-invalid-json-" + uuid.uuid4().hex
+    settings.LAB_AUTH_IP_LIMIT = 1
+    client = Client()
+    assert client.post("/auth/lab/sign-in/", "{", content_type="application/json").status_code == 400
+    assert client.post("/auth/lab/sign-in/", "{", content_type="application/json").status_code == 429
+
+
+@pytest.mark.parametrize("remembered", [False, True])
+def test_forget_browser_logs_out_without_a_trust_cookie_and_revokes_owned_device(settings, remembered):
+    with freeze_time("2026-10-08 03:00:00"):
+        enrollment = bootstrap(Client())
+        totp = pyotp.parse_uri(enrollment["otpauth"])
+        assert post("confirm", {"token": enrollment["token"], "code": totp.now()}).status_code == 201
+    browser = Client()
+    credential = None
+    with freeze_time("2026-10-08 03:00:30"):
+        assert (
+            post(
+                "sign-in", {"username": "alice", "code": totp.now(), "remember_browser": remembered}, browser
+            ).status_code
+            == 200
+        )
+        if remembered:
+            credential = browser.cookies[settings.LAB_TRUSTED_BROWSER_COOKIE_NAME].value
+            del browser.cookies[settings.LAB_TRUSTED_BROWSER_COOKIE_NAME]
+        assert post("forget-browser", {}, browser).status_code == 200
+        assert browser.get("/api/users/me/").status_code == 401
+        if remembered:
+            for _ in range(4):
+                assert post("sign-in", {"username": "alice", "code": "invalid"}).status_code == 401
+    if remembered:
+        with freeze_time("2026-10-08 03:01:00"):
+            browser.cookies[settings.LAB_TRUSTED_BROWSER_COOKIE_NAME] = credential
+            assert post("sign-in", {"username": "alice", "code": totp.now()}, browser).status_code == 429
 
 
 def test_csrf_is_required_even_for_anonymous_login_and_binding():

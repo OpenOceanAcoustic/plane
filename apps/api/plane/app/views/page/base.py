@@ -70,6 +70,10 @@ def unarchive_archive_page_and_descendants(page_id, archived_at):
     # Execute the SQL query
     with connection.cursor() as cursor:
         cursor.execute(sql, [page_id, archived_at])
+    from plane.app.page_signals import invalidate_access
+
+    workspace_id = Page.all_objects.filter(id=page_id).values_list("workspace_id", flat=True).first()
+    invalidate_access(workspace_id=workspace_id)
 
 
 class PageViewSet(BaseViewSet):
@@ -637,3 +641,46 @@ class PageDuplicateEndpoint(BaseAPIView):
         )
         serializer = PageDetailSerializer(page)
         return Response(serializer.data, status=status.HTTP_201_CREATED)
+
+
+class PageCollaborationAccessEndpoint(BaseAPIView):
+    """Current session and document capabilities; never reads document content."""
+
+    def get(self, request, slug, project_id, page_id):
+        from django.conf import settings
+        from django.utils import timezone
+        from plane.db.models import Session
+        from plane.app.permissions.page import page_collaboration_capabilities
+        from plane.lab.models import Credential
+
+        page, can_read, can_write = page_collaboration_capabilities(request.user, slug, project_id, page_id)
+        if not can_read:
+            return Response({"error": "Document access denied"}, status=status.HTTP_403_FORBIDDEN)
+        session = Session.objects.filter(
+            session_key=request.session.session_key, expire_date__gt=timezone.now()
+        ).first()
+        if session is None:
+            return Response({"error": "Session expired"}, status=status.HTTP_401_UNAUTHORIZED)
+        credential = Credential.objects.filter(user=request.user, enabled=True).first()
+        if settings.LAB_AUTH_ENABLED and (
+            credential is None or request.session.get("lab_generation") != str(credential.generation)
+        ):
+            return Response({"error": "Session invalid"}, status=status.HTTP_401_UNAUTHORIZED)
+        response = Response(
+            {
+                "document": {
+                    "id": str(page.id),
+                    "type": "project_page",
+                    "workspace_id": str(page.workspace_id),
+                    "workspace_slug": page.workspace.slug,
+                    "project_id": str(project_id),
+                },
+                "user": {"id": str(request.user.id), "display_name": request.user.display_name},
+                "can_read": can_read,
+                "can_write": can_write,
+                "session_expires_at": session.expire_date.isoformat(),
+                "credential_generation": str(credential.generation) if credential else None,
+            }
+        )
+        response["Cache-Control"] = "no-store, private"
+        return response

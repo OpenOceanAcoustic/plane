@@ -9,6 +9,8 @@ import base64
 import os
 from pathlib import Path
 import secrets
+import ipaddress
+import re
 from urllib.parse import urlsplit
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -54,13 +56,108 @@ def public_url(value):
     return value.rstrip("/")
 
 
+def configure_public(value):
+    """Create a separate production profile without changing the lab's credentials."""
+    origin = public_url(value)
+    parsed = urlsplit(origin)
+    host = parsed.hostname.lower()
+    try:
+        ipaddress.ip_address(host)
+    except ValueError:
+        pass
+    else:
+        raise ValueError("公网访问地址必须使用正式 HTTPS 域名")
+    if parsed.scheme != "https" or parsed.port is not None or not re.fullmatch(
+        r"(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?", host
+    ) or host.endswith((".localhost", ".local", ".internal")):
+        raise ValueError("公网访问地址必须是无端口、路径的正式 HTTPS 域名")
+    origin = "https://" + host
+    root = read_env(ROOT / ".env")
+    root.update(read_env(ROOT / ".env.public"))
+    defaults = {
+        "POSTGRES_USER": "plane", "POSTGRES_DB": "plane",
+        "POSTGRES_PASSWORD": secrets.token_urlsafe(32),
+        "RABBITMQ_USER": "plane", "RABBITMQ_VHOST": "plane",
+        "RABBITMQ_PASSWORD": secrets.token_urlsafe(32),
+        "AWS_ACCESS_KEY_ID": "ooa-local", "AWS_SECRET_ACCESS_KEY": secrets.token_urlsafe(32),
+        "AWS_S3_BUCKET_NAME": "uploads", "LIVE_SERVER_SECRET_KEY": secrets.token_urlsafe(32),
+        "PUBLIC_DATA_PROJECT": "ooa-plane-lab", "PUBLIC_IMAGE_TAG": "security",
+        "PUBLIC_BACKEND_SUBNET": "172.29.240.0/24", "PUBLIC_PROXY_IP": "172.29.240.2",
+        "PUBLIC_API_UID": str(os.getuid() or 10001),
+        "SECURE_HSTS_SECONDS": "300",
+    }
+    for name, default in defaults.items():
+        root.setdefault(name, default)
+    if not root["PUBLIC_API_UID"].isdigit() or int(root["PUBLIC_API_UID"]) == 0:
+        raise ValueError("PUBLIC_API_UID 必须是非 root 的数字 UID")
+    root.update(PUBLIC_ORIGIN=origin, PUBLIC_HOST=host, PUBLIC_DEPLOYMENT="1")
+    api = read_env(ROOT / "apps/api/.env")
+    api.update(read_env(ROOT / "apps/api/.env.public"))
+    api.setdefault("SECRET_KEY", secrets.token_urlsafe(50))
+    api.update({name: root[name] for name in defaults if name in (
+        "POSTGRES_USER", "POSTGRES_DB", "POSTGRES_PASSWORD", "RABBITMQ_USER", "RABBITMQ_PASSWORD",
+        "RABBITMQ_VHOST", "AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY", "AWS_S3_BUCKET_NAME", "LIVE_SERVER_SECRET_KEY",
+    )})
+    api.update({
+        "PUBLIC_DEPLOYMENT": "1", "PUBLIC_ORIGIN": origin, "PUBLIC_HOST": host, "DEBUG": "0",
+        "DJANGO_SETTINGS_MODULE": "plane.settings.production", "ALLOWED_HOSTS": host,
+        "CORS_ALLOWED_ORIGINS": origin, "CSRF_TRUSTED_ORIGINS": origin,
+        "SESSION_COOKIE_SECURE": "1", "CSRF_COOKIE_SECURE": "1", "SECURE_SSL_REDIRECT": "1",
+        "SECURE_HSTS_SECONDS": root["SECURE_HSTS_SECONDS"],
+        "TRUSTED_PROXY_CIDRS": root["PUBLIC_PROXY_IP"] + "/32",
+        "POSTGRES_HOST": "plane-db", "POSTGRES_PORT": "5432",
+        "DATABASE_URL": f"postgresql://{root['POSTGRES_USER']}:{root['POSTGRES_PASSWORD']}@plane-db:5432/{root['POSTGRES_DB']}",
+        "REDIS_HOST": "plane-redis", "REDIS_URL": "redis://plane-redis:6379/",
+        "RABBITMQ_HOST": "plane-mq", "RABBITMQ_PORT": "5672", "USE_MINIO": "1",
+        "AWS_S3_ENDPOINT_URL": "http://plane-minio:9000", "MINIO_ENDPOINT_SSL": "1",
+        "WEB_URL": origin, "APP_BASE_URL": origin, "ADMIN_BASE_URL": origin, "ADMIN_BASE_PATH": "/god-mode",
+        "SPACE_BASE_URL": origin, "SPACE_BASE_PATH": "/spaces", "LIVE_BASE_URL": origin, "LIVE_BASE_PATH": "/live",
+        "LAB_AUTH_ENABLED": "1", "LAB_TOTP_KEY_FILE": "/run/secrets/lab_totp_key",
+        "ENABLE_SIGNUP": "0", "ENABLE_EMAIL_PASSWORD": "0", "ENABLE_MAGIC_LINK_LOGIN": "0",
+        "FILE_SIZE_LIMIT": "5242880", "TZ": "Asia/Shanghai",
+    })
+    api.pop("LAB_TOTP_KEY", None)
+    key_file = ROOT / ".secrets/lab-totp.key"
+    key_file.parent.mkdir(parents=True, exist_ok=True)
+    if not key_file.exists():
+        key_file.write_text(base64.urlsafe_b64encode(secrets.token_bytes(32)).decode() + "\n")
+    key_file.chmod(0o600)
+    public_key = ROOT / ".secrets/public-totp.key"
+    if not public_key.exists():
+        public_key.write_bytes(key_file.read_bytes())
+    if public_key.read_bytes() != key_file.read_bytes():
+        raise ValueError("公网密钥副本与现有认证密钥不一致，请先核对迁移密钥")
+    public_key.chmod(0o600)
+    if os.getuid() == 0:
+        os.chown(public_key, int(root["PUBLIC_API_UID"]), int(root["PUBLIC_API_UID"]))
+    write_env(ROOT / ".env.public", root)
+    write_env(ROOT / "apps/api/.env.public", api)
+    write_env(ROOT / "apps/live/.env.public", {
+        "PORT": "3000", "PUBLIC_DEPLOYMENT": "1", "PUBLIC_ORIGIN": origin,
+        "API_BASE_URL": origin, "CORS_ALLOWED_ORIGINS": origin,
+        "LIVE_BASE_PATH": "/live", "LIVE_SERVER_SECRET_KEY": root["LIVE_SERVER_SECRET_KEY"],
+        "REDIS_URL": "redis://plane-redis:6379/", "TRUSTED_PROXY_CIDRS": root["PUBLIC_PROXY_IP"] + "/32",
+    })
+    print(f"公网配置已保存：{origin}；本地配置与认证密钥保留。")
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(
         description="配置本机或内网访问地址，保留现有数据和认证密钥"
     )
     parser.add_argument("--public-url", help="例如 http://192.168.137.90:8080")
+    parser.add_argument("--profile", choices=("lab", "public"), default="lab")
     options = parser.parse_args(argv)
     os.umask(0o077)
+    if options.profile == "public":
+        value = options.public_url or read_env(ROOT / ".env.public").get("PUBLIC_ORIGIN")
+        if not value:
+            parser.error("公网配置必须提供 --public-url https://正式域名")
+        try:
+            configure_public(value)
+        except ValueError as error:
+            parser.error(str(error))
+        return
     root = read_env(ROOT / ".env")
     try:
         base_url = public_url(

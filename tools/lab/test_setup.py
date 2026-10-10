@@ -95,6 +95,36 @@ class AccessConfigurationTests(unittest.TestCase):
         self.assertEqual(root["LAB_BIND_ADDRESS"], "127.0.0.1")
         self.assertEqual(root["LAB_PUBLIC_URL"], "http://localhost:8080")
 
+    def test_public_profile_preserves_local_configuration_and_existing_totp_key(self):
+        self.configure()
+        before = self.snapshot()
+        origin = "https://dashboard.example.org"
+        self.configure("--profile", "public", "--public-url", origin)
+        for path, digest in before.items():
+            self.assertEqual(self.snapshot()[path], digest)
+        api = setup.read_env(self.root / "apps/api/.env.public")
+        self.assertEqual(api["PUBLIC_ORIGIN"], origin)
+        self.assertEqual(api["PUBLIC_HOST"], "dashboard.example.org")
+        self.assertEqual(api["ALLOWED_HOSTS"], "dashboard.example.org")
+        self.assertEqual(api["CORS_ALLOWED_ORIGINS"], origin)
+        self.assertEqual(api["CSRF_TRUSTED_ORIGINS"], origin)
+        self.assertEqual(api["SESSION_COOKIE_SECURE"], "1")
+        self.assertEqual(api["CSRF_COOKIE_SECURE"], "1")
+        self.assertEqual(api["SECRET_KEY"], setup.read_env(self.root / "apps/api/.env")["SECRET_KEY"])
+        self.assertEqual(setup.read_env(self.root / "apps/live/.env.public")["API_BASE_URL"], origin)
+        self.assertEqual(setup.read_env(self.root / "apps/live/.env.public")["TRUSTED_PROXY_CIDRS"], "172.29.240.2/32")
+        self.assertEqual((self.root / ".secrets/public-totp.key").read_bytes(), (self.root / ".secrets/lab-totp.key").read_bytes())
+        self.assertEqual((self.root / ".secrets/public-totp.key").stat().st_mode & 0o777, 0o600)
+
+    def test_public_profile_rejects_non_https_and_non_domain_origins_before_writing(self):
+        self.configure()
+        before = self.snapshot()
+        for origin in ("http://dashboard.example.org", "https://localhost", "https://192.0.2.1", "https://dashboard.example.org:8443", "https://dashboard.example.org/path"):
+            with self.subTest(origin=origin):
+                with contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit):
+                    self.configure("--profile", "public", "--public-url", origin)
+                self.assertEqual(self.snapshot(), before)
+
 
 if __name__ == "__main__":
     unittest.main()

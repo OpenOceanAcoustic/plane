@@ -1,0 +1,20 @@
+ARG PYTHON_IMAGE=python:3.12.10-alpine
+FROM ${PYTHON_IMAGE} AS builder
+WORKDIR /code
+RUN apk add --no-cache gcc g++ cargo git make postgresql-dev libffi-dev libc-dev linux-headers libxslt-dev xmlsec-dev
+COPY requirements ./requirements
+RUN python -m venv /venv && /venv/bin/pip install --no-cache-dir -r requirements/public-lock.txt
+
+FROM ${PYTHON_IMAGE}
+ENV PATH="/venv/bin:$PATH" PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1
+WORKDIR /code
+RUN apk add --no-cache libpq libxslt xmlsec libffi ca-certificates && addgroup -g 10001 plane && adduser -D -u 10001 -G plane plane
+COPY --from=builder /venv /venv
+COPY manage.py ./
+COPY package.json ./
+COPY plane ./plane
+COPY templates ./templates
+RUN mkdir -p /code/plane/logs && LAB_AUTH_ENABLED=0 REDIS_URL=redis://127.0.0.1:6379/ AMQP_URL=memory:// python manage.py collectstatic --noinput && chmod -R a-w /code && chmod u+w /code/plane/logs && chown plane:plane /code/plane/logs
+USER 10001:10001
+EXPOSE 8000
+CMD ["uvicorn", "plane.asgi:application", "--host", "0.0.0.0", "--port", "8000", "--no-proxy-headers"]

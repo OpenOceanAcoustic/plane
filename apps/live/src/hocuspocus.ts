@@ -44,6 +44,7 @@ export class HocusPocusServerManager {
 
     this.server = new Hocuspocus({
       name: this.serverName,
+      timeout: 10000,
       onAuthenticate,
       onStateless,
       extensions: getExtensions(),

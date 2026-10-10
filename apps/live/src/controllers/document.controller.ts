@@ -1,69 +1,46 @@
-/**
- * Copyright (c) 2023-present Plane Software, Inc. and contributors
- * SPDX-License-Identifier: AGPL-3.0-only
- * See the LICENSE file for details.
- */
-
+/** Copyright (c) 2026 OpenOceanAcoustic and contributors. SPDX-License-Identifier: AGPL-3.0-only */
 import type { Request, Response } from "express";
 import { z } from "zod";
-// helpers
 import { Controller, Post } from "@plane/decorators";
-import { convertHTMLDocumentToAllFormats } from "@plane/editor";
-// logger
-import { logger } from "@plane/logger";
-import type { TConvertDocumentRequestBody } from "@/types";
+import { validOrigin, handleAuthentication } from "@/lib/auth";
+import { AppError } from "@/lib/errors";
+import { conversionPool } from "@/lib/conversion-pool";
+import { redisManager } from "@/redis";
 
-// Define the schema with more robust validation
 const convertDocumentSchema = z.object({
   description_html: z
     .string()
-    .min(1, "HTML content cannot be empty")
-    .refine((html) => html.trim().length > 0, "HTML content cannot be just whitespace")
-    .refine((html) => html.includes("<") && html.includes(">"), "Content must be valid HTML"),
+    .min(1)
+    .max(100 * 1024)
+    .refine((html) => html.trim().length > 0 && html.includes("<") && html.includes(">")),
   variant: z.enum(["rich", "document"]),
 });
+const quota = `local n=redis.call('INCR',KEYS[1]); if n==1 then redis.call('EXPIRE',KEYS[1],60) end; return n`;
 
 @Controller("/convert-document")
 export class DocumentController {
   @Post("/")
   async convertDocument(req: Request, res: Response) {
+    if (!validOrigin(req.headers.origin)) return res.status(403).json({ message: "Origin denied" });
+    if (!req.headers.cookie) return res.status(401).json({ message: "Authentication required" });
     try {
-      // Validate request body
-      const validatedData = convertDocumentSchema.parse(req.body as TConvertDocumentRequestBody);
-      const { description_html, variant } = validatedData;
-
-      // Process document conversion
-      const { description_json, description_binary } = convertHTMLDocumentToAllFormats({
-        document_html: description_html,
-        variant,
-      });
-
-      // Return successful response
-      res.status(200).json({
-        description_json,
-        description_binary,
-      });
-    } catch (error) {
-      if (error instanceof z.ZodError) {
-        const validationErrors = error.errors.map((err) => ({
-          path: err.path.join("."),
-          message: err.message,
-        }));
-        logger.error("DOCUMENT_CONTROLLER: Validation error", {
-          validationErrors,
-        });
-        return res.status(400).json({
-          message: `Validation error`,
-          context: {
-            validationErrors,
-          },
-        });
-      } else {
-        logger.error("DOCUMENT_CONTROLLER: Internal server error", error);
-        return res.status(500).json({
-          message: `Internal server error.`,
-        });
+      let identity;
+      try {
+        identity = await handleAuthentication({ cookie: req.headers.cookie });
+      } catch {
+        return res.status(401).json({ message: "Authentication required" });
       }
+      const redis = redisManager.getClient();
+      if (!redis) throw new AppError("Conversion quota unavailable", { statusCode: 503 });
+      if (Number(await redis.eval(quota, 1, `live:conversion:${identity.user.id}`)) > 10) {
+        res.setHeader("Retry-After", "60");
+        return res.status(429).json({ message: "Conversion limit reached" });
+      }
+      const input = convertDocumentSchema.parse(req.body);
+      return res.status(200).json(await conversionPool.submit(input));
+    } catch (error) {
+      const code = error instanceof z.ZodError ? 400 : error instanceof AppError ? (error.statusCode ?? 503) : 503;
+      return res.status(code).json({ message: code === 400 ? "Invalid document" : "Document conversion unavailable" });
     }
   }
 }

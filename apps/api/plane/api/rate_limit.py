@@ -4,6 +4,7 @@
 
 # Django imports
 from django.conf import settings
+import hashlib
 
 # Third party imports
 from rest_framework.throttling import SimpleRateThrottle
@@ -20,7 +21,7 @@ class ApiKeyRateThrottle(SimpleRateThrottle):
             return None  # Allow the request if there's no API key
 
         # Use the API key as part of the cache key
-        return f"{self.scope}:{api_key}"
+        return f"{self.scope}:{hashlib.sha256(api_key.encode()).hexdigest()}"
 
     def allow_request(self, request, view):
         allowed = super().allow_request(request, view)

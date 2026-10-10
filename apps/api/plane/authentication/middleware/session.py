@@ -60,11 +60,11 @@ class SessionMiddleware(MiddlewareMixin):
                     max_age = None
                     expires = None
                 else:
-                    # Use different max_age based on whether it's an admin cookie
-                    if is_admin_path:
-                        max_age = settings.ADMIN_SESSION_COOKIE_AGE
-                    else:
-                        max_age = request.session.get_expiry_age()
+                    max_age = request.session.get_expiry_age()
+                    # Session modification must not move the absolute deadline.
+                    absolute_expiry = request.session.get("lab_expires_at")
+                    if settings.LAB_AUTH_ENABLED and isinstance(absolute_expiry, (int, float)):
+                        max_age = max(0, min(max_age, int(absolute_expiry - time.time())))
 
                     expires_time = time.time() + max_age
                     expires = http_date(expires_time)

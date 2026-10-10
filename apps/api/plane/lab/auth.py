@@ -18,6 +18,7 @@ import qrcode
 from cryptography.fernet import Fernet
 from django.conf import settings
 from django.core.cache import cache
+from django.core import signing
 from django.core.exceptions import ValidationError
 from django.core.validators import validate_email, validate_slug
 from django.db import connection, transaction
@@ -28,16 +29,149 @@ from plane.db.models import APIToken, Profile, Session, User, Workspace, Workspa
 from plane.settings.redis import redis_instance
 from redis.exceptions import RedisError
 from plane.license.models import Instance, InstanceAdmin
-from .models import Audit, Credential, Enrollment, Invitation, LoginAccount, LoginAttempt, WorkspacePolicy
+from .models import (
+    Audit,
+    Credential,
+    Enrollment,
+    Invitation,
+    LoginAccount,
+    LoginAttempt,
+    TrustedBrowser,
+    WorkspacePolicy,
+)
 
 
 class AccessError(Exception):
-    def __init__(self, message="链接无效、已使用或已过期", status=400, retry_after=None):
+    def __init__(self, message="链接无效、已使用或已过期", status=400, retry_after=None, code="ACCESS_DENIED"):
         self.message, self.status, self.retry_after = message, status, retry_after
+        self.code = code
 
 
 def digest(value):
     return hashlib.sha256(value.encode()).hexdigest()
+
+
+def browser_cookie_name(admin=False):
+    return getattr(
+        settings,
+        "LAB_ADMIN_TRUSTED_BROWSER_COOKIE_NAME" if admin else "LAB_TRUSTED_BROWSER_COOKIE_NAME",
+        "__Host-lab-admin-browser" if admin else "__Host-lab-browser",
+    )
+
+
+@sensitive_variables()
+def signed_browser(request, username=None, admin=False):
+    """Cheap signature classification; every use still requires a locked DB check."""
+    cookie = request.COOKIES.get(browser_cookie_name(admin), "")
+    if not cookie or len(cookie) > 2048:
+        return None
+    try:
+        payload = signing.loads(cookie, salt="plane.lab.browser.v1")
+        if (
+            not isinstance(payload, dict)
+            or payload.get("purpose") != ("admin" if admin else "user")
+            or (username is not None and payload.get("username") != username)
+            or not isinstance(payload.get("expires"), int)
+            or payload["expires"] <= timezone.now().timestamp()
+            or not re.fullmatch(r"[A-Za-z0-9_-]{43}", payload.get("token", ""))
+        ):
+            return None
+        uuid.UUID(payload["user"])
+        uuid.UUID(payload["generation"])
+        return payload, digest(cookie)
+    except (signing.BadSignature, ValueError, TypeError, KeyError):
+        return None
+
+
+def locked_browser(credential, signed, admin=False):
+    if not signed or signed[0]["user"] != str(credential.user_id):
+        return None
+    return (
+        TrustedBrowser.objects.select_for_update()
+        .filter(
+            token_hash=signed[1],
+            user_id=credential.user_id,
+            purpose="admin" if admin else "user",
+            generation=credential.generation,
+            expires_at__gt=timezone.now(),
+            revoked_at__isnull=True,
+        )
+        .first()
+    )
+
+
+def consume_login_quota(credential, now, browser=None, session_hash=""):
+    """Credential lock serializes stranger, device and reauthentication scopes."""
+    account, _ = LoginAccount.objects.get_or_create(identity_hash=digest("user:" + str(credential.user_id)))
+    LoginAttempt.objects.filter(account=account, submitted_at__lte=now - timedelta(seconds=600)).delete()
+    attempts = list(
+        LoginAttempt.objects.filter(account=account, browser=browser, session_hash=session_hash).order_by(
+            "submitted_at"
+        )
+    )
+    if len(attempts) >= 5:
+        return AccessError(
+            "请求过于频繁，请稍后重试",
+            429,
+            max(1, math.ceil((attempts[0].submitted_at + timedelta(seconds=600) - now).total_seconds())),
+            code="RATE_LIMITED",
+        )
+    LoginAttempt.objects.create(account=account, browser=browser, session_hash=session_hash, submitted_at=now)
+    return None
+
+
+@sensitive_variables()
+def remember_browser(credential, request, data, admin=False):
+    now = timezone.now()
+    purpose = "admin" if admin else "user"
+    cap = getattr(settings, "LAB_ADMIN_BROWSER_LIMIT" if admin else "LAB_MEMBER_BROWSER_LIMIT", 2 if admin else 5)
+    browsers = TrustedBrowser.objects.filter(
+        user_id=credential.user_id,
+        purpose=purpose,
+        generation=credential.generation,
+        revoked_at__isnull=True,
+        expires_at__gt=now,
+    )
+    if browsers.count() >= cap:
+        raise AccessError(
+            "可信浏览器已达上限，请取消记住浏览器后登录并管理已有浏览器", 409, code="BROWSER_LIMIT_REACHED"
+        )
+    age = getattr(
+        settings, "LAB_ADMIN_BROWSER_AGE" if admin else "LAB_MEMBER_BROWSER_AGE", 604800 if admin else 2592000
+    )
+    expires = now + timedelta(seconds=age)
+    cookie = signing.dumps(
+        {
+            "token": secrets.token_urlsafe(32),
+            "user": str(credential.user_id),
+            "username": credential.user.username.casefold(),
+            "purpose": purpose,
+            "generation": str(credential.generation),
+            "expires": int(expires.timestamp()),
+        },
+        salt="plane.lab.browser.v1",
+    )
+    browser = TrustedBrowser.objects.create(
+        user_id=credential.user_id,
+        token_hash=digest(cookie),
+        purpose=purpose,
+        generation=credential.generation,
+        name=str(data.get("browser_name", "浏览器")).strip()[:120] or "浏览器",
+        expires_at=expires,
+        last_used_at=now,
+    )
+    request._lab_browser_cookie = (browser_cookie_name(admin), cookie, expires)
+    return browser
+
+
+def browser_cookie_response(request, response, admin=False):
+    pending = getattr(request, "_lab_browser_cookie", None)
+    if pending:
+        name, cookie, expires = pending
+        response.set_cookie(name, cookie, expires=expires, secure=True, httponly=True, samesite="Strict", path="/")
+    elif getattr(request, "_lab_clear_browser", False):
+        response.delete_cookie(browser_cookie_name(admin), path="/", samesite="Strict")
+    return response
 
 
 def cipher():
@@ -114,6 +248,7 @@ def issue_invitation(kind, workspace=None, workspace_slug="", role=15, user=None
         user.set_unusable_password()
         user.token = secrets.token_hex(32)
         user.save(update_fields=["password", "token"])
+        TrustedBrowser.objects.filter(user=user, revoked_at__isnull=True).update(revoked_at=timezone.now())
         Session.objects.filter(user_id=str(user.id)).delete()
         APIToken.objects.filter(user=user).update(is_active=False)
         transaction.on_commit(lambda: revoke_live_sessions(user.id))
@@ -201,6 +336,8 @@ def confirm_enrollment(data):
             raise AccessError()
         if pending.invitation.kind == "rebind":
             lock("lab-rebind:" + str(pending.invitation.user_id))
+            # Recovery, login and device mutation always take Credential first.
+            Credential.objects.select_for_update().get(user_id=pending.invitation.user_id)
         invitation = Invitation.objects.select_for_update().get(id=pending.invitation_id)
         usable(invitation)
         pending = Enrollment.objects.select_for_update().filter(id=pending.id).first()
@@ -214,7 +351,6 @@ def confirm_enrollment(data):
         else:
             error = None
             if invitation.kind == "rebind":
-                Credential.objects.select_for_update().get(user_id=invitation.user_id)
                 user = User.objects.select_for_update().get(id=invitation.user_id)
                 if not user.is_active:
                     raise AccessError()
@@ -297,56 +433,147 @@ def confirm_enrollment(data):
 
 @sensitive_variables()
 def authenticate(data, request, admin=False):
-    from django.contrib.auth import login
+    from django.contrib.auth import login, logout
+    from .security import limit_auth, security_event
 
     username = str(data.get("username", "")).strip().casefold()[:128]
+    signed = signed_browser(request, username, admin)
+    limit_auth(request, trusted=bool(signed))
     result = None
     with transaction.atomic():
-        user = User.objects.only("id").filter(username__iexact=username).first()
-        identity = "user:" + str(user.id) if user else "unknown:" + username
-        account, _ = LoginAccount.objects.get_or_create(identity_hash=digest(identity))
-        account = LoginAccount.objects.select_for_update().get(id=account.id)
+        credential = (
+            Credential.objects.select_for_update(of=("self",))
+            .select_related("user")
+            .filter(user__username__iexact=username, enabled=True, user__is_active=True)
+            .first()
+        )
         now = timezone.now()
-        LoginAttempt.objects.filter(account=account, submitted_at__lte=now - timedelta(seconds=600)).delete()
-        attempts = list(LoginAttempt.objects.filter(account=account).order_by("submitted_at"))
-        if len(attempts) >= 5:
-            result = AccessError(
-                "请求过于频繁，请稍后重试",
-                429,
-                max(1, math.ceil((attempts[0].submitted_at + timedelta(seconds=600) - now).total_seconds())),
-            )
+        browser = locked_browser(credential, signed, admin) if credential else None
+        if signed and not browser:
+            limit_auth(request, trusted=False)
+        if request.COOKIES.get(browser_cookie_name(admin)) and not browser:
+            request._lab_clear_browser = True
+        if not credential:
+            result = AccessError("用户名或动态码无效", 401, code="INVALID_CREDENTIALS")
         else:
-            LoginAttempt.objects.create(account=account, submitted_at=now)
-            credential = (
-                Credential.objects.select_for_update(of=("self",))
-                .select_related("user")
-                .filter(user_id=user.id if user else None)
-                .first()
-            )
-            step = (
-                verified_step(credential.encrypted_secret, data.get("code", ""), credential.last_step)
-                if credential
-                and credential.enabled
-                and credential.user.is_active
-                and credential.user.username.casefold() == username
-                else None
-            )
+            result = consume_login_quota(credential, now, browser)
+        if credential and not result:
+            step = verified_step(credential.encrypted_secret, data.get("code", ""), credential.last_step)
             if step is None or (
                 admin and not InstanceAdmin.objects.filter(user=credential.user, user__is_active=True).exists()
             ):
-                result = AccessError("用户名或动态码无效", 401)
+                result = AccessError("用户名或动态码无效", 401, code="INVALID_CREDENTIALS")
             else:
-                credential.last_step = step
-                credential.save(update_fields=["last_step"])
-                login(request, credential.user, backend="django.contrib.auth.backends.ModelBackend")
-                request.session["lab_generation"] = str(credential.generation)
-                request.session["device_info"] = {}
-                if admin:
-                    request.session.set_expiry(settings.ADMIN_SESSION_COOKIE_AGE)
-                request.session.save()
+                try:
+                    if data.get("remember_browser") is True and not browser:
+                        browser = remember_browser(credential, request, data, admin)
+                except AccessError as error:
+                    if error.code == "BROWSER_LIMIT_REACHED":
+                        request._lab_browser_limit_reached = True
+                    else:
+                        result = error
+                if not result:
+                    credential.last_step = step
+                    credential.save(update_fields=["last_step"])
+                    if browser:
+                        browser.last_used_at = now
+                        browser.save(update_fields=["last_used_at"])
+                    # A new login creates a new session; session-scoped reauth quotas
+                    # cannot accidentally carry across an unrelated login.
+                    logout(request)
+                    login(request, credential.user, backend="django.contrib.auth.backends.ModelBackend")
+                    expiry = now + timedelta(
+                        seconds=settings.ADMIN_SESSION_COOKIE_AGE if admin else settings.SESSION_COOKIE_AGE
+                    )
+                    request.session["lab_generation"] = str(credential.generation)
+                    request.session["lab_purpose"] = "admin" if admin else "user"
+                    request.session["lab_authenticated_at"] = int(now.timestamp())
+                    request.session["lab_expires_at"] = int(expiry.timestamp())
+                    request.session["lab_admin_reauthenticated_at"] = int(now.timestamp()) if admin else None
+                    request.session["lab_browser_id"] = str(browser.id) if browser else None
+                    request.session["device_info"] = {"lab_browser_id": str(browser.id)} if browser else {}
+                    request.session.set_expiry(expiry)
+                    request.session.save()
+    security_event(
+        request,
+        "auth.login",
+        username_hash=digest(username),
+        purpose="admin" if admin else "user",
+        result=result.code if result else "success",
+        device_id=str(browser.id) if browser else "",
+    )
     if result:
         raise result
     return credential.user
+
+
+@sensitive_variables()
+def reauthenticate_admin(data, request):
+    from .middleware import valid_lab_session
+    from .security import limit_auth, security_event
+
+    limit_auth(request, trusted=request.user.is_authenticated)
+    if not request.user.is_authenticated:
+        raise AccessError("请先登录管理后台", 401, code="SESSION_INVALID")
+    result = None
+    with transaction.atomic():
+        credential = (
+            Credential.objects.select_for_update(of=("self",))
+            .select_related("user")
+            .filter(
+                user=request.user,
+                enabled=True,
+                user__is_active=True,
+            )
+            .first()
+        )
+        if (
+            not valid_lab_session(request, credential, admin=True)
+            or not InstanceAdmin.objects.filter(user=request.user).exists()
+        ):
+            raise AccessError("管理后台认证已失效，请重新登录", 401, code="SESSION_INVALID")
+        browser_id = request.session.get("lab_browser_id")
+        if (
+            browser_id
+            and not TrustedBrowser.objects.select_for_update()
+            .filter(
+                id=browser_id,
+                user=request.user,
+                purpose="admin",
+                generation=credential.generation,
+                revoked_at__isnull=True,
+            )
+            .exists()
+        ):
+            raise AccessError("可信浏览器已撤销，请重新登录", 401, code="SESSION_INVALID")
+        now = timezone.now()
+        result = consume_login_quota(credential, now, session_hash=digest(request.session.session_key or ""))
+        if not result:
+            session = (
+                Session.objects.select_for_update()
+                .filter(
+                    session_key=request.session.session_key,
+                    user_id=str(request.user.id),
+                    expire_date__gt=now,
+                )
+                .first()
+            )
+            step = verified_step(credential.encrypted_secret, data.get("code", ""), credential.last_step)
+            if not session or step is None:
+                result = AccessError("动态码无效或会话已失效", 401, code="INVALID_CREDENTIALS")
+            else:
+                credential.last_step = step
+                credential.save(update_fields=["last_step"])
+                request.session["lab_admin_reauthenticated_at"] = int(now.timestamp())
+                request.session.save()
+    security_event(
+        request,
+        "auth.admin_reauthentication",
+        result=result.code if result else "success",
+        user_id=str(request.user.id),
+    )
+    if result:
+        raise result
 
 
 def require_lab_session(request):
@@ -354,11 +581,127 @@ def require_lab_session(request):
     if not settings.LAB_AUTH_ENABLED:
         return
     from rest_framework.exceptions import NotAuthenticated
+    from .middleware import admin_path, valid_lab_session
 
     credential = (
         Credential.objects.select_for_update(of=("self",))
         .filter(user_id=request.user.id, enabled=True, user__is_active=True)
         .first()
     )
-    if not credential or request.session.get("lab_generation") != str(credential.generation):
+    if not valid_lab_session(request, credential, admin_path(request.path)):
         raise NotAuthenticated("认证已失效，请重新登录")
+    browser_id = request.session.get("lab_browser_id")
+    if (
+        browser_id
+        and not TrustedBrowser.objects.select_for_update()
+        .filter(
+            id=browser_id,
+            user_id=request.user.id,
+            generation=credential.generation,
+            revoked_at__isnull=True,
+            purpose="admin" if admin_path(request.path) else "user",
+        )
+        .exists()
+    ):
+        raise NotAuthenticated("可信浏览器已撤销，请重新登录")
+
+
+def list_browsers(request, admin=False):
+    if not request.user.is_authenticated:
+        raise AccessError("请先登录", 401, code="SESSION_INVALID")
+    with transaction.atomic():
+        require_lab_session(request)
+        rows = TrustedBrowser.objects.filter(
+            user=request.user,
+            purpose="admin" if admin else "user",
+            generation=request.session["lab_generation"],
+            revoked_at__isnull=True,
+            expires_at__gt=timezone.now(),
+        ).order_by("created_at")
+        return [
+            {
+                "id": str(row.id),
+                "name": row.name,
+                "created_at": row.created_at.isoformat(),
+                "expires_at": row.expires_at.isoformat(),
+                "last_used_at": row.last_used_at.isoformat(),
+                "current": request.session.get("lab_browser_id") == str(row.id),
+            }
+            for row in rows
+        ]
+
+
+def revoke_browser_sessions(browser, request):
+    from django.contrib.auth import logout
+
+    browser.revoked_at = timezone.now()
+    browser.save(update_fields=["revoked_at"])
+    Session.objects.filter(user_id=str(browser.user_id), device_info__lab_browser_id=str(browser.id)).delete()
+    if request.session.get("lab_browser_id") == str(browser.id):
+        logout(request)
+        request._lab_clear_browser = True
+
+
+def revoke_browser(request, browser_id, admin=False):
+    from .security import security_event
+
+    if not request.user.is_authenticated:
+        raise AccessError("请先登录", 401, code="SESSION_INVALID")
+    with transaction.atomic():
+        require_lab_session(request)
+        browser = (
+            TrustedBrowser.objects.select_for_update()
+            .filter(
+                id=browser_id,
+                user=request.user,
+                purpose="admin" if admin else "user",
+                revoked_at__isnull=True,
+            )
+            .first()
+        )
+        if not browser:
+            raise AccessError("浏览器不存在或已撤销", 404, code="BROWSER_NOT_FOUND")
+        revoke_browser_sessions(browser, request)
+    security_event(request, "auth.browser_revoked", device_id=str(browser_id), purpose="admin" if admin else "user")
+
+
+@sensitive_variables()
+def forget_browser(request, admin=False):
+    from django.contrib.auth import logout
+    from .middleware import valid_lab_session
+    from .security import limit_auth, security_event
+
+    signed = signed_browser(request, admin=admin)
+    limit_auth(request, trusted=bool(signed))
+    request._lab_clear_browser = True
+    authenticated = request.user.is_authenticated
+    user_id = request.user.id if authenticated else signed[0]["user"] if signed else None
+    with transaction.atomic():
+        credential = (
+            Credential.objects.select_for_update().filter(user_id=user_id, enabled=True).first() if user_id else None
+        )
+        browser = None
+        if authenticated and valid_lab_session(request, credential, admin) and request.session.get("lab_browser_id"):
+            # The authenticated session owns this device even if its cookie was
+            # removed or corrupted. Never revoke a different user's cookie.
+            browser = (
+                TrustedBrowser.objects.select_for_update()
+                .filter(
+                    id=request.session["lab_browser_id"],
+                    user_id=user_id,
+                    purpose="admin" if admin else "user",
+                    generation=credential.generation,
+                    revoked_at__isnull=True,
+                )
+                .first()
+            )
+        if not browser and credential:
+            browser = locked_browser(credential, signed, admin)
+        if signed and not browser:
+            limit_auth(request, trusted=False)
+        if browser:
+            revoke_browser_sessions(browser, request)
+        # Forget also signs out the current purpose when no trust credential was
+        # opted in, the cookie is missing, or its signature has become invalid.
+        logout(request)
+    security_event(request, "auth.browser_forgotten", purpose="admin" if admin else "user")

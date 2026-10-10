@@ -6,11 +6,18 @@
 
 import * as dotenv from "dotenv";
 import { z } from "zod";
+import { isIP } from "node:net";
 
 dotenv.config();
 
 // Environment variable validation
 const envSchema = z.object({
+  PUBLIC_ORIGIN: z.string().default(""),
+  WEB_BASE_URL: z.string().default(""),
+  PUBLIC_DEPLOYMENT: z.string().default("0"),
+  TRUSTED_PROXY_CIDRS: z.string().default(""),
+  LIVE_HANDSHAKE_SOURCE_LIMIT: z.coerce.number().int().positive().default(60),
+  LIVE_HANDSHAKE_GLOBAL_LIMIT: z.coerce.number().int().positive().default(240),
   APP_VERSION: z.string().default("1.0.0"),
   HOSTNAME: z.string().optional(),
   PORT: z.string().default("3000"),
@@ -36,6 +43,25 @@ const validateEnv = () => {
     console.error("❌ Invalid environment variables:", JSON.stringify(result.error.format(), null, 4));
     process.exit(1);
   }
+  const origin = result.data.PUBLIC_ORIGIN || result.data.WEB_BASE_URL;
+  if (
+    !origin ||
+    new URL(origin).origin !== origin ||
+    (result.data.PUBLIC_DEPLOYMENT === "1" && !origin.startsWith("https://"))
+  ) {
+    throw new Error("A canonical PUBLIC_ORIGIN is required (HTTPS for public deployments)");
+  }
+  const proxies = result.data.TRUSTED_PROXY_CIDRS.split(",")
+    .map((value) => value.trim())
+    .filter(Boolean);
+  if (
+    (result.data.PUBLIC_DEPLOYMENT === "1" && !proxies.length) ||
+    proxies.some((value) => {
+      const [address, prefix] = value.split("/");
+      return !address || !isIP(address) || Number(prefix) !== (isIP(address) === 4 ? 32 : 128);
+    })
+  )
+    throw new Error("Live trusts only explicit proxy addresses (/32 or /128)");
   return result.data;
 };
 

@@ -31,6 +31,7 @@ jobs:
           python3 tools/lab/test_setup.py
           python3 tools/lab/test_runtime_mounts.py
           python3 tools/lab/test_backup.py
+          python3 tools/lab/test_public_deployment.py
           python3 tools/lab/e2e/test_prepare.py
       - name: Prepare isolated configuration
         run: python3 tools/lab/setup.py
@@ -55,7 +56,7 @@ jobs:
           cache-to: type=gha,mode=max,scope=lab-api
       - name: Run real PostgreSQL contracts
         run: |
-          docker compose -f docker-compose-test.yml -f compose.lab-test.yml run --rm api-tests pytest --migrations plane/tests/contract/api/lab --junitxml=/code/lab-test-results.xml
+          docker compose -f docker-compose-test.yml -f compose.lab-test.yml run --rm api-tests pytest --migrations plane/tests/contract/api/lab plane/tests/contract/app/test_page_collaboration_access.py plane/tests/contract/app/test_page_version_project_scope_app.py --junitxml=/code/lab-test-results.xml
       - name: Complete upstream regression
         if: (github.event_name == 'workflow_dispatch' && inputs.full_suite) || contains(github.event.head_commit.message, '[full-regression]')
         run: docker compose -f docker-compose-test.yml -f compose.lab-test.yml run --rm api-tests pytest --migrations --junitxml=/code/lab-full-test-results.xml
@@ -124,6 +125,7 @@ jobs:
       ROLLDOWN_WORKER_THREADS: 4
       ROLLDOWN_MAX_BLOCKING_THREADS: 4
       TURBO_TELEMETRY_DISABLED: 1
+      GOMAXPROCS: 2
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-node@v6
@@ -151,13 +153,15 @@ jobs:
           node tools/lab/test-planning-store.mjs
           node tools/lab/test-fields-gantt.mjs
           node tools/lab/test-workflow.mjs
-          pnpm --filter live test tests/extensions/lab-session-guard.test.ts
+          node tools/lab/tests/session-client.mjs
+          pnpm --filter live test
       - name: Chromium component contracts
         run: |
           pnpm exec playwright install --with-deps chromium
           node tools/lab/test-frappe-lifecycle.mjs
           node tools/lab/test-field-manager.mjs
           pnpm exec playwright test --config tools/lab/browser/playwright.config.ts
+          pnpm exec playwright test --config tools/lab/e2e/playwright.config.ts session-security-components.spec.ts
       - uses: actions/upload-artifact@v7
         with:
           name: lab-builds
@@ -169,3 +173,37 @@ jobs:
             apps/live/dist
             packages/*/dist
           retention-days: 3
+
+  public-api-image:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6
+      - uses: docker/setup-buildx-action@v4
+      - name: Build the default pinned public API image
+        run: docker build -f apps/api/Dockerfile.public -t ooa-plane-api:security-ci apps/api
+      - name: Verify non-root readonly startup, Host and forwarding headers
+        env:
+          RUN_DOCKER_PUBLIC_IMAGE_TEST: "1"
+          PUBLIC_TEST_API_IMAGE: ooa-plane-api:security-ci
+        run: python3 -m unittest discover -s tools/lab -p test_public_image.py
+      - name: Verify public topology and credential-free proxy logs
+        env:
+          RUN_DOCKER_CADDY_TEST: "1"
+        run: |
+          docker pull caddy:2.10.2-alpine
+          python3 -m unittest discover -s tools/lab -p test_public_deployment.py
+
+  public-proxy-image:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6
+      - uses: docker/setup-buildx-action@v4
+      - name: Build the pinned public client and proxy image
+        run: docker build --target proxy --build-arg PUBLIC_ORIGIN=https://dashboard.example.org -f tools/lab/Dockerfile.public -t ooa-plane-proxy:security-ci .
+      - name: Verify readonly non-root proxy with all capabilities removed
+        env:
+          RUN_DOCKER_PUBLIC_PROXY_IMAGE_TEST: "1"
+          PUBLIC_TEST_PROXY_IMAGE: ooa-plane-proxy:security-ci
+        run: python3 -m unittest discover -s tools/lab -p test_public_proxy_image.py

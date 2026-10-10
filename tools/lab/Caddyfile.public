@@ -1,0 +1,101 @@
+{
+	admin off
+	servers {
+		protocols h1 h2
+		max_header_size 32KB
+		timeouts {
+			read_header 5s
+			read_body 30s
+			write 120s
+			idle 60s
+		}
+	}
+}
+
+(upstream_headers) {
+	header_up Host {$PUBLIC_HOST}
+	header_up X-Forwarded-Host {$PUBLIC_HOST}
+	header_up X-Forwarded-Proto https
+	header_up X-Forwarded-For {http.request.remote.host}
+	header_up X-Real-IP {http.request.remote.host}
+	header_up -Forwarded
+	header_up -X-Forwarded-Port
+	header_up -X-Forwarded-Ssl
+	header_up -X-Forwarded-Server
+	header_up -True-Client-IP
+	header_up -CF-Connecting-IP
+	transport http {
+		dial_timeout 3s
+		response_header_timeout 60s
+	}
+}
+
+{$PUBLIC_HOST} {
+	encode gzip
+	log {
+		output stdout
+		format filter {
+			wrap json
+			fields {
+				# Omit bearer URL queries and credential headers in either direction.
+				request>uri delete
+				request>headers delete
+				resp_headers delete
+			}
+		}
+	}
+	header {
+		Strict-Transport-Security "max-age={$PUBLIC_HSTS_SECONDS}"
+		Referrer-Policy "no-referrer"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		-Server
+	}
+	# 5 MiB object plus multipart form/signature overhead.
+	request_body {
+		max_size 6MiB
+	}
+	@api path /api/* /auth/* /static/*
+	handle @api {
+		reverse_proxy api:8000 {
+			import upstream_headers
+		}
+	}
+	@uploads path /uploads /uploads/*
+	handle @uploads {
+		reverse_proxy plane-minio:9000 {
+			# Preserve the signed Host; never forward spoofable proxy credentials.
+			header_up Host {$PUBLIC_HOST}
+			header_up X-Forwarded-Host {$PUBLIC_HOST}
+			header_up -Forwarded
+			header_up -X-Forwarded-Port
+			header_up -X-Forwarded-Ssl
+			header_up -X-Forwarded-Server
+			header_up -True-Client-IP
+			header_up -CF-Connecting-IP
+			header_up X-Forwarded-For {http.request.remote.host}
+			header_up X-Real-IP {http.request.remote.host}
+			header_up X-Forwarded-Proto https
+		}
+	}
+	handle /live/* {
+		reverse_proxy live:3000 {
+			import upstream_headers
+		}
+	}
+	handle_path /god-mode/* {
+		root * /srv/admin
+		try_files {path} /index.html
+		file_server
+	}
+	handle /spaces/* {
+		reverse_proxy space:3000 {
+			import upstream_headers
+		}
+	}
+	handle {
+		root * /srv/web
+		try_files {path} /index.html
+		file_server
+	}
+}

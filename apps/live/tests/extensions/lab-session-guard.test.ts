@@ -6,7 +6,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { beforeHandleMessagePayload, onConfigurePayload } from "@hocuspocus/server";
 import { LabSessionGuard } from "@/extensions/lab-session-guard";
 import { Redis } from "@/extensions/redis";
-import { handleAuthentication } from "@/lib/auth";
+import { authorizeDocument } from "@/lib/auth";
 import { AdminCommand, CloseCode } from "@/types/admin-commands";
 import type { RevokeUserCommandData } from "@/types/admin-commands";
 
@@ -15,7 +15,9 @@ vi.mock("@/extensions/redis", () => ({
     onAdminCommand = vi.fn();
   },
 }));
-vi.mock("@/lib/auth", () => ({ handleAuthentication: vi.fn() }));
+vi.mock("@/lib/auth", () => ({ authorizeDocument: vi.fn() }));
+
+vi.mock("@/lib/collaboration-limits", () => ({ collaborationLimits: () => ({ message() {} }) }));
 
 describe("laboratory live credential recovery", () => {
   it("disconnects established subscriptions only for the recovered user", async () => {
@@ -46,19 +48,23 @@ describe("laboratory live credential recovery", () => {
     });
     expect(recovered.close).toHaveBeenCalledWith({
       code: CloseCode.SECURITY_VIOLATION,
-      reason: "Account credentials revoked",
+      reason: "Session or document access is no longer valid",
     });
     expect(other.close).not.toHaveBeenCalled();
   });
 
   it("rejects an established connection's next mutation if its persisted session was revoked", async () => {
-    vi.mocked(handleAuthentication).mockRejectedValueOnce(new Error("revoked"));
+    vi.mocked(authorizeDocument).mockRejectedValueOnce(new Error("revoked"));
     const connection = { close: vi.fn() };
-    const context = { userId: "recovered", cookie: "old-session" };
+    const context = { userId: "recovered", cookie: "old-session", expiresAt: Date.now() + 60000 };
     await expect(
-      new LabSessionGuard().beforeHandleMessage({ context, connection } as unknown as beforeHandleMessagePayload)
-    ).rejects.toThrow("Session is no longer valid");
-    expect(handleAuthentication).toHaveBeenCalledWith({ userId: "recovered", cookie: "old-session" });
+      new LabSessionGuard().beforeHandleMessage({
+        context,
+        connection,
+        documentName: "page",
+        update: new Uint8Array(),
+      } as unknown as beforeHandleMessagePayload)
+    ).rejects.toThrow("Session or document access is no longer valid");
     expect(connection.close).toHaveBeenCalled();
   });
 });

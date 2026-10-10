@@ -49,4 +49,7 @@ class APIKeyAuthentication(authentication.BaseAuthentication):
 
         # Validate the API token
         user, token = self.validate_api_token(token)
+        from plane.lab.security import enforce_user_limits
+
+        enforce_user_limits(request, user=user)
         return user, token

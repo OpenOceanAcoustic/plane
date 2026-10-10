@@ -23,6 +23,7 @@ from plane.app.serializers import (
 from plane.app.views.base import BaseAPIView
 from plane.db.models import Project, ProjectMember, WorkspaceMember, DraftIssue
 from plane.utils.cache import invalidate_cache
+from plane.app.page_signals import invalidate_access
 
 from .. import BaseViewSet
 
@@ -87,6 +88,7 @@ class WorkSpaceMemberViewSet(BaseViewSet):
         # If a user is moved to a guest role he can't have any other role in projects
         if "role" in request.data and int(request.data.get("role")) == 5:
             ProjectMember.objects.filter(workspace__slug=slug, member_id=workspace_member.member_id).update(role=5)
+            invalidate_access(user_id=workspace_member.member_id, workspace_id=workspace_member.workspace_id)
 
         serializer = WorkSpaceMemberSerializer(workspace_member, data=request.data, partial=True)
 
@@ -144,6 +146,7 @@ class WorkSpaceMemberViewSet(BaseViewSet):
         _ = ProjectMember.objects.filter(
             workspace__slug=slug, member_id=workspace_member.member_id, is_active=True
         ).update(is_active=False, updated_at=timezone.now())
+        invalidate_access(user_id=workspace_member.member_id, workspace_id=workspace_member.workspace_id)
 
         workspace_member.is_active = False
         workspace_member.save()
@@ -198,6 +201,7 @@ class WorkSpaceMemberViewSet(BaseViewSet):
         _ = ProjectMember.objects.filter(
             workspace__slug=slug, member_id=workspace_member.member_id, is_active=True
         ).update(is_active=False, updated_at=timezone.now())
+        invalidate_access(user_id=workspace_member.member_id, workspace_id=workspace_member.workspace_id)
 
         # # Deactivate the user
         workspace_member.is_active = False
