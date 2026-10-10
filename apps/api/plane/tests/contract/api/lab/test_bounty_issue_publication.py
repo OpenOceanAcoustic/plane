@@ -197,12 +197,13 @@ def test_started_native_guard_migration_can_reverse_and_reapply_without_changing
     assert response.status_code == 201, response.content
     bounty = Bounty.objects.get(pk=response.json()["id"])
     assert Issue.objects.filter(pk=issue.id).update(priority="medium") == 1
+    restore_targets = MigrationExecutor(connection).loader.graph.leaf_nodes()
     try:
         MigrationExecutor(connection).migrate([("lab", "0011_public_duty_zero_revision")])
         with pytest.raises(IntegrityError, match="lab_bounty_workflow"), transaction.atomic():
             Issue.objects.filter(pk=issue.id).update(priority="low")
     finally:
-        MigrationExecutor(connection).migrate([("lab", "0012_started_bounty_upgrade_guard")])
+        MigrationExecutor(connection).migrate(restore_targets)
     assert Issue.objects.filter(pk=issue.id).update(priority="low") == 1
     issue.refresh_from_db()
     bounty.refresh_from_db()
