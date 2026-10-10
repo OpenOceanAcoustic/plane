@@ -436,6 +436,12 @@ def authenticate(data, request, admin=False, mobile=False):
     from django.contrib.auth import login, logout
     from .security import limit_auth, security_event
 
+    if admin and (
+        mobile
+        or request.session.get("lab_client") == "android"
+        or getattr(request, "_lab_android_user_session", False)
+    ):
+        raise AccessError("请在电脑网页登录管理后台", 403, code="ADMIN_WEB_ONLY")
     username = str(data.get("username", "")).strip().casefold()[:128]
     signed = signed_browser(request, username, admin)
     limit_auth(request, trusted=bool(signed))

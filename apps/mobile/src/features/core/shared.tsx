@@ -1,6 +1,7 @@
 import { useState, type ReactNode } from "react";
-import { Check, Plus, Search } from "lucide-react";
-import { ErrorMessage, Loading, Sheet, records, useData, type Entity } from "../../components/ui";
+import { Check, Search } from "lucide-react";
+import { ErrorMessage, FloatingAction, Loading, Sheet, records, useData, type Entity } from "../../components/ui";
+import { CanonicalIcon } from "../../components/navigation";
 import type { ApiClient } from "../../lib/client";
 import type { CoreProps, NamedEntity } from "./model";
 
@@ -28,12 +29,7 @@ export function Empty({ children = "暂无记录" }: { children?: ReactNode }) {
   return <p className="empty">{children}</p>;
 }
 export function AddButton({ children, onClick }: { children: ReactNode; onClick: () => void }) {
-  return (
-    <button className="button primary" onClick={onClick}>
-      <Plus size={17} />
-      {children}
-    </button>
-  );
+  return <FloatingAction label={typeof children === "string" ? children : "新建"} onClick={onClick} />;
 }
 export function ProjectPicker({ client, workspaceSlug, section, onNavigate }: CoreProps) {
   const { data, error, loading } = useData<NamedEntity[]>(
@@ -183,5 +179,64 @@ export function TaskSearchSheet({
         </div>
       </ResultState>
     </Sheet>
+  );
+}
+
+export function StatusGlyph({ state, name }: { state?: Entity; name?: string }) {
+  const group = String(state?.group ?? "");
+  const label = name ?? String(state?.name ?? "状态");
+  const kind =
+    (
+      {
+        backlog: "backlog",
+        unstarted: "pending",
+        started: "progress",
+        completed: "complete",
+        cancelled: "cancelled",
+      } as Record<string, string>
+    )[group] ??
+    (/完成|关闭/.test(label)
+      ? "complete"
+      : /进行|处理|执行|复核|验收/.test(label)
+        ? "progress"
+        : /取消|作废/.test(label)
+          ? "cancelled"
+          : /待安排|积压/.test(label)
+            ? "backlog"
+            : "pending");
+  return (
+    <span className={`status-indicator is-${kind}`} aria-label={label}>
+      {kind === "complete" ? (
+        <CanonicalIcon name="check" size={12} />
+      ) : kind === "cancelled" ? (
+        <CanonicalIcon name="close" size={12} />
+      ) : null}
+    </span>
+  );
+}
+export function PriorityGlyph({ value }: { value?: string }) {
+  const level = value ?? "none";
+  return (
+    <span
+      className={`priority-bars is-${level}`}
+      title={
+        (
+          { urgent: "紧急", high: "高优先级", medium: "中优先级", low: "低优先级", none: "无优先级" } as Record<
+            string,
+            string
+          >
+        )[level]
+      }
+    >
+      {level === "urgent" ? (
+        <b>!</b>
+      ) : (
+        <>
+          <i />
+          <i />
+          <i />
+        </>
+      )}
+    </span>
   );
 }

@@ -72,9 +72,7 @@ export function userName(user: User | undefined): string {
 export function dateLabel(value: unknown): string {
   if (!value) return "未设置";
   const date = new Date(String(value));
-  return Number.isNaN(date.getTime())
-    ? "未设置"
-    : date.toLocaleDateString("zh-CN", { month: "numeric", day: "numeric" });
+  return Number.isNaN(date.getTime()) ? "未设置" : date.toLocaleDateString("zh-CN", { month: "long", day: "numeric" });
 }
 export function safeTextHtml(value: string): string {
   return `<p>${value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/\n/g, "<br>")}</p>`;

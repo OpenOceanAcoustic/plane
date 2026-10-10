@@ -734,12 +734,28 @@ export function LabFinanceActionDialog({
           )}
         </LabField>
       ))}
+      {["payment", "public-payment"].includes(action) && (
+        <div className="lab-stats">
+          <div className="lab-stat">
+            <span>核销应付</span>
+            <strong>¥{labDecimalText(units(valueOf("gross")) ?? 0n)}</strong>
+          </div>
+          <div className="lab-stat">
+            <span>扣缴</span>
+            <strong>¥{labDecimalText(units(valueOf("withheld")) ?? 0n)}</strong>
+          </div>
+          <div className="lab-stat">
+            <span>实际支付</span>
+            <strong>¥{labDecimalText((units(valueOf("gross")) ?? 0n) - (units(valueOf("withheld")) ?? 0n))}</strong>
+          </div>
+        </div>
+      )}
       {action === "stage" && (
         <>
-          <fieldset className="space-y-3 rounded border border-subtle p-3">
-            <legend className="text-13 font-medium">预算用途条目（金额之和须等于 E）</legend>
+          <fieldset className="lab-form-section">
+            <legend className="lab-section-title">预算用途条目（金额之和须等于 E）</legend>
             {purposes.map((id) => (
-              <div key={id} className="grid grid-cols-2 gap-2">
+              <div key={id} className="lab-form-fields">
                 <LabField label="用途">
                   <input name={`purpose-name-${id}`} required className={labInputClass} />
                 </LabField>
@@ -768,10 +784,10 @@ export function LabFinanceActionDialog({
               添加用途条目
             </Button>
           </fieldset>
-          <fieldset className="space-y-3 rounded border border-subtle p-3">
-            <legend className="text-13 font-medium">事前冻结成员参数</legend>
+          <fieldset className="lab-form-section">
+            <legend className="lab-section-title">事前冻结成员参数</legend>
             {shares.map((id) => (
-              <div key={id} className="grid grid-cols-2 gap-2">
+              <div key={id} className="lab-form-fields">
                 <LabField label="成员">
                   <select
                     name={`share-user-${id}`}
@@ -843,10 +859,10 @@ export function LabFinanceActionDialog({
             升级项目，冻结历史孵化资格
           </label>
           {upgraded && (
-            <fieldset className="space-y-3 rounded border border-subtle p-3">
-              <legend className="text-13 font-medium">历史奖励资格（须提供凭证）</legend>
+            <fieldset className="lab-form-section">
+              <legend className="lab-section-title">历史奖励资格（须提供凭证）</legend>
               {history.map((id) => (
-                <div key={id} className="grid grid-cols-2 gap-2">
+                <div key={id} className="lab-form-fields">
                   <LabField label="历史成员">
                     <select name={`history-user-${id}`} required className={labInputClass}>
                       <option value="">请选择</option>
@@ -901,6 +917,7 @@ export function LabFinanceActionDialog({
           )}
         </>
       )}
+      <h3 className="lab-section-heading">依据与凭证</h3>
       <LabField label="操作／核准依据">
         <textarea name="reason" required rows={3} className={labInputClass} defaultValue={defaults.reason} />
       </LabField>

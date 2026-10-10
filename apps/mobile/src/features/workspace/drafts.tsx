@@ -1,3 +1,4 @@
+import { PageHeading } from "../../components/ui";
 import { useMemo, useState } from "react";
 import { ErrorMessage, Html, records, useData, type Entity } from "../../components/ui";
 import { RichHtmlEditor } from "../../components/rich-editor";
@@ -27,8 +28,7 @@ export default function Drafts(props: WorkspaceProps) {
   const edit = modal === "create" || modal === "edit";
   return (
     <>
-      <div className="lab-heading">
-        <h1>我的草稿</h1>
+      <PageHeading title="草稿">
         {role >= 5 && (
           <Button
             variant="primary"
@@ -40,8 +40,8 @@ export default function Drafts(props: WorkspaceProps) {
             新建草稿
           </Button>
         )}
-      </div>
-      <LabField label="搜索当前页草稿">
+      </PageHeading>
+      <LabField label="搜索草稿">
         <input
           className={labInputClass}
           value={query}

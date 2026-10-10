@@ -11,7 +11,17 @@ import {
   type Entity,
 } from "../../components/ui";
 import { AddButton, DetailFields, Empty, ProjectPicker, ResultState, TaskSearchSheet } from "./shared";
-import { priorities, priorityName, userName, type Member, type CoreProps, type Session, type Task } from "./model";
+import { CanonicalIcon } from "../../components/navigation";
+import {
+  dateLabel,
+  priorities,
+  priorityName,
+  userName,
+  type Member,
+  type CoreProps,
+  type Session,
+  type Task,
+} from "./model";
 type IntakeRow = Entity & {
   id: string;
   status: number;
@@ -42,10 +52,11 @@ function ProjectIntake(props: CoreProps & { projectId: string }) {
   const base = `/api/workspaces/${encodeURIComponent(workspaceSlug)}/projects/${projectId}`;
   const project = useData<Entity>(client, `${base}/`);
   const session = useData<Session>(client, "/api/lab/session/");
-  const [status, setStatus] = useState("-2"),
+  const [status, setStatus] = useState("-2,0"),
     [cursors, setCursors] = useState([""]),
     [selected, setSelected] = useState<string>(),
     [modal, setModal] = useState<string>();
+  const [phase, setPhase] = useState("pending");
   const cursor = cursors[cursors.length - 1];
   const list = useData<Entity>(
     client,
@@ -74,22 +85,55 @@ function ProjectIntake(props: CoreProps & { projectId: string }) {
   };
   return (
     <>
-      <PageHeading title="需求收件箱">
+      <PageHeading title="需求收集">
         {Number(project.data?.member_role) >= 5 && !notEnabled && (
           <AddButton onClick={() => setModal("create")}>提交需求</AddButton>
         )}
       </PageHeading>
-      <div className="core-tabs">
-        {statuses.map((value) => (
+      <div className="core-segmented-tabs">
+        {[
+          ["pending", "待处理"],
+          ["processed", "已处理"],
+        ].map(([key, label]) => (
           <button
-            key={value.value}
-            className={`chip ${status === value.value ? "active" : ""}`}
+            className={phase === key ? "active" : ""}
+            key={key}
             onClick={() => {
-              setStatus(value.value);
+              setPhase(key);
+              setStatus(key === "pending" ? "-2,0" : "-1,1,2");
               setCursors([""]);
             }}
           >
-            {value.label}
+            {label}
+            {phase === key && !list.loading && !list.error && !list.data?.next_page_results
+              ? ` ${records(list.data).length}`
+              : ""}
+          </button>
+        ))}
+      </div>
+      <div className="core-tabs">
+        {(phase === "pending"
+          ? [
+              ["-2,0", "全部"],
+              ["-2", "待分流"],
+              ["0", "已推迟"],
+            ]
+          : [
+              ["-1,1,2", "全部"],
+              ["1", "已接受"],
+              ["-1", "已拒绝"],
+              ["2", "重复"],
+            ]
+        ).map(([value, label]) => (
+          <button
+            className={`chip ${status === value ? "active" : ""}`}
+            key={value}
+            onClick={() => {
+              setStatus(value);
+              setCursors([""]);
+            }}
+          >
+            {label}
           </button>
         ))}
       </div>
@@ -110,26 +154,49 @@ function ProjectIntake(props: CoreProps & { projectId: string }) {
             return (
               <button key={itemRow.id} className="card core-select-task" onClick={() => setSelected(itemRow.issue.id)}>
                 <strong>{itemRow.issue.name}</strong>
-                <span className="muted">优先级 · {priorityName(itemRow.issue.priority)}</span>
+                <span
+                  className={`core-pill core-tone-${itemRow.status === 0 ? "grey" : itemRow.status === 1 ? "emerald" : "orange"}`}
+                >
+                  {statuses.find((entry) => Number(entry.value) === itemRow.status)?.label ?? "待处理"}
+                </span>
+                <div className="core-card-meta">
+                  <span>
+                    <CanonicalIcon name="priority" size={14} />
+                    {priorityName(itemRow.issue.priority)}优先级
+                  </span>
+                  {itemRow.issue.created_by &&
+                    members.data?.find((member) => member.member.id === itemRow.issue.created_by) && (
+                      <span>
+                        <CanonicalIcon name="users" size={14} />
+                        {userName(members.data.find((member) => member.member.id === itemRow.issue.created_by)?.member)}
+                      </span>
+                    )}
+                  <span>
+                    <CanonicalIcon name="plan" size={14} />
+                    {dateLabel(itemRow.issue.created_at)}
+                  </span>
+                </div>
               </button>
             );
           })}
           {!records(list.data).length && <Empty>暂无需求</Empty>}
         </div>
       </ResultState>
-      <div className="core-pager">
-        <button className="button" disabled={cursors.length < 2} onClick={() => setCursors(cursors.slice(0, -1))}>
-          上一页
-        </button>
-        <span>第{cursors.length}页</span>
-        <button
-          className="button"
-          disabled={!list.data?.next_page_results}
-          onClick={() => setCursors([...cursors, String(list.data?.next_cursor)])}
-        >
-          下一页
-        </button>
-      </div>
+      {(cursors.length > 1 || Boolean(list.data?.next_page_results)) && (
+        <div className="core-pager">
+          <button className="button" disabled={cursors.length < 2} onClick={() => setCursors(cursors.slice(0, -1))}>
+            上一页
+          </button>
+          <span>第{cursors.length}页</span>
+          <button
+            className="button"
+            disabled={!list.data?.next_page_results}
+            onClick={() => setCursors([...cursors, String(list.data?.next_cursor)])}
+          >
+            下一页
+          </button>
+        </div>
+      )}
       <ErrorMessage error={project.error ?? session.error} />
       {selected && (
         <Sheet

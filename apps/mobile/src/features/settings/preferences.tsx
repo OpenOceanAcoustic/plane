@@ -48,6 +48,7 @@ const languageOptions = [
 
 export function PreferencesSettings({ client, onThemeChange }: { client: ApiClient; onThemeChange?: ThemeChange }) {
   const profile = useData<Entity>(client, "/api/users/me/profile/");
+  const user = useData<Entity>(client, "/api/users/me/");
   const [editor, setEditor] = useState<{
     title: string;
     fields: FormField[];
@@ -90,6 +91,10 @@ export function PreferencesSettings({ client, onThemeChange }: { client: ApiClie
             </dd>
           </div>
           <div>
+            <dt>时区</dt>
+            <dd>{textValue(user.data?.user_timezone)}</dd>
+          </div>
+          <div>
             <dt>通知显示</dt>
             <dd>{profile.data?.notification_view_mode === "compact" ? "紧凑" : "完整"}</dd>
           </div>
@@ -128,6 +133,12 @@ export function PreferencesSettings({ client, onThemeChange }: { client: ApiClie
                   ],
                 },
                 {
+                  key: "user_timezone",
+                  label: "时区",
+                  value: user.data?.user_timezone ?? "Asia/Shanghai",
+                  required: true,
+                },
+                {
                   key: "mobile_timezone_auto_set",
                   label: "自动设置手机时区",
                   type: "select",
@@ -136,17 +147,20 @@ export function PreferencesSettings({ client, onThemeChange }: { client: ApiClie
                 },
               ],
               submit: async (values) => {
+                const timezone =
+                  values.mobile_timezone_auto_set === "true"
+                    ? Intl.DateTimeFormat().resolvedOptions().timeZone
+                    : values.user_timezone;
+                new Intl.DateTimeFormat("zh-CN", { timeZone: timezone }).format();
                 await client.request("/api/users/me/profile/", "PATCH", {
                   language: values.language,
                   start_of_the_week: Number(values.start_of_the_week),
                   notification_view_mode: values.notification_view_mode,
                   mobile_timezone_auto_set: values.mobile_timezone_auto_set === "true",
                 });
-                if (values.mobile_timezone_auto_set === "true")
-                  await client.request("/api/users/me/", "PATCH", {
-                    user_timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-                  });
+                await client.request("/api/users/me/", "PATCH", { user_timezone: timezone });
                 await profile.refresh();
+                await user.refresh();
               },
             })
           }

@@ -4,7 +4,7 @@
  * See the LICENSE file for details.
  */
 
-import { CirclePlus, Mails } from "lucide-react";
+import { CirclePlus } from "lucide-react";
 import { observer } from "mobx-react";
 // plane imports
 import { useTranslation } from "@plane/i18n";
@@ -40,13 +40,6 @@ export const ProfileSettingsSidebarWorkspaceOptions = observer(function ProfileS
             href="/create-workspace/"
             icon={CirclePlus}
             label={t("create_workspace")}
-            isActive={false}
-          />
-          <SettingsSidebarItem
-            as="link"
-            href="/invitations/"
-            icon={Mails}
-            label={t("workspace_invites")}
             isActive={false}
           />
         </div>

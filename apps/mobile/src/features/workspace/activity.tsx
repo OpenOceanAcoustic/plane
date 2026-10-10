@@ -1,3 +1,4 @@
+import { PageHeading } from "../../components/ui";
 import { useState } from "react";
 import { records, useData, type Entity } from "../../components/ui";
 import { LabField, labInputClass } from "../lab/ui";
@@ -36,7 +37,7 @@ export default function Activity(props: WorkspaceProps) {
   const rows = records(result.data);
   return (
     <>
-      <h1>我的活动</h1>
+      <PageHeading title="我的活动" />
       <LabField label="项目筛选">
         <select
           className={labInputClass}

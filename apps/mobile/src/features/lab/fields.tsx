@@ -3,7 +3,7 @@ import { useState, useEffect } from "react";
 import type { LabCustomField, LabTaskTableData, LabTaskRow, LabFieldKind, LabMember } from "@plane/types";
 import type { LabStore } from "./transport";
 import { useResource } from "./transport";
-import { LabDialog, LabField, Button, Empty, ErrorMessage, KeyValues } from "./ui";
+import { LabDialog, LabField, Button, Empty, ErrorMessage } from "./ui";
 const names: Record<LabFieldKind, string> = {
   text: "文本",
   number: "数字",
@@ -14,6 +14,19 @@ const names: Record<LabFieldKind, string> = {
   boolean: "是／否",
   url: "网址",
 };
+const valueFor = (row: LabTaskRow, key: string): unknown =>
+  key.startsWith("field:") ? row.values[key.slice(6)] : row[key as keyof LabTaskRow];
+const textFor = (value: unknown): string =>
+  value === null || value === undefined || value === ""
+    ? "—"
+    : Array.isArray(value)
+      ? value.map(textFor).join("、")
+      : typeof value === "boolean"
+        ? value
+          ? "是"
+          : "否"
+        : String(value);
+
 export function Fields({
   store,
   projectId = "",
@@ -33,6 +46,12 @@ export function Fields({
   const [kind, setKind] = useState<LabFieldKind>("text");
   const [selected, setSelected] = useState<LabTaskRow>();
   const [query, setQuery] = useState("");
+  const [managerOpen, setManagerOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [groupBy, setGroupBy] = useState("state");
+  const [sortBy, setSortBy] = useState("target_date");
+  const [direction, setDirection] = useState("asc");
+  const [hiddenColumns, setHiddenColumns] = useState<Set<string>>(() => new Set(["project", "start_date"]));
   useEffect(() => {
     setSelected(undefined);
     setEditing(undefined);
@@ -40,11 +59,45 @@ export function Fields({
   const refresh = async () => {
     await Promise.all([data.refresh(), definitions.refresh(), ...(projectId ? [project.refresh()] : [])]);
   };
+  const columns = [
+    { key: "project", label: "项目" },
+    { key: "state", label: "状态" },
+    { key: "priority", label: "优先级" },
+    { key: "start_date", label: "开始日期" },
+    { key: "target_date", label: "截止日期" },
+    ...(data.data?.fields ?? [])
+      .filter((field) => field.enabled)
+      .map((field) => ({ key: `field:${field.id}`, label: field.name })),
+  ];
+  const rows = (data.data?.tasks ?? [])
+    .filter((row) =>
+      `${row.title} ${row.key} ${Object.values(row.values).map(textFor).join(" ")}`
+        .toLowerCase()
+        .includes(query.toLowerCase())
+    )
+    // oxlint-disable-next-line unicorn/no-array-sort -- ES2022; sorts a newly filtered list
+    .sort((left, right) => {
+      const a = valueFor(left, sortBy),
+        b = valueFor(right, sortBy);
+      const difference =
+        typeof a === "number" && typeof b === "number"
+          ? a - b
+          : textFor(a).localeCompare(textFor(b), "zh-CN", { numeric: true });
+      return direction === "desc" ? -difference : difference;
+    });
+  const groups = new Map<string, LabTaskRow[]>();
+  for (const row of rows) {
+    const label = groupBy === "none" ? "任务记录" : textFor(valueFor(row, groupBy));
+    groups.set(label, [...(groups.get(label) ?? []), row]);
+  }
   return (
     <>
-      <div className="lab-heading">
-        <h3>任务字段与记录</h3>
-        <Button onClick={() => void refresh().catch(() => {})}>刷新</Button>
+      <div className="lab-section-heading">
+        <h3>任务表格</h3>
+        <div className="lab-actions">
+          <Button onClick={() => setSettingsOpen(true)}>显示列 / 排序</Button>
+          <Button onClick={() => void refresh().catch(() => {})}>刷新</Button>
+        </div>
       </div>
       <ErrorMessage error={data.error || definitions.error || project.error} />
       <input
@@ -54,97 +107,178 @@ export function Fields({
         value={query}
         onChange={(e) => setQuery(e.target.value)}
       />
-      <details>
-        <summary>自定义字段管理</summary>
-        {definitions.data?.can_manage && (
-          <Button
-            onClick={() => {
-              setKind("text");
-              setEditing("new");
-            }}
+      <div className="lab-calendar-chips" role="group" aria-label="任务分组">
+        {[
+          { id: "none", name: "不分组" },
+          { id: "state", name: "按状态" },
+          { id: "priority", name: "按优先级" },
+          ...(data.data?.fields ?? [])
+            .filter((field) => field.enabled)
+            .map((field) => ({ id: `field:${field.id}`, name: `按${field.name}` })),
+        ].map((entry) => (
+          <button
+            key={entry.id}
+            className={groupBy === entry.id ? "active" : ""}
+            aria-pressed={groupBy === entry.id}
+            onClick={() => setGroupBy(entry.id)}
           >
-            新建字段
-          </Button>
-        )}
-        {definitions.data?.fields.map((field) => (
-          <article key={field.id} className="lab-card">
-            <div className="lab-heading">
-              <h3>{field.name}</h3>
-              <span className="lab-muted">
-                {names[field.kind]}
-                {field.archived ? " · 停用" : ""}
-              </span>
-            </div>
-            <div className="lab-actions">
-              {definitions.data?.can_manage && (
-                <Button
-                  onClick={() => {
-                    setKind(field.kind);
-                    setEditing(field);
-                  }}
-                >
-                  编辑
-                </Button>
-              )}
-              {project.data?.can_manage && !field.archived && (
-                <label>
-                  <input
-                    type="checkbox"
-                    checked={!!project.data.fields.find((row) => row.id === field.id)?.enabled}
-                    onChange={(event) => {
-                      const ids = project
-                        .data!.fields.filter((row) => row.enabled && !row.archived && row.id !== field.id)
-                        .map((row) => row.id);
-                      if (event.target.checked) ids.push(field.id);
-                      void store
-                        .execute(async () => {
-                          await store.request(`projects/${projectId}/fields/`, "PUT", { ids });
-                          await refresh();
-                        })
-                        .catch(() => {});
-                    }}
-                  />
-                  在当前项目启用
-                </label>
-              )}
-            </div>
-          </article>
+            {entry.name}
+          </button>
         ))}
-      </details>
-      {data.data?.tasks
-        .filter((row) => `${row.title} ${row.key}`.toLowerCase().includes(query.toLowerCase()))
-        .map((row) => (
-          <article key={row.id} className="lab-card">
-            <h3>
-              {row.key} · {row.title}
-            </h3>
-            <p className="lab-muted">
-              {row.project} · {row.state}
-            </p>
-            <KeyValues
-              values={{
-                优先级: row.priority,
-                开始: row.start_date,
-                截止: row.target_date,
-                ...Object.fromEntries(
-                  (data.data?.fields ?? []).map((field) => [
-                    field.name,
-                    typeof row.values[field.id] === "boolean"
-                      ? row.values[field.id]
-                        ? "是"
-                        : "否"
-                      : row.values[field.id],
-                  ])
-                ),
+      </div>
+      <Button onClick={() => setManagerOpen(true)}>管理字段</Button>
+      {managerOpen && (
+        <LabDialog title="管理自定义字段" onClose={() => setManagerOpen(false)}>
+          {definitions.data?.can_manage && (
+            <Button
+              onClick={() => {
+                setKind("text");
+                setEditing("new");
               }}
-            />
-            <div className="lab-actions">
-              {row.editable && <Button onClick={() => setSelected(row)}>填写字段</Button>}
-              {onOpenIssue && <Button onClick={() => onOpenIssue(row.project_id, row.id)}>任务详情</Button>}
-            </div>
-          </article>
-        ))}
-      {data.data && !data.data.tasks.length && <Empty />}
+            >
+              新建字段
+            </Button>
+          )}
+          {definitions.data?.fields.map((field) => (
+            <article key={field.id} className="lab-card">
+              <div className="lab-heading">
+                <h3>{field.name}</h3>
+                <span className="lab-muted">
+                  {names[field.kind]}
+                  {field.archived ? " · 停用" : ""}
+                </span>
+              </div>
+              <div className="lab-actions">
+                {definitions.data?.can_manage && (
+                  <Button
+                    onClick={() => {
+                      setKind(field.kind);
+                      setEditing(field);
+                    }}
+                  >
+                    编辑
+                  </Button>
+                )}
+                {project.data?.can_manage && !field.archived && (
+                  <label className="lab-switch-field">
+                    <span>在当前项目启用</span>
+                    <input
+                      type="checkbox"
+                      checked={!!project.data.fields.find((row) => row.id === field.id)?.enabled}
+                      onChange={(event) => {
+                        const ids = project
+                          .data!.fields.filter((row) => row.enabled && !row.archived && row.id !== field.id)
+                          .map((row) => row.id);
+                        if (event.target.checked) ids.push(field.id);
+                        void store
+                          .execute(async () => {
+                            await store.request(`projects/${projectId}/fields/`, "PUT", { ids });
+                            await refresh();
+                          })
+                          .catch(() => {});
+                      }}
+                    />
+                  </label>
+                )}
+              </div>
+            </article>
+          ))}
+        </LabDialog>
+      )}
+      {Array.from(groups, ([label, tasks]) => (
+        <section key={label}>
+          <h3 className="lab-section-heading">
+            {label} · {tasks.length}
+          </h3>
+          <div className="lab-data-records">
+            {tasks.map((row) => (
+              <article className="lab-data-record" key={row.id}>
+                <header className="lab-data-record-heading">
+                  <span>{row.key}</span>
+                  <h3>
+                    {onOpenIssue ? (
+                      <button onClick={() => onOpenIssue(row.project_id, row.id)}>{row.title}</button>
+                    ) : (
+                      row.title
+                    )}
+                  </h3>
+                </header>
+                <dl>
+                  {columns
+                    .filter((column) => !hiddenColumns.has(column.key))
+                    .map((column) => (
+                      <div className="lab-data-record-field" key={column.key}>
+                        <dt>{column.label}</dt>
+                        <dd>{textFor(valueFor(row, column.key))}</dd>
+                      </div>
+                    ))}
+                </dl>
+                <div className="lab-actions lab-record-actions">
+                  {row.editable && <Button onClick={() => setSelected(row)}>编辑任务自定义值</Button>}
+                  {onOpenIssue && <Button onClick={() => onOpenIssue(row.project_id, row.id)}>任务详情</Button>}
+                </div>
+              </article>
+            ))}
+          </div>
+        </section>
+      ))}
+      {data.data && !rows.length && <Empty>所选范围暂无任务记录。</Empty>}
+      {settingsOpen && (
+        <LabDialog
+          title="表格显示与筛选"
+          onClose={() => setSettingsOpen(false)}
+          onSubmit={async () => setSettingsOpen(false)}
+          submitLabel="应用"
+        >
+          <LabField label="任务分组">
+            <select value={groupBy} onChange={(event) => setGroupBy(event.target.value)}>
+              <option value="none">不分组</option>
+              {columns
+                .filter(
+                  (column) => column.key === "state" || column.key === "priority" || column.key.startsWith("field:")
+                )
+                .map((column) => (
+                  <option key={column.key} value={column.key}>
+                    {column.label}
+                  </option>
+                ))}
+            </select>
+          </LabField>
+          <LabField label="排序字段">
+            <select value={sortBy} onChange={(event) => setSortBy(event.target.value)}>
+              {columns.map((column) => (
+                <option key={column.key} value={column.key}>
+                  {column.label}
+                </option>
+              ))}
+            </select>
+          </LabField>
+          <LabField label="排序方向">
+            <select value={direction} onChange={(event) => setDirection(event.target.value)}>
+              <option value="asc">升序</option>
+              <option value="desc">降序</option>
+            </select>
+          </LabField>
+          <h3 className="lab-section-heading">显示列</h3>
+          {columns.map((column) => (
+            <label key={column.key} className="lab-switch-field">
+              <span>{column.label}</span>
+              <input
+                type="checkbox"
+                checked={!hiddenColumns.has(column.key)}
+                onChange={(event) =>
+                  setHiddenColumns((current) => {
+                    const next = new Set(current);
+                    if (event.target.checked) next.delete(column.key);
+                    else next.add(column.key);
+                    return next;
+                  })
+                }
+              />
+            </label>
+          ))}
+        </LabDialog>
+      )}
       {editing && (
         <LabDialog
           title={editing === "new" ? "新建自定义字段" : "编辑自定义字段"}
@@ -221,6 +355,15 @@ export function Fields({
             setSelected(undefined);
           }}
         >
+          <article className="lab-card">
+            <small className="lab-muted">{selected.key}</small>
+            <h3>{selected.title}</h3>
+            <div className="lab-card-meta">
+              <span>{selected.state}</span>
+              <span>{selected.project}</span>
+              {selected.target_date && <span>{selected.target_date} 截止</span>}
+            </div>
+          </article>
           {data.data?.fields
             .filter((field) => field.enabled && !field.archived)
             .map((field) => (

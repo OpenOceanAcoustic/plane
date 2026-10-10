@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { Archive, MoreHorizontal, Star } from "lucide-react";
+import { CanonicalIcon } from "../../components/navigation";
 import {
   ActionButton,
   ErrorMessage,
@@ -63,6 +64,9 @@ function ProjectCollections(props: CoreProps & { projectId: string }) {
   const [selected, setSelected] = useState<Entity>();
   const [modal, setModal] = useState<string>();
   const [query, setQuery] = useState("");
+  const [listFilter, setListFilter] = useState("all");
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const [order, setOrder] = useState(section === "cycles" ? "start" : "name");
   const selectedData = useData<Entity>(client, selected?.id ? `${base}${selected.id}/` : null);
   const row = selectedData.data ?? selected;
   const [showArchived, setShowArchived] = useState(false);
@@ -81,8 +85,44 @@ function ProjectCollections(props: CoreProps & { projectId: string }) {
     !row?.is_locked &&
     (!isView || owner === session.data?.user.id);
   const canDelete = !row?.is_locked && (role >= 20 || owner === session.data?.user.id);
-  const listRows = records(showArchived ? archived.data : collection.data).filter((item) =>
-    String(item.name).toLocaleLowerCase().includes(query.toLocaleLowerCase())
+  const collectionStatus = (item: Entity) => {
+    if (section === "cycles") {
+      const now = new Date();
+      now.setHours(0, 0, 0, 0);
+      if (item.end_date && new Date(String(item.end_date)).getTime() < now.getTime())
+        return { key: "completed", label: "已完成" };
+      if (item.start_date && new Date(String(item.start_date)).getTime() > now.getTime())
+        return { key: "upcoming", label: "即将开始" };
+      return { key: "started", label: "进行中" };
+    }
+    if (section === "modules")
+      return {
+        key: item.status === "in-progress" ? "started" : String(item.status),
+        label: moduleStatuses.find((status) => status.value === item.status)?.label ?? "已计划",
+      };
+    return {
+      key: "all",
+      label:
+        (
+          { list: "列表", board: "看板", timeline: "时间线", calendar: "日历", records: "表格" } as Record<
+            string,
+            string
+          >
+        )[layoutValue((item.display_filters as Entity | undefined)?.layout)] ?? "列表",
+    };
+  };
+  const listRows = records(showArchived ? archived.data : collection.data).filter(
+    (item) =>
+      String(item.name).toLocaleLowerCase().includes(query.toLocaleLowerCase()) &&
+      (listFilter === "all" ||
+        (listFilter === "favorites" && item.is_favorite) ||
+        collectionStatus(item).key === listFilter)
+  );
+  // oxlint-disable-next-line unicorn/no-array-sort -- Sorting a fresh filtered array supports Android WebView 95.
+  listRows.sort((left, right) =>
+    order === "start"
+      ? String(left.start_date ?? "").localeCompare(String(right.start_date ?? ""))
+      : String(left.name).localeCompare(String(right.name), "zh-CN")
   );
   const membershipOptions = (members.data ?? [])
     .filter((member) => member.is_active !== false)
@@ -230,7 +270,7 @@ function ProjectCollections(props: CoreProps & { projectId: string }) {
   return (
     <>
       <PageHeading
-        title={selected ? String(row?.name ?? title) : title}
+        title={selected ? String(row?.name ?? title) : `项目${title}`}
         onBack={selected ? () => setSelected(undefined) : undefined}
       >
         {selected ? (
@@ -243,24 +283,41 @@ function ProjectCollections(props: CoreProps & { projectId: string }) {
       </PageHeading>
       {!selected ? (
         <>
-          <label className="core-search">
-            <input
-              aria-label={`搜索${title}`}
-              placeholder={`搜索${title}`}
-              value={query}
-              onChange={(event) => setQuery(event.target.value)}
-            />
-          </label>
-          {!isView && (
-            <div className="core-tabs">
-              <button className={`chip ${!showArchived ? "active" : ""}`} onClick={() => setShowArchived(false)}>
-                当前{title}
+          <div className="core-tabs">
+            {(isView
+              ? [
+                  ["all", "全部视图"],
+                  ["favorites", "收藏"],
+                ]
+              : section === "cycles"
+                ? [
+                    ["all", "全部"],
+                    ["started", "进行中"],
+                    ["upcoming", "即将开始"],
+                    ["completed", "已完成"],
+                  ]
+                : [
+                    ["all", "全部"],
+                    ["started", "进行中"],
+                    ["completed", "已完成"],
+                  ]
+            ).map(([key, label]) => (
+              <button
+                key={key}
+                className={`chip ${listFilter === key ? "active" : ""}`}
+                onClick={() => setListFilter(key)}
+              >
+                {label}
               </button>
-              <button className={`chip ${showArchived ? "active" : ""}`} onClick={() => setShowArchived(true)}>
-                已归档
-              </button>
-            </div>
-          )}
+            ))}
+          </div>
+          <div className="core-rows">
+            <button className="row" onClick={() => setFiltersOpen(true)}>
+              <span className="row-main">{showArchived ? "已归档" : "列表"}</span>
+              <span className="row-value">筛选 · {order === "start" ? "按开始日期" : "按名称"}</span>
+              <CanonicalIcon name="arrow" size={16} />
+            </button>
+          </div>
           <ResultState
             loading={showArchived ? archived.loading : collection.loading}
             error={showArchived ? archived.error : collection.error}
@@ -271,40 +328,65 @@ function ProjectCollections(props: CoreProps & { projectId: string }) {
                   <button className="core-task-name" onClick={() => setSelected(item)}>
                     {String(item.name)}
                   </button>
-                  {Boolean(item.description) && <p className="muted">{String(item.description)}</p>}
-                  <DetailFields
-                    values={
-                      section === "cycles"
-                        ? [
-                            ["开始", dateLabel(item.start_date)],
-                            ["结束", dateLabel(item.end_date)],
-                            ["任务数", Number(item.total_issues ?? 0)],
-                            ["已完成", Number(item.completed_issues ?? 0)],
-                          ]
-                        : section === "modules"
-                          ? [
-                              [
-                                "状态",
-                                moduleStatuses.find((status) => status.value === item.status)?.label ?? "已计划",
-                              ],
-                              ["开始", dateLabel(item.start_date)],
-                              ["截止", dateLabel(item.target_date)],
-                              ["任务数", Number(item.total_issues ?? 0)],
-                            ]
-                          : [
-                              ["可见性", Number(item.access) === 1 ? "项目共享" : "私人"],
-                              ["状态", item.is_locked ? "已锁定" : "可编辑"],
-                            ]
-                    }
-                  />
-                  {!isView && !showArchived && (
+                  {section === "cycles" ? (
+                    <p className="core-card-subtitle">
+                      {dateLabel(item.start_date)}—{dateLabel(item.end_date)}
+                    </p>
+                  ) : (
+                    Boolean(item.description) && <p className="core-card-subtitle">{String(item.description)}</p>
+                  )}
+                  <div className="core-project-identity">
+                    <span
+                      className={`core-pill core-tone-${collectionStatus(item).key === "completed" ? "emerald" : "indigo"}`}
+                    >
+                      {collectionStatus(item).label}
+                    </span>
+                  </div>
+                  <div className="core-card-meta">
+                    {item.total_issues != null && (
+                      <span>
+                        <CanonicalIcon name="workItems" size={14} />
+                        {String(item.total_issues)}项任务
+                      </span>
+                    )}
+                    {item.completed_issues != null && (
+                      <span>
+                        <CanonicalIcon name="check" size={14} />
+                        已完成 {String(item.completed_issues)}项
+                      </span>
+                    )}
+                    {section === "modules" && item.target_date != null && (
+                      <span>
+                        <CanonicalIcon name="plan" size={14} />
+                        {dateLabel(item.target_date)}截止
+                      </span>
+                    )}
+                    {isView && (
+                      <span>
+                        <CanonicalIcon name="users" size={14} />
+                        {Number(item.access) === 1 ? "公开" : "私有"}
+                      </span>
+                    )}
+                  </div>
+                  {!isView && Number(item.total_issues) > 0 && (
+                    <div className="core-mini-progress">
+                      <span
+                        style={{
+                          width: `${Math.min(100, Math.max(0, (Number(item.completed_issues ?? 0) / Number(item.total_issues)) * 100))}%`,
+                        }}
+                      />
+                    </div>
+                  )}
+                  {!showArchived && (!isView || role >= 15) && (
                     <ActionButton
                       className="chip"
                       action={() =>
                         client.request(
                           `${service.projectPath}/user-favorite-${section}/${item.is_favorite ? `${item.id}/` : ""}`,
                           item.is_favorite ? "DELETE" : "POST",
-                          item.is_favorite ? undefined : { [section === "cycles" ? "cycle" : "module"]: item.id }
+                          item.is_favorite
+                            ? undefined
+                            : { [section === "cycles" ? "cycle" : section === "modules" ? "module" : "view"]: item.id }
                         )
                       }
                       onDone={() => {
@@ -420,6 +502,44 @@ function ProjectCollections(props: CoreProps & { projectId: string }) {
         </>
       )}
       <ErrorMessage error={project.error ?? members.error ?? states.error} />
+      {filtersOpen && (
+        <FormSheet
+          title="筛选与排序"
+          fields={[
+            { key: "query", label: `搜索${title}`, value: query },
+            {
+              key: "order",
+              label: "排序",
+              type: "select",
+              value: order,
+              options: [
+                { value: "name", label: "按名称" },
+                ...(!isView ? [{ value: "start", label: "按开始日期" }] : []),
+              ],
+            },
+            ...(!isView
+              ? [
+                  {
+                    key: "archived",
+                    label: "项目归档",
+                    type: "select" as const,
+                    value: String(showArchived),
+                    options: [
+                      { value: "false", label: `当前${title}` },
+                      { value: "true", label: "已归档" },
+                    ],
+                  },
+                ]
+              : []),
+          ]}
+          onSubmit={async (values) => {
+            setQuery(values.query);
+            setOrder(values.order);
+            setShowArchived(values.archived === "true");
+          }}
+          onClose={() => setFiltersOpen(false)}
+        />
+      )}
       {(modal === "create" || modal === "edit") && (
         <FormSheet
           key={`${modal}-${row?.id ?? "new"}`}

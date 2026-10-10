@@ -1,10 +1,12 @@
 import { useContext, useEffect, useRef, useState, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import useSWR from "swr";
 import { ChevronLeft, X } from "lucide-react";
 import sanitizeHtml from "sanitize-html";
 import type { ApiClient } from "../lib/client";
 import { isTopDialog } from "../lib/dialog";
 import { MobileClientContext, RichHtmlEditor, resolveImage } from "./rich-editor";
+import { CanonicalIcon, MobileHeaderContext } from "./navigation";
 
 export type Entity = Record<string, unknown> & { id?: string; name?: string };
 export function records(data: unknown): Entity[] {
@@ -88,7 +90,45 @@ export function Html({ html }: { html?: unknown }) {
     />
   );
 }
-export function PageHeading({ title, children, onBack }: { title: string; children?: ReactNode; onBack?: () => void }) {
+export function PageHeading({
+  title,
+  children,
+  onBack,
+  inline = false,
+  subtitle,
+}: {
+  title: string;
+  subtitle?: string;
+  children?: ReactNode;
+  onBack?: () => void;
+  inline?: boolean;
+}) {
+  const header = useContext(MobileHeaderContext);
+  if (header?.title && !inline)
+    return (
+      <>
+        {header.detail ? (
+          <span className="detail-issue-id">{title}</span>
+        ) : (
+          createPortal(
+            <>
+              <h1>{title}</h1>
+              {subtitle && <small className="header-project-code">{subtitle}</small>}
+            </>,
+            header.title
+          )
+        )}
+        {children && header.actions && createPortal(children, header.actions)}
+        {onBack &&
+          header.back &&
+          createPortal(
+            <button className="icon-button" onClick={onBack} aria-label="返回">
+              <CanonicalIcon name="back" />
+            </button>,
+            header.back
+          )}
+      </>
+    );
   return (
     <div className="page-heading">
       {onBack && (
@@ -96,10 +136,88 @@ export function PageHeading({ title, children, onBack }: { title: string; childr
           <ChevronLeft />
         </button>
       )}
-      <h1>{title}</h1>
+      <div>
+        <h1>{title}</h1>
+        {subtitle && <small className="header-project-code">{subtitle}</small>}
+      </div>
       <div className="heading-actions">{children}</div>
     </div>
   );
+}
+const recordFieldLabels: Record<string, string> = {
+  updated_at: "更新时间",
+  created_at: "创建时间",
+  created_by: "创建者",
+  updated_by: "更新者",
+  access: "访问权限",
+  is_locked: "编辑权限",
+  identifier: "标识",
+  project: "项目",
+  project_id: "项目",
+  name: "名称",
+  description: "描述",
+  status: "状态",
+  status_code: "响应状态码",
+  request_method: "请求方式",
+  response_body: "响应内容",
+  priority: "优先级",
+  state: "状态",
+  state_id: "状态",
+  start_date: "开始日期",
+  target_date: "截止日期",
+  completed_at: "完成时间",
+  archived_at: "归档时间",
+  role: "角色",
+  network: "可见性",
+  email: "联系邮箱",
+  username: "用户名",
+  display_name: "显示姓名",
+  total_issues: "任务数",
+  total_members: "成员数",
+  total_cycles: "周期数",
+  total_modules: "模块数",
+  is_favorite: "收藏",
+};
+function recordDate(value: unknown): string {
+  if (!value) return "未设置";
+  const date = new Date(String(value));
+  return Number.isNaN(date.getTime())
+    ? "未设置"
+    : date.toLocaleString("zh-CN", { month: "long", day: "numeric", hour: "2-digit", minute: "2-digit" });
+}
+function recordFieldValue(item: Entity, key: string): string {
+  const value = item[key];
+  if (value == null) return "未设置";
+  if (key === "access") return Number(value) === 1 ? "项目成员" : "私人";
+  if (key === "is_locked") return value ? "冻结" : "可编辑";
+  if (key === "is_favorite") return value ? "已收藏" : "未收藏";
+  if (key === "role") return Number(value) >= 20 ? "管理员" : Number(value) >= 15 ? "成员" : "访客";
+  if (key === "network") return Number(value) === 2 ? "工作区公开" : "私有项目";
+  if (/_at$|_date$/.test(key)) return recordDate(value);
+  if (key === "created_by" || key === "updated_by") {
+    const person = item[`${key}_detail`] ?? value;
+    return typeof person === "object"
+      ? textValue(person)
+      : typeof person === "string" && /^[a-f0-9-]{36}$/i.test(person)
+        ? "成员"
+        : textValue(person);
+  }
+  if (key === "status" && typeof value === "string")
+    return (
+      (
+        {
+          success: "成功",
+          failed: "失败",
+          failure: "失败",
+          error: "失败",
+          pending: "等待中",
+          retrying: "重试中",
+          completed: "完成",
+          cancelled: "已取消",
+        } as Record<string, string>
+      )[value] ?? value
+    );
+  return textValue(value);
 }
 export function RecordList({
   data,
@@ -118,20 +236,30 @@ export function RecordList({
         <article className="card" key={item.id ?? JSON.stringify(item)}>
           {onOpen ? (
             <button className="record-title" onClick={() => onOpen(item)}>
-              {textValue(item.name ?? item.title ?? item.display_name ?? item.id)}
+              {textValue(
+                item.name ?? item.title ?? item.display_name ?? (item.created_at ? recordDate(item.created_at) : "记录")
+              )}
             </button>
           ) : (
-            <h3>{textValue(item.name ?? item.title ?? item.display_name ?? item.id)}</h3>
+            <h3>
+              {textValue(
+                item.name ?? item.title ?? item.display_name ?? (item.created_at ? recordDate(item.created_at) : "记录")
+              )}
+            </h3>
           )}
           <dl className="record-fields">
-            {(fields ?? Object.keys(item).filter((k) => !["id", "name", "title", "description_html"].includes(k))).map(
-              (key) => (
-                <div key={key}>
-                  <dt>{key}</dt>
-                  <dd>{textValue(item[key])}</dd>
-                </div>
+            {(
+              fields ??
+              Object.keys(item).filter(
+                (key) =>
+                  !["name", "display_name"].includes(key) && (recordFieldLabels[key] || /[\u3400-\u9fff]/.test(key))
               )
-            )}
+            ).map((key) => (
+              <div key={key}>
+                <dt>{recordFieldLabels[key] ?? key}</dt>
+                <dd>{recordFieldValue(item, key)}</dd>
+              </div>
+            ))}
           </dl>
         </article>
       ))}
@@ -143,11 +271,13 @@ export function Sheet({
   children,
   onClose,
   busy = false,
+  className = "",
 }: {
   title: string;
   children: ReactNode;
   onClose: () => void;
   busy?: boolean;
+  className?: string;
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const callbacks = useRef({ onClose, busy });
@@ -191,7 +321,7 @@ export function Sheet({
   return (
     <div className="overlay">
       <button className="scrim" onClick={onClose} disabled={busy} aria-label="关闭面板" />
-      <div className="sheet" role="dialog" aria-modal="true" aria-label={title} ref={ref} tabIndex={-1}>
+      <div className={`sheet ${className}`} role="dialog" aria-modal="true" aria-label={title} ref={ref} tabIndex={-1}>
         <div className="handle" />
         <header>
           <h2>{title}</h2>
@@ -340,4 +470,23 @@ export function ActionButton({
       <ErrorMessage error={error} />
     </>
   );
+}
+
+export function FloatingAction({
+  label,
+  onClick,
+  disabled = false,
+}: {
+  label: string;
+  onClick: () => void;
+  disabled?: boolean;
+}) {
+  const header = useContext(MobileHeaderContext);
+  const button = (
+    <button className="create-fab" aria-label={label} onClick={onClick} disabled={disabled}>
+      <CanonicalIcon name="plus" size={27} />
+      <span className="sr-only">{label}</span>
+    </button>
+  );
+  return header?.fab ? createPortal(button, header.fab) : button;
 }

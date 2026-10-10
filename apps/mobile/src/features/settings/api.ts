@@ -27,21 +27,12 @@ export class SettingsApi {
   updateProjectFeature(base: string, feature: string, enabled: boolean) {
     return this.client.request(base, "PATCH", { [feature]: enabled });
   }
-  invite(workspaceSlug: string, email: string, role: string) {
-    return this.client.request(`/api/workspaces/${encodeURIComponent(workspaceSlug)}/invitations/`, "POST", {
-      emails: [{ email: email.trim().toLowerCase(), role: Number(role) }],
-    });
-  }
   addProjectMember(workspaceSlug: string, projectId: string, memberId: string, role: string) {
     return this.client.request(
       `/api/workspaces/${encodeURIComponent(workspaceSlug)}/projects/${encodeURIComponent(projectId)}/members/`,
       "POST",
       { members: [{ member_id: memberId, role: Number(role) }] }
     );
-  }
-  async adminLogin(username: string, code: string) {
-    await this.client.request("/auth/lab/mobile/admin/sign-in/", "POST", { username: username.trim(), code });
-    await this.client.refreshCsrf();
   }
 }
 

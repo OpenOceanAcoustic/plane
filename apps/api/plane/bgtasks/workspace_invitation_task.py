@@ -9,6 +9,7 @@ import logging
 from celery import shared_task
 
 # Django imports
+from django.conf import settings
 from django.core.mail import EmailMultiAlternatives, get_connection
 from django.template.loader import render_to_string
 
@@ -21,6 +22,8 @@ from plane.utils.exception_logger import log_exception
 
 @shared_task
 def workspace_invitation(email, workspace_id, token, current_site, inviter):
+    if settings.LAB_AUTH_ENABLED:
+        return
     try:
         user = User.objects.get(email=inviter)
 

@@ -219,6 +219,14 @@ class ProjectJoinEndpoint(BaseAPIView):
                 status=status.HTTP_403_FORBIDDEN,
             )
 
+        if settings.LAB_AUTH_ENABLED and not WorkspaceMember.objects.filter(
+            workspace__slug=slug, member=request.user, is_active=True
+        ).exists():
+            return Response(
+                {"error": "请先使用服务器生成的一次性邀请链接加入工作区", "code": "SSH_INVITATION_REQUIRED"},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
         if project_invite.responded_at is None:
             accepted = request.data.get("accepted", False)
             if not isinstance(accepted, bool):

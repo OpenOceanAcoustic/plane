@@ -1,0 +1,1626 @@
+{
+  "revision": 4,
+  "source": "docs/design/android-ui-prototype/index.html (design workspace)",
+  "source_sha256": "5ab9e97d426eafa7b416b488f6e72fc1991475acf1a1e874b4ff635c8feae96c",
+  "manifest_sha256": "55daff2cf03b77aca0c337731ff9edcf67ef5ebf56ff0da771111314b8f6668f",
+  "screen_count": 220,
+  "viewport": {
+    "width": 412,
+    "height": 916
+  },
+  "screens": [
+    {
+      "id": "auth-login",
+      "title": "登录",
+      "group": "auth",
+      "back": false,
+      "mobile_scope": "included"
+    },
+    {
+      "id": "auth-register",
+      "title": "加入实验室",
+      "group": "auth",
+      "back": true,
+      "mobile_scope": "included"
+    },
+    {
+      "id": "auth-bind",
+      "title": "绑定 Authenticator",
+      "group": "auth",
+      "back": true,
+      "mobile_scope": "included"
+    },
+    {
+      "id": "auth-complete",
+      "title": "绑定完成",
+      "group": "auth",
+      "back": true,
+      "mobile_scope": "included"
+    },
+    {
+      "id": "auth-rebind",
+      "title": "重新绑定",
+      "group": "auth",
+      "back": true,
+      "mobile_scope": "included"
+    },
+    {
+      "id": "auth-rate-limit",
+      "title": "登录",
+      "group": "auth",
+      "back": false,
+      "mobile_scope": "included"
+    },
+    {
+      "id": "nav-more",
+      "title": "更多",
+      "group": "navigation",
+      "back": false,
+      "mobile_scope": "included"
+    },
+    {
+      "id": "nav-workspaces",
+      "title": "切换工作区",
+      "group": "navigation",
+      "overlay": "sheet",
+      "back": true,
+      "mobile_scope": "included"
+    },
+    {
+      "id": "native-home",
+      "title": "工作区首页",
+      "group": "work",
+      "mobile_scope": "included"
+    },
+    {
+      "id": "native-home-widgets",
+      "title": "管理首页组件",
+      "group": "work",
+      "overlay": "sheet",
+      "back": true,
+      "mobile_scope": "included"
+    },
+    {
+      "id": "native-issue-detail",
+      "title": "ACOU-128",
+      "group": "work",
+      "back": true,
+      "mobile_scope": "included"
+    },
+    {
+      "id": "native-issue-properties",
+      "title": "任务属性",
+      "group": "work",
+      "back": true,
+      "mobile_scope": "included"
+    },
+    {
+      "id": "native-issue-activity",
+      "title": "评论与活动",
+      "group": "work",
+      "back": true,
+      "mobile_scope": "included"
+    },
+    {
+      "id": "native-issue-attachments",
+      "title": "附件与链接",
+      "group": "work",
+      "back": true,
+      "mobile_scope": "included"
+    },
+    {
+      "id": "native-issue-relations",
+      "title": "子任务与关系",
+      "group": "work",
+      "back": true,
+      "mobile_scope": "included"
+    },
+    {
+      "id": "native-issue-create",
+      "title": "新建任务",
+      "group": "work",
+      "overlay": "sheet",
+      "back": true,
+      "mobile_scope": "included"
+    },
+    {
+      "id": "native-issue-edit",
+      "title": "编辑任务",
+      "group": "work",
+      "overlay": "sheet",
+      "back": true,
+      "mobile_scope": "included"
+    },
+    {
+      "id": "native-my-tasks",
+      "title": "我的任务",
+      "group": "work",
+      "mobile_scope": "included"
+    },
+    {
+      "id": "native-profile-activity",
+      "title": "个人活动",
+      "group": "work",
+      "back": true,
+      "mobile_scope": "included"
+    },
+    {
+      "id": "native-drafts",
+      "title": "草稿",
+      "group": "work",
+      "mobile_scope": "included"
+    },
+    {
+      "id": "native-stickies",
+      "title": "便签",
+      "group": "work",
+      "mobile_scope": "included"
+    },
+    {
+      "id": "native-notifications",
+      "title": "通知",
+      "group": "work",
+      "mobile_scope": "included"
+    },
+    {
+      "id": "native-workspace-views",
+      "title": "工作区视图",
+      "group": "work",
+      "mobile_scope": "included"
+    },
+    {
+      "id": "native-active-cycles",
+      "title": "活跃周期",
+      "group": "work",
+      "mobile_scope": "included"
+    },
+    {
+      "id": "native-analytics",
+      "title": "工作区分析",
+      "group": "work",
+      "mobile_scope": "included"
+    },
+    {
+      "id": "native-analytics-work",
+      "title": "任务分析",
+      "group": "work",
+      "back": true,
+      "mobile_scope": "included"
+    },
+    {
+      "id": "native-search",
+      "title": "搜索",
+      "group": "work",
+      "overlay": "sheet",
+      "back": true,
+      "mobile_scope": "included"
+    },
+    {
+      "id": "native-commands",
+      "title": "快捷操作",
+      "group": "work",
+      "overlay": "sheet",
+      "back": true,
+      "mobile_scope": "included"
+    },
+    {
+      "id": "native-issue-state",
+      "title": "选择任务状态",
+      "group": "work",
+      "overlay": "sheet",
+      "back": true,
+      "baseScreen": "native-issue-detail",
+      "mobile_scope": "included"
+    },
+    {
+      "id": "plan-home",
+      "title": "个人规划",
+      "group": "planning",
+      "mobile_scope": "included"
+    },
+    {
+      "id": "plan-board",
+      "title": "文件夹看板",
+      "group": "planning",
+      "mobile_scope": "included"
+    },
+    {
+      "id": "plan-filter",
+      "title": "筛选规划事项",
+      "group": "planning",
+      "overlay": "sheet",
+      "back": true,
+      "mobile_scope": "included"
+    },
+    {
+      "id": "plan-folders",
+      "title": "文件夹",
+      "group": "planning",
+      "back": true,
+      "mobile_scope": "included"
+    },
+    {
+      "id": "plan-folder-edit",
+      "title": "新增 / 编辑文件夹",
+      "group": "planning",
+      "overlay": "sheet",
+      "back": true,
+      "mobile_scope": "included"
+    },
+    {
+      "id": "plan-folder-delete",
+      "title": "删除文件夹",
+      "group": "planning",
+      "overlay": "dialog",
+      "back": true,
+      "mobile_scope": "included"
+    },
+    {
+      "id": "plan-categories",
+      "title": "事项类别",
+      "group": "planning",
+      "overlay": "sheet",
+      "back": true,
+      "mobile_scope": "included"
+    },
+    {
+      "id": "plan-category-edit",
+      "title": "新增 / 编辑类别",
+      "group": "planning",
+      "overlay": "sheet",
+      "back": true,
+      "mobile_scope": "included"
+    },
+    {
+      "id": "plan-category-delete",
+      "title": "删除类别",
+      "group": "planning",
+      "overlay": "dialog",
+      "back": true,
+      "mobile_scope": "included"
+    },
+    {
+      "id": "plan-item-create",
+      "title": "新增个人事项",
+      "group": "planning",
+      "back": true,
+      "mobile_scope": "included"
+    },
+    {
+      "id": "plan-item-edit",
+      "title": "编辑规划",
+      "group": "planning",
+      "overlay": "sheet",
+      "back": true,
+      "mobile_scope": "included"
+    },
+    {
+      "id": "plan-item-detail",
+      "title": "事项详情",
+      "group": "planning",
+      "back": true,
+      "mobile_scope": "included"
+    },
+    {
+      "id": "plan-reference",
+      "title": "引用项目任务",
+      "group": "planning",
+      "overlay": "sheet",
+      "back": true,
+      "mobile_scope": "included"
+    },
+    {
+      "id": "plan-status-map",
+      "title": "四类项目状态映射",
+      "group": "planning",
+      "overlay": "sheet",
+      "back": true,
+      "mobile_scope": "included"
+    },
+    {
+      "id": "plan-item-remove",
+      "title": "移除个人规划事项",
+      "group": "planning",
+      "overlay": "dialog",
+      "back": true,
+      "mobile_scope": "included"
+    },
+    {
+      "id": "plan-day",
+      "title": "个人日历 · 日",
+      "group": "planning",
+      "mobile_scope": "included"
+    },
+    {
+      "id": "plan-week",
+      "title": "个人日历 · 周",
+      "group": "planning",
+      "mobile_scope": "included"
+    },
+    {
+      "id": "plan-month",
+      "title": "个人日历 · 月",
+      "group": "planning",
+      "mobile_scope": "included"
+    },
+    {
+      "id": "plan-item-timeline",
+      "title": "事项时间轴",
+      "group": "planning",
+      "mobile_scope": "included"
+    },
+    {
+      "id": "plan-calendar-folders",
+      "title": "选择显示的文件夹",
+      "group": "planning",
+      "overlay": "sheet",
+      "back": true,
+      "mobile_scope": "included"
+    },
+    {
+      "id": "plan-schedule-new",
+      "title": "安排个人时间",
+      "group": "planning",
+      "overlay": "sheet",
+      "back": true,
+      "mobile_scope": "included"
+    },
+    {
+      "id": "plan-schedule-edit",
+      "title": "调整时间块",
+      "group": "planning",
+      "overlay": "sheet",
+      "back": true,
+      "mobile_scope": "included"
+    },
+    {
+      "id": "plan-schedule-split",
+      "title": "拆分时间块",
+      "group": "planning",
+      "overlay": "sheet",
+      "back": true,
+      "mobile_scope": "included"
+    },
+    {
+      "id": "plan-schedule-delete",
+      "title": "删除时间块",
+      "group": "planning",
+      "overlay": "dialog",
+      "back": true,
+      "mobile_scope": "included"
+    },
+    {
+      "id": "plan-team-timeline",
+      "title": "团队排期",
+      "group": "planning",
+      "mobile_scope": "included"
+    },
+    {
+      "id": "plan-team-columns",
+      "title": "团队排期 · 人员分列",
+      "group": "planning",
+      "mobile_scope": "included"
+    },
+    {
+      "id": "plan-team-filter",
+      "title": "排期筛选与日期",
+      "group": "planning",
+      "overlay": "sheet",
+      "back": true,
+      "mobile_scope": "included"
+    },
+    {
+      "id": "plan-table",
+      "title": "任务表格",
+      "group": "planning",
+      "mobile_scope": "included"
+    },
+    {
+      "id": "plan-table-settings",
+      "title": "表格显示与筛选",
+      "group": "planning",
+      "overlay": "sheet",
+      "back": true,
+      "mobile_scope": "included"
+    },
+    {
+      "id": "plan-field-values",
+      "title": "任务自定义字段",
+      "group": "planning",
+      "back": true,
+      "mobile_scope": "included"
+    },
+    {
+      "id": "plan-field-manager",
+      "title": "管理自定义字段",
+      "group": "planning",
+      "back": true,
+      "mobile_scope": "included"
+    },
+    {
+      "id": "plan-field-new",
+      "title": "新建自定义字段",
+      "group": "planning",
+      "overlay": "sheet",
+      "back": true,
+      "mobile_scope": "included"
+    },
+    {
+      "id": "plan-field-edit",
+      "title": "编辑自定义字段",
+      "group": "planning",
+      "overlay": "sheet",
+      "back": true,
+      "mobile_scope": "included"
+    },
+    {
+      "id": "native-projects",
+      "title": "项目",
+      "group": "projects",
+      "mobile_scope": "included"
+    },
+    {
+      "id": "native-project-create",
+      "title": "新建项目",
+      "group": "projects",
+      "overlay": "sheet",
+      "back": true,
+      "mobile_scope": "included"
+    },
+    {
+      "id": "native-project-overview",
+      "title": "水声阵列",
+      "group": "projects",
+      "back": true,
+      "mobile_scope": "included"
+    },
+    {
+      "id": "native-project-list",
+      "title": "任务",
+      "group": "projects",
+      "back": true,
+      "mobile_scope": "included"
+    },
+    {
+      "id": "native-project-kanban",
+      "title": "任务看板",
+      "group": "projects",
+      "back": true,
+      "mobile_scope": "included"
+    },
+    {
+      "id": "native-project-gantt",
+      "title": "任务时间线",
+      "group": "projects",
+      "back": true,
+      "mobile_scope": "included"
+    },
+    {
+      "id": "native-project-calendar",
+      "title": "任务日历",
+      "group": "projects",
+      "back": true,
+      "mobile_scope": "included"
+    },
+    {
+      "id": "native-project-table",
+      "title": "任务表格",
+      "group": "projects",
+      "back": true,
+      "mobile_scope": "included"
+    },
+    {
+      "id": "native-cycles",
+      "title": "项目周期",
+      "group": "projects",
+      "back": true,
+      "mobile_scope": "included"
+    },
+    {
+      "id": "native-cycle-create",
+      "title": "新建周期",
+      "group": "projects",
+      "overlay": "sheet",
+      "back": true,
+      "mobile_scope": "included"
+    },
+    {
+      "id": "native-cycle-detail",
+      "title": "10月海试验证",
+      "group": "projects",
+      "back": true,
+      "mobile_scope": "included"
+    },
+    {
+      "id": "native-modules",
+      "title": "项目模块",
+      "group": "projects",
+      "back": true,
+      "mobile_scope": "included"
+    },
+    {
+      "id": "native-module-create",
+      "title": "新建模块",
+      "group": "projects",
+      "overlay": "sheet",
+      "back": true,
+      "mobile_scope": "included"
+    },
+    {
+      "id": "native-module-detail",
+      "title": "阵列校准",
+      "group": "projects",
+      "back": true,
+      "mobile_scope": "included"
+    },
+    {
+      "id": "native-views",
+      "title": "项目视图",
+      "group": "projects",
+      "back": true,
+      "mobile_scope": "included"
+    },
+    {
+      "id": "native-view-detail",
+      "title": "本周待交付",
+      "group": "projects",
+      "back": true,
+      "mobile_scope": "included"
+    },
+    {
+      "id": "native-view-create",
+      "title": "新建视图",
+      "group": "projects",
+      "overlay": "sheet",
+      "back": true,
+      "mobile_scope": "included"
+    },
+    {
+      "id": "native-filters",
+      "title": "筛选任务",
+      "group": "projects",
+      "overlay": "sheet",
+      "back": true,
+      "mobile_scope": "included"
+    },
+    {
+      "id": "native-sort-group",
+      "title": "排序与分组",
+      "group": "projects",
+      "overlay": "sheet",
+      "back": true,
+      "mobile_scope": "included"
+    },
+    {
+      "id": "native-display-properties",
+      "title": "显示属性",
+      "group": "projects",
+      "overlay": "sheet",
+      "back": true,
+      "mobile_scope": "included"
+    },
+    {
+      "id": "native-intake",
+      "title": "需求收集",
+      "group": "projects",
+      "back": true,
+      "mobile_scope": "included"
+    },
+    {
+      "id": "native-intake-detail",
+      "title": "需求详情",
+      "group": "projects",
+      "back": true,
+      "mobile_scope": "included"
+    },
+    {
+      "id": "native-archives",
+      "title": "归档",
+      "group": "projects",
+      "back": true,
+      "mobile_scope": "included"
+    },
+    {
+      "id": "native-documents",
+      "title": "项目文档",
+      "group": "documents",
+      "back": true,
+      "mobile_scope": "included"
+    },
+    {
+      "id": "native-document-edit",
+      "title": "海试方案 v3",
+      "group": "documents",
+      "back": true,
+      "mobile_scope": "included"
+    },
+    {
+      "id": "biz-market",
+      "title": "悬赏大厅",
+      "group": "bounties",
+      "mobile_scope": "included"
+    },
+    {
+      "id": "biz-market-mine",
+      "title": "我的参与",
+      "group": "bounties",
+      "mobile_scope": "included"
+    },
+    {
+      "id": "biz-bounty-public",
+      "title": "悬赏任务",
+      "group": "bounties",
+      "back": true,
+      "mobile_scope": "included"
+    },
+    {
+      "id": "biz-bounty-detail",
+      "title": "悬赏任务详情",
+      "group": "bounties",
+      "back": true,
+      "mobile_scope": "included"
+    },
+    {
+      "id": "biz-bounty-publish",
+      "title": "发布悬赏",
+      "group": "bounties",
+      "back": true,
+      "mobile_scope": "included"
+    },
+    {
+      "id": "biz-bounty-claim",
+      "title": "申请团队分工",
+      "group": "bounties",
+      "overlay": "sheet",
+      "back": true,
+      "mobile_scope": "included"
+    },
+    {
+      "id": "biz-bounty-allocations",
+      "title": "团队分工",
+      "group": "bounties",
+      "back": true,
+      "mobile_scope": "included"
+    },
+    {
+      "id": "biz-bounty-confirm",
+      "title": "确认交付约定",
+      "group": "bounties",
+      "overlay": "sheet",
+      "back": true,
+      "mobile_scope": "included"
+    },
+    {
+      "id": "biz-bounty-submit",
+      "title": "提交成果验收",
+      "group": "bounties",
+      "overlay": "sheet",
+      "back": true,
+      "mobile_scope": "included"
+    },
+    {
+      "id": "biz-bounty-accept",
+      "title": "独立验收与累计贡献",
+      "group": "bounties",
+      "overlay": "sheet",
+      "back": true,
+      "mobile_scope": "included"
+    },
+    {
+      "id": "biz-bounty-publication-review",
+      "title": "复核发布",
+      "group": "bounties",
+      "overlay": "sheet",
+      "back": true,
+      "mobile_scope": "included"
+    },
+    {
+      "id": "biz-bounty-acceptance-review",
+      "title": "复核验收",
+      "group": "bounties",
+      "overlay": "sheet",
+      "back": true,
+      "mobile_scope": "included"
+    },
+    {
+      "id": "biz-bounty-cancel",
+      "title": "取消悬赏",
+      "group": "bounties",
+      "overlay": "sheet",
+      "back": true,
+      "mobile_scope": "included"
+    },
+    {
+      "id": "biz-bounty-reopen",
+      "title": "更正后重新验收",
+      "group": "bounties",
+      "overlay": "sheet",
+      "back": true,
+      "mobile_scope": "included"
+    },
+    {
+      "id": "biz-bounty-delete",
+      "title": "删除悬赏",
+      "group": "bounties",
+      "overlay": "dialog",
+      "back": true,
+      "mobile_scope": "included"
+    },
+    {
+      "id": "biz-bounty-summary",
+      "title": "公开任务摘要设置",
+      "group": "bounties",
+      "overlay": "sheet",
+      "back": true,
+      "mobile_scope": "included"
+    },
+    {
+      "id": "biz-bounty-materials",
+      "title": "悬赏共享资料",
+      "group": "bounties",
+      "back": true,
+      "mobile_scope": "included"
+    },
+    {
+      "id": "biz-bounty-share",
+      "title": "共享执行资料",
+      "group": "bounties",
+      "overlay": "sheet",
+      "back": true,
+      "mobile_scope": "included"
+    },
+    {
+      "id": "biz-bounty-shared-document",
+      "title": "阵列标定任务资料",
+      "group": "bounties",
+      "overlay": "sheet",
+      "back": true,
+      "mobile_scope": "included"
+    },
+    {
+      "id": "biz-bounty-revoke",
+      "title": "撤回共享资料",
+      "group": "bounties",
+      "overlay": "dialog",
+      "back": true,
+      "mobile_scope": "included"
+    },
+    {
+      "id": "biz-bounty-workflow",
+      "title": "团队悬赏流程",
+      "group": "bounties",
+      "back": true,
+      "mobile_scope": "included"
+    },
+    {
+      "id": "biz-bounty-planning",
+      "title": "悬赏任务办理",
+      "group": "bounties",
+      "overlay": "sheet",
+      "back": true,
+      "mobile_scope": "included"
+    },
+    {
+      "id": "biz-bounty-approve",
+      "title": "批准团队分工",
+      "group": "bounties",
+      "overlay": "dialog",
+      "back": true,
+      "mobile_scope": "included"
+    },
+    {
+      "id": "biz-bounty-start",
+      "title": "团队开工",
+      "group": "bounties",
+      "overlay": "dialog",
+      "back": true,
+      "mobile_scope": "included"
+    },
+    {
+      "id": "biz-finance",
+      "title": "资金与奖励",
+      "group": "finance",
+      "mobile_scope": "included"
+    },
+    {
+      "id": "biz-finance-budgets",
+      "title": "预算与参考预测",
+      "group": "finance",
+      "mobile_scope": "included"
+    },
+    {
+      "id": "biz-finance-settlements",
+      "title": "核准与付款",
+      "group": "finance",
+      "mobile_scope": "included"
+    },
+    {
+      "id": "biz-finance-ledger",
+      "title": "账目明细",
+      "group": "finance",
+      "mobile_scope": "included"
+    },
+    {
+      "id": "biz-finance-vc-ledger",
+      "title": "VC 明细",
+      "group": "finance",
+      "mobile_scope": "included"
+    },
+    {
+      "id": "biz-finance-workflow",
+      "title": "资金与项目流程",
+      "group": "finance",
+      "mobile_scope": "included"
+    },
+    {
+      "id": "biz-finance-vc-stage",
+      "title": "设置项目 VC 预算",
+      "group": "finance",
+      "overlay": "sheet",
+      "back": true,
+      "mobile_scope": "included"
+    },
+    {
+      "id": "biz-finance-stage",
+      "title": "冻结阶段奖励预算",
+      "group": "finance",
+      "overlay": "sheet",
+      "back": true,
+      "mobile_scope": "included"
+    },
+    {
+      "id": "biz-finance-receipt",
+      "title": "登记真实到账",
+      "group": "finance",
+      "overlay": "sheet",
+      "back": true,
+      "mobile_scope": "included"
+    },
+    {
+      "id": "biz-finance-opening",
+      "title": "录入期初余额",
+      "group": "finance",
+      "overlay": "sheet",
+      "back": true,
+      "mobile_scope": "included"
+    },
+    {
+      "id": "biz-finance-transfer",
+      "title": "账户划拨",
+      "group": "finance",
+      "overlay": "sheet",
+      "back": true,
+      "mobile_scope": "included"
+    },
+    {
+      "id": "biz-finance-expense",
+      "title": "登记实际支出",
+      "group": "finance",
+      "overlay": "sheet",
+      "back": true,
+      "mobile_scope": "included"
+    },
+    {
+      "id": "biz-finance-settlement",
+      "title": "核准最终执行奖励",
+      "group": "finance",
+      "overlay": "sheet",
+      "back": true,
+      "mobile_scope": "included"
+    },
+    {
+      "id": "biz-finance-history-settlement",
+      "title": "核算历史奖励",
+      "group": "finance",
+      "overlay": "sheet",
+      "back": true,
+      "mobile_scope": "included"
+    },
+    {
+      "id": "biz-finance-commit",
+      "title": "安排现金支付",
+      "group": "finance",
+      "overlay": "sheet",
+      "back": true,
+      "mobile_scope": "included"
+    },
+    {
+      "id": "biz-finance-cancel-commit",
+      "title": "取消未付安排",
+      "group": "finance",
+      "overlay": "sheet",
+      "back": true,
+      "mobile_scope": "included"
+    },
+    {
+      "id": "biz-finance-payment",
+      "title": "登记线下支付",
+      "group": "finance",
+      "overlay": "sheet",
+      "back": true,
+      "mobile_scope": "included"
+    },
+    {
+      "id": "biz-finance-tax-remit",
+      "title": "登记扣缴款上缴",
+      "group": "finance",
+      "overlay": "sheet",
+      "back": true,
+      "mobile_scope": "included"
+    },
+    {
+      "id": "biz-finance-risk-release",
+      "title": "释放原批次风险金",
+      "group": "finance",
+      "overlay": "sheet",
+      "back": true,
+      "mobile_scope": "included"
+    },
+    {
+      "id": "biz-finance-risk-use",
+      "title": "登记风险事项实际支出",
+      "group": "finance",
+      "overlay": "sheet",
+      "back": true,
+      "mobile_scope": "included"
+    },
+    {
+      "id": "biz-finance-future-plan",
+      "title": "年度研究／探索编列",
+      "group": "finance",
+      "overlay": "sheet",
+      "back": true,
+      "mobile_scope": "included"
+    },
+    {
+      "id": "biz-finance-exploration-allocation",
+      "title": "拨付探索阶段奖励",
+      "group": "finance",
+      "overlay": "sheet",
+      "back": true,
+      "mobile_scope": "included"
+    },
+    {
+      "id": "biz-finance-stage-allocation",
+      "title": "拨付留存至新阶段奖励",
+      "group": "finance",
+      "overlay": "sheet",
+      "back": true,
+      "mobile_scope": "included"
+    },
+    {
+      "id": "biz-finance-dispute",
+      "title": "登记争议预留",
+      "group": "finance",
+      "overlay": "sheet",
+      "back": true,
+      "mobile_scope": "included"
+    },
+    {
+      "id": "biz-finance-resolve-dispute",
+      "title": "释放争议预留",
+      "group": "finance",
+      "overlay": "sheet",
+      "back": true,
+      "mobile_scope": "included"
+    },
+    {
+      "id": "biz-finance-carryover",
+      "title": "结转未用余额",
+      "group": "finance",
+      "overlay": "sheet",
+      "back": true,
+      "mobile_scope": "included"
+    },
+    {
+      "id": "biz-finance-public-duty",
+      "title": "核准公共职责奖励",
+      "group": "finance",
+      "overlay": "sheet",
+      "back": true,
+      "mobile_scope": "included"
+    },
+    {
+      "id": "biz-finance-public-commit",
+      "title": "安排公共职责支付",
+      "group": "finance",
+      "overlay": "sheet",
+      "back": true,
+      "mobile_scope": "included"
+    },
+    {
+      "id": "biz-finance-public-cancel-commit",
+      "title": "取消公共职责未付安排",
+      "group": "finance",
+      "overlay": "sheet",
+      "back": true,
+      "mobile_scope": "included"
+    },
+    {
+      "id": "biz-finance-public-payment",
+      "title": "登记公共职责线下支付",
+      "group": "finance",
+      "overlay": "sheet",
+      "back": true,
+      "mobile_scope": "included"
+    },
+    {
+      "id": "biz-finance-reverse",
+      "title": "冲正资金操作",
+      "group": "finance",
+      "overlay": "sheet",
+      "back": true,
+      "mobile_scope": "included"
+    },
+    {
+      "id": "biz-finance-manager",
+      "title": "指定公共资金管理员",
+      "group": "finance",
+      "overlay": "sheet",
+      "back": true,
+      "mobile_scope": "included"
+    },
+    {
+      "id": "biz-finance-stage-restore",
+      "title": "恢复阶段预算",
+      "group": "finance",
+      "overlay": "sheet",
+      "back": true,
+      "mobile_scope": "included"
+    },
+    {
+      "id": "biz-finance-project-restore",
+      "title": "恢复资金项目",
+      "group": "finance",
+      "overlay": "sheet",
+      "back": true,
+      "mobile_scope": "included"
+    },
+    {
+      "id": "biz-finance-actions",
+      "title": "办理资金事项",
+      "group": "finance",
+      "overlay": "sheet",
+      "back": true,
+      "mobile_scope": "included"
+    },
+    {
+      "id": "biz-finance-delete",
+      "title": "删除资金记录",
+      "group": "finance",
+      "overlay": "dialog",
+      "back": true,
+      "mobile_scope": "included"
+    },
+    {
+      "id": "biz-vc-reverse",
+      "title": "贡献冲正",
+      "group": "finance",
+      "overlay": "dialog",
+      "back": true,
+      "mobile_scope": "included"
+    },
+    {
+      "id": "biz-finance-formula",
+      "title": "项目预计奖励公式",
+      "group": "finance",
+      "back": true,
+      "mobile_scope": "included"
+    },
+    {
+      "id": "biz-finance-forecast-task",
+      "title": "保存奖励参考预测",
+      "group": "finance",
+      "overlay": "sheet",
+      "back": true,
+      "mobile_scope": "included"
+    },
+    {
+      "id": "biz-finance-forecast-member",
+      "title": "保存奖励参考预测",
+      "group": "finance",
+      "overlay": "sheet",
+      "back": true,
+      "mobile_scope": "included"
+    },
+    {
+      "id": "biz-analytics-project",
+      "title": "项目数据",
+      "group": "analytics",
+      "mobile_scope": "included"
+    },
+    {
+      "id": "biz-analytics-project-trend",
+      "title": "项目趋势与逾期",
+      "group": "analytics",
+      "back": true,
+      "mobile_scope": "included"
+    },
+    {
+      "id": "biz-analytics-schedule",
+      "title": "排期数据",
+      "group": "analytics",
+      "mobile_scope": "included"
+    },
+    {
+      "id": "biz-analytics-schedule-kinds",
+      "title": "排期类别与重叠",
+      "group": "analytics",
+      "back": true,
+      "mobile_scope": "included"
+    },
+    {
+      "id": "biz-analytics-vc",
+      "title": "VC 数据",
+      "group": "analytics",
+      "mobile_scope": "included"
+    },
+    {
+      "id": "biz-analytics-vc-trend",
+      "title": "VC 趋势与验收",
+      "group": "analytics",
+      "back": true,
+      "mobile_scope": "included"
+    },
+    {
+      "id": "biz-analytics-filters",
+      "title": "统计筛选",
+      "group": "analytics",
+      "overlay": "sheet",
+      "back": true,
+      "mobile_scope": "included"
+    },
+    {
+      "id": "biz-analytics-details",
+      "title": "图表数据与明细",
+      "group": "analytics",
+      "overlay": "sheet",
+      "back": true,
+      "mobile_scope": "included"
+    },
+    {
+      "id": "settings-profile-index",
+      "title": "个人设置",
+      "group": "settings",
+      "back": true,
+      "mobile_scope": "included"
+    },
+    {
+      "id": "settings-profile",
+      "title": "个人资料",
+      "group": "settings",
+      "back": true,
+      "mobile_scope": "included"
+    },
+    {
+      "id": "settings-avatar",
+      "title": "头像与封面",
+      "group": "settings",
+      "overlay": "sheet",
+      "back": true,
+      "mobile_scope": "included"
+    },
+    {
+      "id": "settings-deactivate",
+      "title": "停用账号",
+      "group": "settings",
+      "overlay": "dialog",
+      "back": true,
+      "mobile_scope": "included"
+    },
+    {
+      "id": "settings-preferences",
+      "title": "偏好设置",
+      "group": "settings",
+      "back": true,
+      "mobile_scope": "included"
+    },
+    {
+      "id": "settings-theme",
+      "title": "主题",
+      "group": "settings",
+      "back": true,
+      "mobile_scope": "included"
+    },
+    {
+      "id": "settings-custom-theme",
+      "title": "自定义主题",
+      "group": "settings",
+      "back": true,
+      "mobile_scope": "included"
+    },
+    {
+      "id": "settings-notifications",
+      "title": "通知设置",
+      "group": "settings",
+      "back": true,
+      "mobile_scope": "included"
+    },
+    {
+      "id": "settings-tokens",
+      "title": "API 令牌",
+      "group": "settings",
+      "back": true,
+      "mobile_scope": "included"
+    },
+    {
+      "id": "settings-token-create",
+      "title": "创建 API 令牌",
+      "group": "settings",
+      "overlay": "sheet",
+      "back": true,
+      "mobile_scope": "included"
+    },
+    {
+      "id": "settings-token-delete",
+      "title": "删除 API 令牌",
+      "group": "settings",
+      "overlay": "dialog",
+      "back": true,
+      "mobile_scope": "included"
+    },
+    {
+      "id": "settings-workspace-index",
+      "title": "工作区设置",
+      "group": "settings",
+      "back": true,
+      "mobile_scope": "included"
+    },
+    {
+      "id": "settings-workspace",
+      "title": "工作区信息",
+      "group": "settings",
+      "back": true,
+      "mobile_scope": "included"
+    },
+    {
+      "id": "settings-workspace-create",
+      "title": "新建工作区",
+      "group": "settings",
+      "overlay": "sheet",
+      "back": true,
+      "mobile_scope": "included"
+    },
+    {
+      "id": "settings-workspace-delete",
+      "title": "删除工作区",
+      "group": "settings",
+      "overlay": "dialog",
+      "back": true,
+      "mobile_scope": "included"
+    },
+    {
+      "id": "settings-members",
+      "title": "工作区成员",
+      "group": "settings",
+      "back": true,
+      "mobile_scope": "included"
+    },
+    {
+      "id": "settings-member-role",
+      "title": "成员管理",
+      "group": "settings",
+      "overlay": "sheet",
+      "back": true,
+      "mobile_scope": "included"
+    },
+    {
+      "id": "settings-member-remove",
+      "title": "移除成员",
+      "group": "settings",
+      "overlay": "dialog",
+      "back": true,
+      "mobile_scope": "included"
+    },
+    {
+      "id": "settings-webhooks",
+      "title": "Webhooks",
+      "group": "settings",
+      "back": true,
+      "mobile_scope": "included"
+    },
+    {
+      "id": "settings-webhook-edit",
+      "title": "配置 Webhook",
+      "group": "settings",
+      "back": true,
+      "mobile_scope": "included"
+    },
+    {
+      "id": "settings-project-index",
+      "title": "项目设置",
+      "group": "settings",
+      "back": true,
+      "mobile_scope": "included"
+    },
+    {
+      "id": "settings-project",
+      "title": "项目信息",
+      "group": "settings",
+      "back": true,
+      "mobile_scope": "included"
+    },
+    {
+      "id": "settings-project-delete",
+      "title": "删除项目",
+      "group": "settings",
+      "overlay": "dialog",
+      "back": true,
+      "mobile_scope": "included"
+    },
+    {
+      "id": "settings-project-members",
+      "title": "项目成员",
+      "group": "settings",
+      "back": true,
+      "mobile_scope": "included"
+    },
+    {
+      "id": "settings-project-member-add",
+      "title": "添加项目成员",
+      "group": "settings",
+      "overlay": "sheet",
+      "back": true,
+      "mobile_scope": "included"
+    },
+    {
+      "id": "settings-states",
+      "title": "项目状态",
+      "group": "settings",
+      "back": true,
+      "mobile_scope": "included"
+    },
+    {
+      "id": "settings-state-edit",
+      "title": "新增 / 编辑状态",
+      "group": "settings",
+      "overlay": "sheet",
+      "back": true,
+      "mobile_scope": "included"
+    },
+    {
+      "id": "settings-labels",
+      "title": "标签",
+      "group": "settings",
+      "back": true,
+      "mobile_scope": "included"
+    },
+    {
+      "id": "settings-label-edit",
+      "title": "新增 / 编辑标签",
+      "group": "settings",
+      "overlay": "sheet",
+      "back": true,
+      "mobile_scope": "included"
+    },
+    {
+      "id": "settings-estimates",
+      "title": "估点",
+      "group": "settings",
+      "back": true,
+      "mobile_scope": "included"
+    },
+    {
+      "id": "settings-estimate-edit",
+      "title": "估点方案",
+      "group": "settings",
+      "overlay": "sheet",
+      "back": true,
+      "mobile_scope": "included"
+    },
+    {
+      "id": "settings-features",
+      "title": "项目功能",
+      "group": "settings",
+      "back": true,
+      "mobile_scope": "included"
+    },
+    {
+      "id": "settings-feature-cycles",
+      "title": "周期设置",
+      "group": "settings",
+      "back": true,
+      "mobile_scope": "included"
+    },
+    {
+      "id": "settings-feature-modules",
+      "title": "模块设置",
+      "group": "settings",
+      "back": true,
+      "mobile_scope": "included"
+    },
+    {
+      "id": "settings-feature-views",
+      "title": "视图设置",
+      "group": "settings",
+      "back": true,
+      "mobile_scope": "included"
+    },
+    {
+      "id": "settings-feature-pages",
+      "title": "页面设置",
+      "group": "settings",
+      "back": true,
+      "mobile_scope": "included"
+    },
+    {
+      "id": "settings-feature-intake",
+      "title": "需求收集设置",
+      "group": "settings",
+      "back": true,
+      "mobile_scope": "included"
+    },
+    {
+      "id": "settings-automations",
+      "title": "自动化",
+      "group": "settings",
+      "back": true,
+      "mobile_scope": "included"
+    },
+    {
+      "id": "settings-token-created",
+      "title": "令牌已创建",
+      "group": "settings",
+      "overlay": "sheet",
+      "back": true,
+      "mobile_scope": "included"
+    },
+    {
+      "id": "admin-home",
+      "title": "管理后台",
+      "group": "admin",
+      "back": true,
+      "mobile_scope": "excluded: web administration only"
+    },
+    {
+      "id": "admin-general",
+      "title": "实例设置",
+      "group": "admin",
+      "back": true,
+      "mobile_scope": "excluded: web administration only"
+    },
+    {
+      "id": "admin-workspaces",
+      "title": "工作区管理",
+      "group": "admin",
+      "back": true,
+      "mobile_scope": "excluded: web administration only"
+    },
+    {
+      "id": "admin-auth",
+      "title": "实验室认证",
+      "group": "admin",
+      "back": true,
+      "mobile_scope": "excluded: web administration only"
+    },
+    {
+      "id": "admin-email",
+      "title": "邮件设置",
+      "group": "admin",
+      "back": true,
+      "mobile_scope": "excluded: web administration only"
+    },
+    {
+      "id": "admin-ai",
+      "title": "AI 设置",
+      "group": "admin",
+      "back": true,
+      "mobile_scope": "excluded: web administration only"
+    },
+    {
+      "id": "admin-image",
+      "title": "图片设置",
+      "group": "admin",
+      "back": true,
+      "mobile_scope": "excluded: web administration only"
+    },
+    {
+      "id": "shared-project",
+      "title": "共享项目",
+      "group": "shared",
+      "back": true,
+      "mobile_scope": "included"
+    },
+    {
+      "id": "shared-issue",
+      "title": "任务详情",
+      "group": "shared",
+      "back": true,
+      "mobile_scope": "included"
+    },
+    {
+      "id": "state-empty",
+      "title": "我的任务",
+      "group": "states",
+      "back": true,
+      "mobile_scope": "included"
+    },
+    {
+      "id": "state-loading",
+      "title": "个人规划",
+      "group": "states",
+      "back": true,
+      "mobile_scope": "included"
+    },
+    {
+      "id": "state-error",
+      "title": "个人规划",
+      "group": "states",
+      "back": true,
+      "mobile_scope": "included"
+    },
+    {
+      "id": "state-no-access",
+      "title": "团队排期",
+      "group": "states",
+      "back": true,
+      "mobile_scope": "included"
+    },
+    {
+      "id": "state-not-found",
+      "title": "页面不存在",
+      "group": "states",
+      "back": true,
+      "mobile_scope": "included"
+    },
+    {
+      "id": "theme-planner",
+      "title": "个人规划 · 深色",
+      "group": "themes",
+      "theme": "dark",
+      "mobile_scope": "included"
+    },
+    {
+      "id": "theme-calendar",
+      "title": "个人日历 · 日 · 深色",
+      "group": "themes",
+      "theme": "dark",
+      "mobile_scope": "included"
+    },
+    {
+      "id": "theme-tasks",
+      "title": "任务 · 深色",
+      "group": "themes",
+      "theme": "dark",
+      "back": true,
+      "mobile_scope": "included"
+    },
+    {
+      "id": "theme-task-detail",
+      "title": "ACOU-128 · 深色",
+      "group": "themes",
+      "theme": "dark",
+      "back": true,
+      "mobile_scope": "included"
+    },
+    {
+      "id": "theme-market",
+      "title": "悬赏大厅 · 深色",
+      "group": "themes",
+      "theme": "dark",
+      "mobile_scope": "included"
+    },
+    {
+      "id": "theme-finance",
+      "title": "资金与奖励 · 深色",
+      "group": "themes",
+      "theme": "dark",
+      "mobile_scope": "included"
+    },
+    {
+      "id": "theme-analytics",
+      "title": "项目数据 · 深色",
+      "group": "themes",
+      "theme": "dark",
+      "mobile_scope": "included"
+    },
+    {
+      "id": "theme-settings",
+      "title": "偏好设置 · 深色",
+      "group": "themes",
+      "theme": "dark",
+      "back": true,
+      "mobile_scope": "included"
+    }
+  ]
+}

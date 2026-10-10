@@ -1,9 +1,26 @@
 /** Copyright (c) 2026 OpenOceanAcoustic and contributors. SPDX-License-Identifier: AGPL-3.0-only */
+import type { CSSProperties } from "react";
 import type { LabChart, LabChartRow } from "@plane/types";
-const colors = ["#3b8870", "#3274ad", "#ad7840", "#8063a8", "#a16487", "#bc4b51"];
+const palette = ["#3767cc", "#8052b4", "#329776", "#d69c55", "#c26598"];
 const number = (row: LabChartRow, key: string) => Number(row[key]) || 0;
+function seriesColors(chart: LabChart) {
+  if (chart.id === "vc-budget") return ["#329776", "#8052b4", "#c26598"];
+  if (chart.id === "vc-participants") return ["#8052b4", "#329776"];
+  return palette;
+}
 export function ChartVisual({ chart, onSelect }: { chart: LabChart; onSelect: (row: LabChartRow) => void }) {
   if (!chart.rows.length) return null;
+  const colors = seriesColors(chart);
+  const legend = (
+    <div className="lab-series-legend">
+      {chart.series.map((series, index) => (
+        <span key={series.key}>
+          <i style={{ background: colors[index % colors.length] }} />
+          {series.label}
+        </span>
+      ))}
+    </div>
+  );
   if (chart.kind === "donut") {
     const key = chart.series[0]?.key;
     if (!key) return null;
@@ -13,27 +30,28 @@ export function ChartVisual({ chart, onSelect }: { chart: LabChart; onSelect: (r
       .map((row, index) => {
         const start = previous;
         previous += total ? (Math.max(0, number(row, key)) * 100) / total : 0;
-        return `${colors[index % colors.length]} ${start}% ${previous}%`;
+        return `${palette[index % palette.length]} ${start}% ${previous}%`;
       })
       .join(",");
     return (
-      <div className="lab-donut-layout">
+      <div className="lab-chart-card lab-donut-layout">
         <div
           className="lab-donut"
           role="img"
           aria-label={`${chart.title}，总计 ${total} ${chart.unit}`}
-          style={{ background: total ? `conic-gradient(${stops})` : "var(--layer,#f4f5f5)" }}
+          style={{ background: total ? `conic-gradient(${stops})` : "var(--layer)" }}
         >
           <span>
-            {total}
+            <strong>{total}</strong>
             <small>{chart.unit}</small>
           </span>
         </div>
-        <div>
+        <div className="lab-donut-legend">
           {chart.rows.map((row, index) => (
-            <button key={row.id} className="lab-card-row" onClick={() => onSelect(row)}>
-              <i style={{ background: colors[index % colors.length] }} />
-              {row.label} · {row[key]}
+            <button key={row.id} type="button" onClick={() => onSelect(row)}>
+              <i style={{ background: palette[index % palette.length] }} />
+              <span>{row.label}</span>
+              <strong>{row[key]}</strong>
             </button>
           ))}
         </div>
@@ -44,12 +62,15 @@ export function ChartVisual({ chart, onSelect }: { chart: LabChart; onSelect: (r
     const values = chart.rows.flatMap((row) => chart.series.map((series) => number(row, series.key)));
     const low = Math.min(0, ...values),
       high = Math.max(1, ...values);
-    const x = (index: number) => 12 + (index / Math.max(1, chart.rows.length - 1)) * 296;
-    const y = (value: number) => 140 - ((value - low) / (high - low)) * 120;
+    const x = (index: number) => 16 + (index * 310) / Math.max(1, chart.rows.length - 1);
+    const y = (value: number) => 150 - ((value - low) * 115) / (high - low);
     return (
-      <div>
-        <svg className="lab-chart-svg" viewBox="0 0 320 170" role="img" aria-label={chart.title}>
-          <line x1="12" y1="140" x2="308" y2="140" stroke="currentColor" opacity=".2" />
+      <div className="lab-chart-card">
+        {legend}
+        <svg className="lab-chart-svg" viewBox="0 0 342 174" role="img" aria-label={chart.title}>
+          {[35, 73, 112, 150].map((level) => (
+            <line key={level} x1="16" y1={level} x2="326" y2={level} stroke="var(--line)" strokeDasharray="3 4" />
+          ))}
           {chart.series.map((series, index) => (
             <g key={series.key}>
               <polyline
@@ -61,91 +82,156 @@ export function ChartVisual({ chart, onSelect }: { chart: LabChart; onSelect: (r
               {chart.rows.map((row, i) => (
                 <g
                   key={row.id}
-                  // oxlint-disable-next-line jsx-a11y/prefer-tag-over-role -- SVG data points need keyboard-accessible interaction
+                  // oxlint-disable-next-line jsx-a11y/prefer-tag-over-role -- keyboard accessible SVG data points
                   role="button"
                   tabIndex={0}
                   aria-label={`${row.label} ${series.label} ${row[series.key]}`}
                   onClick={() => onSelect(row)}
                   onKeyDown={(event) => {
-                    if (event.key === "Enter" || event.key === " ") onSelect(row);
+                    if (event.key === "Enter" || event.key === " ") {
+                      event.preventDefault();
+                      onSelect(row);
+                    }
                   }}
                 >
                   <circle cx={x(i)} cy={y(number(row, series.key))} r="10" fill="transparent" />
-                  <circle cx={x(i)} cy={y(number(row, series.key))} r="3.5" fill={colors[index % colors.length]} />
+                  <circle
+                    cx={x(i)}
+                    cy={y(number(row, series.key))}
+                    r="3"
+                    fill="var(--surface)"
+                    stroke={colors[index % colors.length]}
+                    strokeWidth="2"
+                  />
                 </g>
               ))}
             </g>
           ))}
-          <text x="12" y="163" fill="currentColor" fontSize="10">
-            {chart.rows[0]!.label}
-          </text>
-          <text x="308" y="163" textAnchor="end" fill="currentColor" fontSize="10">
-            {chart.rows.at(-1)!.label}
-          </text>
         </svg>
-        <p className="lab-muted">{chart.series.map((series) => series.label).join(" · ")}</p>
+        <div className="lab-line-labels">
+          {chart.rows.map((row) => (
+            <span key={row.id}>{row.label}</span>
+          ))}
+        </div>
+        <div className="lab-chart-legend">{chart.unit}</div>
       </div>
     );
   }
   if (chart.kind === "heatmap" && chart.days && chart.members) {
+    const members = chart.members;
+    const rowsById = new Map(chart.rows.map((row) => [row.id, row]));
     const key = chart.series[0]?.key ?? "hours";
     const maximum = Math.max(1, ...chart.rows.map((row) => number(row, key)));
+    const weeks = Array.from({ length: Math.ceil(chart.days.length / 7) }, (_, index) =>
+      chart.days!.slice(index * 7, index * 7 + 7)
+    );
     return (
-      <div>
-        {chart.members.map((member) => (
-          <section key={member.id}>
-            <p>{member.name}</p>
-            <div className="lab-heatmap">
-              {chart.days!.map((day) => {
-                const row = chart.rows.find((value) => value.id === `${member.id}:${day}`);
-                return (
-                  <button
-                    key={day}
-                    disabled={!row}
-                    aria-label={`${member.name} ${day} ${row ? row[key] : 0} ${chart.unit}`}
-                    style={{
-                      background: row
-                        ? `color-mix(in srgb,var(--brand,#0f766e) ${Math.max(12, (number(row, key) * 85) / maximum)}%,var(--surface,#fff))`
-                        : undefined,
-                    }}
-                    onClick={() => row && onSelect(row)}
-                  >
-                    {Number(day.slice(-2))}
-                    <small>{row ? String(row[key] ?? "") : ""}</small>
-                  </button>
-                );
-              })}
+      <div className="lab-heatmap-weeks">
+        {weeks.map((days) => (
+          <div
+            key={days[0]}
+            className="lab-chart-card lab-heatmap-chart"
+            style={{ "--heatmap-days": days.length } as CSSProperties}
+          >
+            {weeks.length > 1 && (
+              <p className="lab-chart-note">
+                {days[0]} — {days[days.length - 1]}
+              </p>
+            )}
+            <div className="lab-heatmap-head">
+              <span />
+              {days.map((day) => (
+                <small key={day}>{Number(day.slice(-2))}</small>
+              ))}
             </div>
-          </section>
+            {members.map((member) => (
+              <div className="lab-heatmap-row" key={member.id}>
+                <strong>{member.name}</strong>
+                {days.map((day) => {
+                  const row = rowsById.get(`${member.id}:${day}`);
+                  return (
+                    <button
+                      type="button"
+                      key={day}
+                      disabled={!row}
+                      aria-label={`${member.name} ${day} ${row ? row[key] : 0} ${chart.unit}`}
+                      style={{
+                        background: row
+                          ? `color-mix(in srgb,var(--brand) ${Math.min(80, Math.max(5, (number(row, key) * 80) / maximum))}%,var(--soft))`
+                          : undefined,
+                      }}
+                      onClick={() => row && onSelect(row)}
+                    >
+                      {row ? String(row[key] ?? "0") : "0"}
+                    </button>
+                  );
+                })}
+              </div>
+            ))}
+            <div className="lab-chart-legend">{chart.unit}</div>
+          </div>
         ))}
+      </div>
+    );
+  }
+  if (chart.kind === "stack") {
+    const max = Math.max(
+      1,
+      ...chart.rows.map((row) => chart.series.reduce((sum, series) => sum + Math.abs(number(row, series.key)), 0))
+    );
+    return (
+      <div className="lab-chart-card">
+        {legend}
+        {chart.rows.map((row) => (
+          <button className="lab-chart-row" type="button" key={row.id} onClick={() => onSelect(row)}>
+            <span className="lab-stacked-label">{row.label}</span>
+            <span className="lab-stacked-bar">
+              {chart.series.map((series, index) => (
+                <span
+                  key={series.key}
+                  style={{
+                    width: `${(Math.abs(number(row, series.key)) * 100) / max}%`,
+                    background: colors[index % colors.length],
+                  }}
+                >
+                  {row[series.key]}
+                </span>
+              ))}
+            </span>
+          </button>
+        ))}
+        <div className="lab-chart-legend">
+          {chart.unit} · {max}
+        </div>
       </div>
     );
   }
   const max = Math.max(
     1,
-    ...chart.rows.map((row) => chart.series.reduce((sum, series) => sum + Math.abs(number(row, series.key)), 0))
+    ...chart.rows.flatMap((row) => chart.series.map((series) => Math.abs(number(row, series.key))))
   );
   return (
-    <div>
+    <div className="lab-chart-card">
+      {legend}
       {chart.rows.map((row) => (
-        <button key={row.id} className="lab-card-row" onClick={() => onSelect(row)}>
-          <div className="lab-heading">
-            <span>{row.label}</span>
-            <small>{chart.series.map((series) => `${series.label} ${row[series.key] ?? "—"}`).join(" · ")}</small>
-          </div>
-          <div className="lab-bar lab-stack">
+        <button className="lab-multi-bar-row" type="button" key={row.id} onClick={() => onSelect(row)}>
+          <span>{row.label}</span>
+          <span>
             {chart.series.map((series, index) => (
-              <span
-                key={series.key}
-                style={{
-                  width: `${(100 * Math.abs(number(row, series.key))) / max}%`,
-                  background: colors[index % colors.length],
-                }}
-              />
+              <span className="lab-multi-bar-value" key={series.key}>
+                <i
+                  style={{
+                    width: `${Math.max(2, (Math.abs(number(row, series.key)) * 100) / max)}%`,
+                    background: colors[index % colors.length],
+                  }}
+                />
+                <small>{row[series.key] ?? "—"}</small>
+              </span>
             ))}
-          </div>
+          </span>
         </button>
       ))}
+      <div className="lab-chart-legend">{chart.unit}</div>
     </div>
   );
 }

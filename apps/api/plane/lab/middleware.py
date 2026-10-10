@@ -24,12 +24,34 @@ def is_admin_request(request):
     )
 
 
+def legacy_workspace_invitation_path(path):
+    segments = path.strip("/").split("/")
+    if segments[:2] == ["api", "v1"]:
+        segments.pop(1)
+    return (
+        len(segments) >= 4
+        and segments[:2] == ["api", "workspaces"]
+        and segments[3].partition(".")[0] == "invitations"
+    ) or (
+        len(segments) == 5
+        and segments[:4] == ["api", "users", "me", "workspaces"]
+        and segments[4].partition(".")[0] == "invitations"
+    )
+
+
 def valid_lab_session(request, credential, admin=False):
     expiry = request.session.get("lab_expires_at")
     return bool(
         credential
         and request.session.get("lab_generation") == str(credential.generation)
         and request.session.get("lab_purpose") == ("admin" if admin else "user")
+        and (
+            not admin
+            or (
+                request.session.get("lab_client") != "android"
+                and not getattr(request, "_lab_android_user_session", False)
+            )
+        )
         and isinstance(expiry, (int, float))
         and expiry > timezone.now().timestamp()
     )
@@ -42,8 +64,22 @@ class LabAccessMiddleware:
         self.get_response = get_response
 
     def __call__(self, request):
+        path = request.path
+        public_instance = path.rstrip("/") == "/api/instances" and request.method in ("GET", "HEAD", "OPTIONS")
+        if path.startswith("/auth/lab/mobile/admin/") or (
+            is_admin_request(request)
+            and not public_instance
+            and (
+                request.session.get("lab_client") == "android"
+                or getattr(request, "_lab_android_user_session", False)
+            )
+        ):
+            return JsonResponse({"error": "请在电脑网页登录管理后台", "code": "ADMIN_WEB_ONLY"}, status=403)
         if settings.LAB_AUTH_ENABLED:
-            path = request.path
+            if legacy_workspace_invitation_path(path) and request.method != "OPTIONS":
+                return JsonResponse(
+                    {"error": "请使用服务器生成的一次性邀请链接", "code": "SSH_INVITATION_REQUIRED"}, status=403
+                )
             allowed_auth = path.startswith("/auth/lab/") or path in (
                 "/auth/get-csrf-token/",
                 "/auth/sign-out/",
@@ -57,7 +93,6 @@ class LabAccessMiddleware:
             blocked |= path.rstrip("/") == "/api/instances/admins" and request.method == "POST"
             if blocked:
                 return JsonResponse({"error": "仅支持 SSH 邀请注册和 Authenticator 动态码登录"}, status=403)
-            public_instance = path.rstrip("/") == "/api/instances" and request.method in ("GET", "HEAD", "OPTIONS")
             token_api = path.startswith("/api/v1/") and bool(request.headers.get("X-Api-Key"))
             if (
                 path.startswith("/api/")
@@ -67,7 +102,7 @@ class LabAccessMiddleware:
                 and not request.user.is_authenticated
             ):
                 return JsonResponse({"error": "请使用 Authenticator 登录"}, status=401)
-            if request.user.is_authenticated:
+            if request.user.is_authenticated and not public_instance:
                 credential = Credential.objects.filter(user=request.user, enabled=True, user__is_active=True).first()
                 is_admin = is_admin_request(request)
                 if not valid_lab_session(request, credential, is_admin):

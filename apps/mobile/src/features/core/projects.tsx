@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Archive, ArrowRight, MoreHorizontal, Star } from "lucide-react";
+import { Archive, Star } from "lucide-react";
 import {
   ActionButton,
   ErrorMessage,
@@ -12,7 +12,8 @@ import {
   type FormField,
 } from "../../components/ui";
 import { DetailFields, Empty, ResultState, AddButton } from "./shared";
-import { userName, type Session, type Member, type CoreProps, type NamedEntity } from "./model";
+import { CanonicalIcon } from "../../components/navigation";
+import { dateLabel, userName, type Session, type Member, type CoreProps, type NamedEntity } from "./model";
 
 function projectFields(project?: Entity, members: Member[] = []): FormField[] {
   return [
@@ -55,6 +56,7 @@ export default function Projects(props: CoreProps) {
   const { client, workspaceSlug, onNavigate } = props;
   const base = `/api/workspaces/${encodeURIComponent(workspaceSlug)}`;
   const { data, error, loading, refresh } = useData<NamedEntity[]>(client, `${base}/projects/`);
+  const projectStats = useData<Entity[]>(client, `${base}/project-stats/`);
   const workspace = useData<Entity>(client, `${base}/`);
   const members = useData<Member[]>(client, `${base}/members/`);
   const session = useData<Session>(client, "/api/lab/session/");
@@ -67,14 +69,25 @@ export default function Projects(props: CoreProps) {
   );
   const fullSelected = selectedDetail.data?.id === selected?.id ? selectedDetail.data : undefined;
   const [pendingProject, setPendingProject] = useState<Entity>();
-  const [favoritesOnly, setFavoritesOnly] = useState(false);
+  const [projectFilter, setProjectFilter] = useState("all");
+  const [filterPanel, setFilterPanel] = useState(false);
+  const [visibility, setVisibility] = useState("");
+  const [orderBy, setOrderBy] = useState("name");
   const [showArchived, setShowArchived] = useState(false);
   const all = records(data);
   const projects = all.filter(
     (project) =>
-      String(project.name).toLocaleLowerCase().includes(query.toLocaleLowerCase()) &&
-      (!favoritesOnly || project.is_favorite) &&
+      `${project.name} ${project.identifier}`.toLocaleLowerCase().includes(query.toLocaleLowerCase()) &&
+      (projectFilter !== "favorites" || project.is_favorite) &&
+      (projectFilter !== "mine" || project.is_member || project.project_lead === session.data?.user.id) &&
+      (!visibility || String(project.network) === visibility) &&
       (showArchived ? Boolean(project.archived_at) : !project.archived_at)
+  );
+  // oxlint-disable-next-line unicorn/no-array-sort -- Sorting a newly filtered array supports Android WebView 95.
+  projects.sort((left, right) =>
+    orderBy === "updated"
+      ? String(right.updated_at).localeCompare(String(left.updated_at))
+      : String(left.name).localeCompare(String(right.name), "zh-CN")
   );
   const canCreate = Number(workspace.data?.role) >= 15;
   const canAdmin = Number(selected?.member_role) >= 20 || Number(workspace.data?.role) >= 20;
@@ -127,81 +140,143 @@ export default function Projects(props: CoreProps) {
       <PageHeading title="项目">
         {canCreate && <AddButton onClick={() => setModal("create")}>新项目</AddButton>}
       </PageHeading>
-      <label className="core-search">
+      <label className="field core-project-search">
+        <span>搜索项目</span>
         <input
           aria-label="搜索项目"
-          placeholder="搜索项目"
+          placeholder="搜索名称或标识"
           value={query}
           onChange={(event) => setQuery(event.target.value)}
         />
       </label>
       <div className="core-tabs">
-        <button className={`chip ${!favoritesOnly ? "active" : ""}`} onClick={() => setFavoritesOnly(false)}>
-          全部项目
-        </button>
-        <button className={`chip ${favoritesOnly ? "active" : ""}`} onClick={() => setFavoritesOnly(true)}>
-          收藏
-        </button>
-        <button className={`chip ${showArchived ? "active" : ""}`} onClick={() => setShowArchived(!showArchived)}>
-          已归档
+        {[
+          ["all", "全部项目"],
+          ["mine", "我的项目"],
+          ["favorites", "收藏"],
+        ].map(([key, label]) => (
+          <button
+            key={key}
+            className={`chip ${projectFilter === key ? "active" : ""}`}
+            onClick={() => setProjectFilter(key)}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+      <div className="core-rows">
+        <button className="row" onClick={() => setFilterPanel(true)}>
+          <span className="row-main">
+            {visibility === "0" ? "私有项目" : visibility === "2" ? "公开项目" : "全部状态"}
+          </span>
+          <span className="row-value">{orderBy === "updated" ? "按更新时间排序" : "按名称排序"}</span>
+          <CanonicalIcon name="arrow" size={16} />
         </button>
       </div>
       <ResultState loading={loading} error={error}>
         <div className="list">
-          {projects.map((project) => (
-            <article className="card" key={project.id}>
-              <div className="row">
-                <span className="core-project-icon">{String(project.identifier ?? "P").slice(0, 2)}</span>
+          {projects.map((project) => {
+            const metrics = records(projectStats.data).find((row) => row.id === project.id);
+            const total = Number(metrics?.total_issues ?? 0);
+            const complete = Number(metrics?.completed_issues ?? 0);
+            const lead = members.data?.find((row) => row.member.id === project.project_lead)?.member;
+            return (
+              <article className="card core-project-card" key={project.id}>
+                <div className="core-project-identity">
+                  <span>{String(project.identifier)}</span>
+                  <button
+                    className="core-pill core-tone-indigo"
+                    aria-label={`${project.name}项目操作`}
+                    onClick={() => {
+                      setSelected(project);
+                      setModal("details");
+                    }}
+                  >
+                    {Number(project.network) === 0 ? "私有项目" : "公开项目"}
+                  </button>
+                  {Boolean(project.archived_at) && <span className="core-pill">已归档</span>}
+                </div>
                 <button
                   className="core-task-name"
-                  onClick={() => onNavigate({ page: "tasks", projectId: String(project.id) })}
+                  onClick={() => onNavigate({ page: "project-overview", projectId: String(project.id) })}
                 >
                   {project.name}
                 </button>
-                <button
-                  className="icon-button"
-                  aria-label={`${project.name}项目操作`}
-                  onClick={() => {
-                    setSelected(project);
-                    setModal("details");
-                  }}
-                >
-                  <MoreHorizontal size={20} />
-                </button>
-              </div>
-              {Boolean(project.description) && <p className="muted">{String(project.description)}</p>}
-              <div className="core-task-meta">
-                <span>{String(project.identifier)}</span>
-                <span>{Number(project.network) === 0 ? "私密" : "公开"}</span>
-                {Boolean(project.archived_at) && <span>已归档</span>}
-              </div>
-              <div className="core-card-actions">
-                <ActionButton
-                  className="chip"
-                  action={() =>
-                    client.request(
-                      `${base}/user-favorite-projects/${project.is_favorite ? `${project.id}/` : ""}`,
-                      project.is_favorite ? "DELETE" : "POST",
-                      project.is_favorite ? undefined : { project: project.id }
-                    )
-                  }
-                  onDone={() => {
-                    void refresh();
-                  }}
-                >
-                  <Star size={15} fill={project.is_favorite ? "currentColor" : "none"} />
-                  {project.is_favorite ? "已收藏" : "收藏"}
-                </ActionButton>
-                <button className="chip" onClick={() => onNavigate({ page: "tasks", projectId: String(project.id) })}>
-                  任务
-                  <ArrowRight size={15} />
-                </button>
-              </div>
-            </article>
-          ))}
+                {Boolean(project.description) && <p className="core-card-subtitle">{String(project.description)}</p>}
+                <div className="core-card-meta">
+                  {lead && (
+                    <span>
+                      <CanonicalIcon name="tag" size={14} />
+                      {userName(lead)} · 项目负责人
+                    </span>
+                  )}
+                  {project.total_members != null && (
+                    <span>
+                      <CanonicalIcon name="tag" size={14} />
+                      {String(project.total_members)}名成员
+                    </span>
+                  )}
+                  {Boolean(project.updated_at) && (
+                    <span>
+                      <CanonicalIcon name="plan" size={14} />
+                      {dateLabel(project.updated_at)}更新
+                    </span>
+                  )}
+                </div>
+                {metrics && total > 0 && (
+                  <div
+                    className="core-mini-progress"
+                    role="progressbar"
+                    aria-label="项目完成进度"
+                    aria-valuemin={0}
+                    aria-valuemax={total}
+                    aria-valuenow={complete}
+                  >
+                    <span style={{ width: `${Math.min(100, Math.max(0, (complete / total) * 100))}%` }} />
+                  </div>
+                )}
+              </article>
+            );
+          })}
           {!projects.length && <Empty>暂无项目</Empty>}
         </div>
       </ResultState>
+      <button className="button" onClick={() => setShowArchived(!showArchived)}>
+        {showArchived ? "返回活跃项目" : "已归档项目"}
+      </button>
+      {filterPanel && (
+        <FormSheet
+          title="项目筛选与排序"
+          fields={[
+            {
+              key: "visibility",
+              label: "可见性",
+              type: "select",
+              value: visibility,
+              options: [
+                { value: "", label: "全部状态" },
+                { value: "0", label: "私有项目" },
+                { value: "2", label: "公开项目" },
+              ],
+            },
+            {
+              key: "order",
+              label: "排序",
+              type: "select",
+              value: orderBy,
+              options: [
+                { value: "name", label: "按名称排序" },
+                { value: "updated", label: "按更新时间排序" },
+              ],
+            },
+          ]}
+          onSubmit={async (values) => {
+            setVisibility(values.visibility);
+            setOrderBy(values.order);
+          }}
+          onClose={() => setFilterPanel(false)}
+        />
+      )}
       <ErrorMessage error={workspace.error} />
       {(modal === "create" ||
         (modal === "edit" && fullSelected && !selectedDetail.loading && !selectedDetail.error)) && (
@@ -244,6 +319,22 @@ export default function Projects(props: CoreProps) {
             </ResultState>
           )}
           <div className="list">
+            <ActionButton
+              action={() =>
+                client.request(
+                  `${base}/user-favorite-projects/${selected.is_favorite ? `${selected.id}/` : ""}`,
+                  selected.is_favorite ? "DELETE" : "POST",
+                  selected.is_favorite ? undefined : { project: selected.id }
+                )
+              }
+              onDone={() => {
+                close();
+                void refresh();
+              }}
+            >
+              <Star size={15} fill={selected.is_favorite ? "currentColor" : "none"} />
+              {selected.is_favorite ? "取消收藏" : "收藏项目"}
+            </ActionButton>
             <button
               className="button"
               onClick={() => {

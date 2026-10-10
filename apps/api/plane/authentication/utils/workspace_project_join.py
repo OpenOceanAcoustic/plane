@@ -3,6 +3,7 @@
 # See the LICENSE file for details.
 
 # Django imports
+from django.conf import settings
 from django.utils import timezone
 
 # Module imports
@@ -20,6 +21,9 @@ from plane.utils.analytics_events import USER_JOINED_WORKSPACE
 def process_workspace_project_invitations(user):
     """This function takes in User and adds him to all workspace and projects that the user has accepted invited of"""
 
+    if settings.LAB_AUTH_ENABLED:
+        # Lab membership is established only when its SSH invitation is confirmed.
+        return
     # Check if user has any accepted invites for workspace and add them to workspace
     workspace_member_invites = WorkspaceMemberInvite.objects.filter(email=user.email, accepted=True)
 

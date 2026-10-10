@@ -4,21 +4,14 @@ import { SWRConfig, useSWRConfig } from "swr";
 import { Capacitor } from "@capacitor/core";
 import { App as NativeApp } from "@capacitor/app";
 import { Keyboard } from "@capacitor/keyboard";
-import {
-  Boxes,
-  ChevronDown,
-  ChevronLeft,
-  Home as HomeIcon,
-  Inbox as InboxIcon,
-  Search as SearchIcon,
-  Settings,
-} from "lucide-react";
+import { CanonicalIcon, MobileHeaderContext } from "./components/navigation";
 import { MobileStore, type MobileRoute, type MobileUser } from "@plane/shared-state/mobile";
 import { ApiClient, nativeTransport } from "./lib/client";
 import { ErrorMessage, FormSheet, Loading, Sheet, records, useData } from "./components/ui";
 import { MobileClientContext } from "./components/rich-editor";
 import { Login, ServerSetup } from "./features/auth";
 import { Home, Inbox, SearchPage } from "./features/home";
+import More from "./features/more";
 import LabFeature from "./features/lab";
 import CoreFeature from "./features/core";
 import { SettingsFeature } from "./features/settings";
@@ -28,7 +21,58 @@ import WorkspaceFeature from "./features/workspace";
 import type { MobileTheme } from "./features/settings/preferences";
 
 const store = new MobileStore();
+const savedTheme = localStorage.getItem("ooa.theme");
+if (["light", "dark", "system", "custom"].includes(savedTheme ?? ""))
+  store.setTheme(savedTheme as MobileTheme["theme"]);
 const initialServer = localStorage.getItem("ooa.server") ?? "";
+const pageTitles: Record<string, string> = {
+  more: "更多",
+  inbox: "通知",
+  search: "搜索",
+  projects: "项目",
+  "project-overview": "项目概览",
+  "my-tasks": "我的任务",
+  tasks: "工作项",
+  issue: "",
+  cycles: "周期",
+  modules: "模块",
+  views: "视图",
+  intake: "需求收集",
+  "archived-tasks": "归档任务",
+  planner: "个人规划",
+  team: "团队排期",
+  "task-table": "任务表格",
+  bounties: "悬赏大厅",
+  finance: "资金与奖励",
+  analytics: "数据总览",
+  contributions: "我的项目与 VC",
+  workflow: "流程设置",
+  documents: "文档",
+  document: "文档",
+  "lab-documents": "关联文档",
+  widgets: "管理首页组件",
+  drafts: "草稿",
+  activity: "我的活动",
+  "workspace-views": "工作区视图",
+  "active-cycles": "活跃周期",
+  "workspace-analytics": "工作区统计",
+  commands: "快捷入口",
+  space: "共享项目",
+  settings: "个人设置",
+  "workspace-settings": "工作区设置",
+  "project-settings": "项目设置",
+};
+const projectLinks = [
+  ["project-overview", "概览"],
+  ["tasks", "工作项"],
+  ["documents", "文档"],
+  ["cycles", "周期"],
+  ["modules", "模块"],
+  ["views", "视图"],
+  ["intake", "需求收集"],
+  ["archived-tasks", "归档"],
+  ["project-settings", "设置"],
+] as const;
 const App = observer(function App() {
   const [server, setServer] = useState(initialServer);
   const [setup, setSetup] = useState(!initialServer);
@@ -39,6 +83,12 @@ const App = observer(function App() {
   const [notice, setNotice] = useState("");
   const [workspacePicker, setWorkspacePicker] = useState(false);
   const [newWorkspace, setNewWorkspace] = useState(false);
+  const [projectMenu, setProjectMenu] = useState(false);
+  const [fab, setFab] = useState<HTMLElement | null>(null);
+  const [composer, setComposer] = useState<HTMLElement | null>(null);
+  const [headerTitle, setHeaderTitle] = useState<HTMLElement | null>(null);
+  const [headerActions, setHeaderActions] = useState<HTMLElement | null>(null);
+  const [headerBack, setHeaderBack] = useState<HTMLElement | null>(null);
   const [customTheme, setCustomTheme] = useState<Record<string, string>>(() => {
     try {
       return JSON.parse(localStorage.getItem("ooa.custom-theme") ?? "{}");
@@ -64,10 +114,7 @@ const App = observer(function App() {
   }, [client]);
   const logout = useCallback(async () => {
     try {
-      await Promise.allSettled([
-        client.request("/auth/sign-out/", "POST"),
-        client.request("/api/instances/admins/sign-out/", "POST"),
-      ]);
+      await Promise.allSettled([client.request("/auth/sign-out/", "POST")]);
     } finally {
       await client.clearSession();
       store.reset();
@@ -173,10 +220,6 @@ const App = observer(function App() {
     };
   }, [mutate]);
   useEffect(() => {
-    const saved = localStorage.getItem("ooa.theme");
-    if (["light", "dark", "system", "custom"].includes(saved ?? "")) store.setTheme(saved as MobileTheme["theme"]);
-  }, []);
-  useEffect(() => {
     const media = matchMedia("(prefers-color-scheme: dark)");
     const apply = () => {
       const dark =
@@ -201,6 +244,18 @@ const App = observer(function App() {
     return () => media.removeEventListener("change", apply);
   }, [theme, customTheme]);
   const route = store.route;
+  const hasContextBack = Boolean(route.projectId || route.pageId || route.issueId);
+  const headerContext = useMemo(
+    () => ({
+      title: headerTitle,
+      actions: headerActions,
+      back: headerBack,
+      detail: route.page === "issue",
+      composer,
+      fab,
+    }),
+    [headerTitle, headerActions, headerBack, route.page, composer, fab]
+  );
   const selectedWorkspace = records(workspaces.data).find((item) => item.slug === store.workspaceSlug);
   if (setup) return <ServerSetup initial={server} onConnect={switchServer} />;
   if (loading)
@@ -209,20 +264,31 @@ const App = observer(function App() {
         <Loading />
       </main>
     );
-  if (!store.user && route.page !== "admin" && route.page !== "space")
+  if (!store.user && route.page !== "space")
     return (
       <Login
         client={client}
         onLogin={restore}
         onServerChange={() => setSetup(true)}
-        onAdmin={() => navigate({ page: "admin" })}
         onSpace={() => navigate({ page: "space" })}
       />
     );
   const page = route.page;
   const rootLink = (target: string) => store.root(target);
   let content;
-  if (page === "home") content = <Home client={client} workspaceSlug={store.workspaceSlug} navigate={navigate} />;
+  if (page === "home")
+    content = <Home client={client} workspaceSlug={store.workspaceSlug} userId={store.user?.id} navigate={navigate} />;
+  else if (page === "more" && store.user)
+    content = (
+      <More
+        client={client}
+        workspaceSlug={store.workspaceSlug}
+        workspaceName={String(selectedWorkspace?.name ?? "OpenOceanAcoustic")}
+        user={store.user}
+        navigate={navigate}
+        onLogout={logout}
+      />
+    );
   else if (page === "inbox")
     content = <Inbox client={client} workspaceSlug={store.workspaceSlug} navigate={navigate} />;
   else if (page === "search")
@@ -295,18 +361,10 @@ const App = observer(function App() {
       <WorkspaceFeature section={page} client={client} workspaceSlug={store.workspaceSlug} onNavigate={navigate} />
     );
   else if (page === "space") content = <Space client={client} />;
-  else if (["settings", "workspace-settings", "project-settings", "admin"].includes(page))
+  else if (["settings", "workspace-settings", "project-settings"].includes(page))
     content = (
       <SettingsFeature
-        section={
-          page === "admin"
-            ? "admin"
-            : page === "workspace-settings"
-              ? "workspace"
-              : page === "project-settings"
-                ? "project"
-                : "personal"
-        }
+        section={page === "workspace-settings" ? "workspace" : page === "project-settings" ? "project" : "personal"}
         workspaceSlug={store.workspaceSlug}
         projectId={route.projectId}
         client={client}
@@ -327,177 +385,199 @@ const App = observer(function App() {
   else content = <p className="empty">页面不存在</p>;
   return (
     <MobileClientContext.Provider value={client}>
-      <div className="app-shell" key={epoch}>
-        <header className="topbar">
-          {store.routes.length > 1 ? (
-            <button
-              className="icon-button"
-              aria-label="返回"
-              onClick={() => {
-                const event = new Event("mobileBack", { cancelable: true });
-                window.dispatchEvent(event);
-                if (!event.defaultPrevented) store.back();
-              }}
-            >
-              <ChevronLeft />
-            </button>
-          ) : (
-            <div className="workspace-logo">{String(selectedWorkspace?.name ?? "O").slice(0, 1)}</div>
-          )}
-          <button className="workspace-switch" onClick={() => setWorkspacePicker(true)}>
-            <span className="workspace-title">{String(selectedWorkspace?.name ?? "OpenOceanAcoustic")}</span>
-            <ChevronDown size={18} />
-          </button>
-          <button
-            className="icon-button"
-            aria-label="工作区设置"
-            onClick={() => navigate({ page: "workspace-settings" })}
+      <MobileHeaderContext.Provider value={headerContext}>
+        <div className="app-shell" data-page={page} key={epoch}>
+          <header
+            className={`topbar ${page === "home" ? "workspace-header" : page === "issue" ? "task-detail-header" : ["tasks", "archived-tasks"].includes(page) ? "compact-header project-view-header" : "compact-header"}`}
           >
-            <Boxes />
-          </button>
-          <button className="avatar" aria-label="个人设置" onClick={() => navigate({ page: "settings" })}>
-            {(store.user?.display_name ?? store.user?.username ?? "O").slice(0, 2)}
-          </button>
-        </header>
-        {!online && (
-          <p className="network-status" role="status">
-            网络已断开
-          </p>
-        )}
-        {notice && (
-          <button className="network-status" role="status" onClick={() => setNotice("")}>
-            {notice}
-          </button>
-        )}
-        <main
-          className="page"
-          key={`${store.workspaceSlug}:${page}:${route.projectId}:${route.issueId}:${route.pageId}`}
-        >
-          <ErrorMessage error={error} />
-          {route.projectId && page !== "issue" && (
-            <nav className="project-navigation">
-              {[
-                ["project-overview", "概览"],
-                ["tasks", "工作项"],
-                ["documents", "文档"],
-                ["cycles", "周期"],
-                ["modules", "模块"],
-                ["views", "视图"],
-                ["intake", "需求收集"],
-                ["archived-tasks", "归档"],
-                ["project-settings", "设置"],
-              ].map(([target, label]) => (
+            {page === "home" ? (
+              <>
+                <button className="workspace-switch" aria-label="切换工作区" onClick={() => setWorkspacePicker(true)}>
+                  <span className="workspace-logo">声</span>
+                  <span className="workspace-title">{String(selectedWorkspace?.name ?? "OpenOceanAcoustic")}</span>
+                  <CanonicalIcon name="down" size={16} />
+                </button>
                 <button
-                  key={target}
-                  onClick={() => navigate({ page: target, projectId: route.projectId })}
-                  className={page === target ? "chip active" : "chip"}
+                  className="icon-button workspace-grid"
+                  aria-label="应用"
+                  onClick={() => navigate({ page: "more" })}
                 >
-                  {label}
+                  <CanonicalIcon name="apps" size={24} />
                 </button>
-              ))}
-            </nav>
-          )}
-          {store.user && !store.workspaceSlug && !["settings", "admin", "space"].includes(page) ? (
-            <>
-              <ErrorMessage error={workspaces.error} />
-              <p className="empty">暂无工作区</p>
-              <button className="button" onClick={() => setNewWorkspace(true)}>
-                创建工作区
-              </button>
-              <button className="button" onClick={() => navigate({ page: "settings" })}>
-                个人设置
-              </button>
-              <button className="button" onClick={() => navigate({ page: "admin" })}>
-                God Mode
-              </button>
-              <button className="button" onClick={() => navigate({ page: "space" })}>
-                共享页面
-              </button>
-            </>
-          ) : (
-            content
-          )}
-          {page === "settings" && (
-            <div className="list">
-              {store.workspaceSlug && (
-                <button className="button" onClick={() => navigate({ page: "workspace-settings" })}>
-                  <Settings size={18} />
-                  工作区设置
+                <button className="avatar" aria-label="个人设置" onClick={() => navigate({ page: "settings" })}>
+                  {(store.user?.display_name || store.user?.username || "声").slice(0, 1)}
                 </button>
-              )}
-              <button className="button" onClick={() => navigate({ page: "admin" })}>
-                God Mode
-              </button>
-              <button className="button" onClick={() => navigate({ page: "space" })}>
-                共享页面
-              </button>
-            </div>
-          )}
-        </main>
-        <nav className="bottom-dock" aria-label="主导航">
-          {[
-            ["home", "首页", HomeIcon],
-            ["inbox", "收件箱", InboxIcon],
-            ["search", "搜索", SearchIcon],
-          ].map(([target, label, Icon]) => {
-            const Glyph = Icon as typeof HomeIcon;
-            return (
-              <button
-                key={String(target)}
-                className={page === target ? "active" : ""}
-                aria-label={String(label)}
-                aria-current={page === target ? "page" : undefined}
-                onClick={() => rootLink(String(target))}
-              >
-                <Glyph size={25} />
-              </button>
-            );
-          })}
-        </nav>
-        {workspacePicker && (
-          <Sheet title="工作区" onClose={() => setWorkspacePicker(false)}>
-            <div className="list">
-              {records(workspaces.data).map((item) => (
+              </>
+            ) : (
+              <>
+                <div className="header-back-slot" ref={setHeaderBack} />
                 <button
-                  className="row"
-                  key={item.id}
+                  className="icon-button header-back-fallback"
+                  aria-label={hasContextBack ? "返回" : "切换工作区"}
                   onClick={() => {
-                    store.setWorkspace(String(item.slug));
-                    localStorage.setItem("ooa.workspace", String(item.slug));
-                    setWorkspacePicker(false);
+                    if (hasContextBack) {
+                      const event = new Event("mobileBack", { cancelable: true });
+                      window.dispatchEvent(event);
+                      if (!event.defaultPrevented) store.back();
+                    } else setWorkspacePicker(true);
                   }}
                 >
-                  {String(item.name)}
+                  {hasContextBack ? <CanonicalIcon name="back" /> : <span className="workspace-mark">声</span>}
                 </button>
-              ))}
-              <button
-                className="button"
-                onClick={() => {
-                  setWorkspacePicker(false);
-                  setNewWorkspace(true);
-                }}
-              >
-                创建工作区
-              </button>
-            </div>
-          </Sheet>
-        )}
-        {newWorkspace && (
-          <FormSheet
-            title="创建工作区"
-            fields={[
-              { key: "name", label: "名称", required: true },
-              { key: "slug", label: "标识", required: true },
-            ]}
-            onClose={() => setNewWorkspace(false)}
-            onSubmit={async (values) => {
-              const created = await client.request<{ slug: string }>("/api/workspaces/", "POST", values);
-              store.setWorkspace(created.slug);
-              await workspaces.refresh();
-            }}
-          />
-        )}
-      </div>
+                <div className="app-heading">
+                  <div className="header-feature-title" ref={setHeaderTitle} />
+                  <h1 className="header-title-fallback">{pageTitles[page] ?? "OpenOceanAcoustic"}</h1>
+                </div>
+                <div className="header-feature-actions" ref={setHeaderActions} />
+                {page !== "issue" && (
+                  <button
+                    className="icon-button"
+                    aria-label={route.projectId ? "项目导航" : "应用"}
+                    onClick={() => {
+                      if (route.projectId) setProjectMenu(true);
+                      else if (page !== "more") navigate({ page: "more" });
+                    }}
+                  >
+                    <CanonicalIcon name="apps" size={23} />
+                  </button>
+                )}
+              </>
+            )}
+          </header>
+          {!online && (
+            <p className="network-status" role="status">
+              网络已断开
+            </p>
+          )}
+          {notice && (
+            <button className="network-status" role="status" onClick={() => setNotice("")}>
+              {notice}
+            </button>
+          )}
+          <main
+            className="page"
+            key={`${store.workspaceSlug}:${page}:${route.projectId}:${route.issueId}:${route.pageId}`}
+          >
+            <ErrorMessage error={error} />
+            {store.user && !store.workspaceSlug && !["settings", "more", "space"].includes(page) ? (
+              <>
+                <ErrorMessage error={workspaces.error} />
+                <p className="empty">暂无工作区</p>
+                <button className="button" onClick={() => setNewWorkspace(true)}>
+                  创建工作区
+                </button>
+                <button className="button" onClick={() => navigate({ page: "settings" })}>
+                  个人设置
+                </button>
+                <button className="button" onClick={() => navigate({ page: "space" })}>
+                  共享页面
+                </button>
+              </>
+            ) : (
+              content
+            )}
+            {page === "settings" && (
+              <div className="list">
+                {store.workspaceSlug && (
+                  <button className="button" onClick={() => navigate({ page: "workspace-settings" })}>
+                    <CanonicalIcon name="settings" size={18} />
+                    工作区设置
+                  </button>
+                )}
+                <button className="button" onClick={() => navigate({ page: "space" })}>
+                  共享页面
+                </button>
+              </div>
+            )}
+          </main>
+          <div className="fab-mount" ref={setFab} />
+          <div className="composer-mount" ref={setComposer} />
+          <nav className="bottom-dock" aria-label="主导航">
+            {(
+              [
+                ["home", "首页", "home"],
+                ["inbox", "通知", "tray"],
+                ["search", "搜索", "search"],
+              ] as const
+            ).map(([target, label, icon]) => {
+              const active = target === "home" ? page !== "inbox" && page !== "search" : page === target;
+              return (
+                <button
+                  key={target}
+                  className={active ? "active" : ""}
+                  aria-label={label}
+                  aria-current={active ? "page" : undefined}
+                  onClick={() => rootLink(target)}
+                >
+                  <CanonicalIcon name={icon} size={24} />
+                </button>
+              );
+            })}
+          </nav>
+          {projectMenu && (
+            <Sheet title="项目导航" onClose={() => setProjectMenu(false)}>
+              <div className="list">
+                {projectLinks.map(([target, label]) => (
+                  <button
+                    className="row"
+                    key={target}
+                    onClick={() => {
+                      setProjectMenu(false);
+                      navigate({ page: target, projectId: route.projectId });
+                    }}
+                  >
+                    <span className="row-main">{label}</span>
+                    <CanonicalIcon name="arrow" size={16} />
+                  </button>
+                ))}
+              </div>
+            </Sheet>
+          )}
+          {workspacePicker && (
+            <Sheet title="工作区" onClose={() => setWorkspacePicker(false)}>
+              <div className="list">
+                {records(workspaces.data).map((item) => (
+                  <button
+                    className="row"
+                    key={item.id}
+                    onClick={() => {
+                      store.setWorkspace(String(item.slug));
+                      localStorage.setItem("ooa.workspace", String(item.slug));
+                      setWorkspacePicker(false);
+                    }}
+                  >
+                    {String(item.name)}
+                  </button>
+                ))}
+                <button
+                  className="button"
+                  onClick={() => {
+                    setWorkspacePicker(false);
+                    setNewWorkspace(true);
+                  }}
+                >
+                  创建工作区
+                </button>
+              </div>
+            </Sheet>
+          )}
+          {newWorkspace && (
+            <FormSheet
+              title="创建工作区"
+              fields={[
+                { key: "name", label: "名称", required: true },
+                { key: "slug", label: "标识", required: true },
+              ]}
+              onClose={() => setNewWorkspace(false)}
+              onSubmit={async (values) => {
+                const created = await client.request<{ slug: string }>("/api/workspaces/", "POST", values);
+                store.setWorkspace(created.slug);
+                await workspaces.refresh();
+              }}
+            />
+          )}
+        </div>
+      </MobileHeaderContext.Provider>
     </MobileClientContext.Provider>
   );
 });
