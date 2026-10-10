@@ -22,6 +22,7 @@ export function Sheet({
   callbacks.current = { onClose, busy };
   useEffect(() => {
     const previous = document.activeElement as HTMLElement | null;
+    const dialog = ref.current;
     ref.current?.focus();
     const close = (event: Event) => {
       if (event.defaultPrevented || !isTopDialog(ref.current)) return;
@@ -53,7 +54,10 @@ export function Sheet({
     return () => {
       window.removeEventListener("mobileBack", close, true);
       window.removeEventListener("keydown", key, true);
-      previous?.focus();
+      const active = document.activeElement;
+      // Commands such as paragraph formatting deliberately focus the editor.
+      // Restore only when closing the panel has not moved focus elsewhere.
+      if (previous?.isConnected && (!active || active === document.body || dialog?.contains(active))) previous.focus();
     };
   }, []);
   return (
