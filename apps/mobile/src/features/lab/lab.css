@@ -1097,6 +1097,9 @@
   gap: 14px;
   margin: 14px 0;
 }
+.lab-personal-agenda {
+  padding-bottom: 80px;
+}
 .lab-personal-agenda .lab-agenda-time {
   width: 43px;
   text-align: right;
@@ -1113,11 +1116,11 @@
   font-size: 14px;
   margin: 5px 0 0;
 }
-.lab-context-actions {
+.lab-planner-context-actions {
   display: flex;
   gap: 8px;
 }
-.lab-context-actions .lab-button {
+.lab-planner-context-actions .lab-button {
   min-height: 40px;
   font-size: 14px;
   padding: 8px 12px;

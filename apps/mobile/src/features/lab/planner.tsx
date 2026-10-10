@@ -242,7 +242,7 @@ export function Planner({
           ) : (
             <>
               {!team && view === "agenda" && (
-                <div className="lab-context-actions">
+                <div className="lab-planner-context-actions">
                   <Button
                     onClick={() => {
                       setDay(today());
