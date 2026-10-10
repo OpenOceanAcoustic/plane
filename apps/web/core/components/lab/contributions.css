@@ -1,0 +1,432 @@
+.lab-contributions {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.lab-contributions-totals {
+  display: grid;
+  grid-template-columns: minmax(0, 1.4fr) repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.lab-contributions-net,
+.lab-contributions-total {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-width: 0;
+  border: 1px solid var(--border-color-subtle);
+  border-radius: 12px;
+  padding: 18px 20px;
+  background: var(--background-color-surface-1);
+}
+
+.lab-contributions-net {
+  border-color: color-mix(in srgb, var(--label-indigo-border) 25%, var(--border-color-subtle));
+  background: color-mix(in srgb, var(--label-indigo-bg) 45%, var(--background-color-surface-1));
+}
+
+.lab-contributions-net > svg {
+  flex-shrink: 0;
+  color: var(--label-indigo-text);
+}
+
+.lab-contributions-total {
+  display: block;
+}
+
+.lab-contributions-totals dt {
+  color: var(--text-color-secondary);
+  font-size: 13px;
+}
+
+.lab-contributions-totals dd {
+  margin-top: 5px;
+  font-size: 22px;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+  font-variant-numeric: tabular-nums;
+}
+
+.lab-contributions-net dd {
+  font-size: 28px;
+}
+
+.lab-contributions-projects-section,
+.lab-contributions-calendar-section,
+.lab-contributions-entries-section {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.lab-contributions-projects {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: 12px;
+}
+
+.lab-contributions-project {
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid var(--border-color-subtle);
+  border-top: 3px solid var(--lab-contribution-border);
+  border-radius: 10px;
+  background: var(--background-color-surface-1);
+}
+
+.lab-contributions-project-select {
+  display: flex;
+  width: 100%;
+  min-width: 0;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 7px;
+  padding: 14px 16px;
+  text-align: left;
+}
+
+.lab-contributions-project-select:hover,
+.lab-contributions-project-select[aria-pressed="true"] {
+  background: color-mix(in srgb, var(--lab-contribution-bg) 60%, var(--background-color-surface-1));
+}
+
+.lab-contributions-project-select:focus-visible,
+.lab-contributions-entry:focus-visible,
+.lab-contributions-day-project:focus-visible,
+.lab-contributions-day:focus-visible {
+  outline: 2px solid var(--border-color-accent-strong);
+  outline-offset: -2px;
+}
+
+.lab-contributions-project-name {
+  font-size: 13px;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.lab-contributions-project-select > strong {
+  font-size: 19px;
+  font-variant-numeric: tabular-nums;
+}
+
+.lab-contributions-project-changes,
+.lab-contributions-project-status {
+  color: var(--text-color-secondary);
+  font-size: 12px;
+}
+
+.lab-contributions-project-status {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  border-top: 1px solid var(--border-color-subtle);
+  padding: 9px 16px;
+}
+
+.lab-contributions-filters,
+.lab-contributions-section-heading {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.lab-contributions-filters input {
+  width: 150px;
+  min-width: 0;
+  padding: 6px 8px;
+}
+
+.lab-contributions-filters > select {
+  width: 220px;
+  min-width: 0;
+}
+
+.lab-contributions-month-totals {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  font-size: 12px;
+}
+
+.lab-contributions-month-totals > div {
+  display: flex;
+  gap: 6px;
+}
+
+.lab-contributions-month-totals dt {
+  color: var(--text-color-secondary);
+}
+
+.lab-contributions-month-totals dd {
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+
+.lab-contributions-calendar {
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid var(--border-color-subtle);
+  border-radius: 12px;
+  background: var(--background-color-surface-1);
+}
+
+.lab-contributions-day {
+  min-width: 28px;
+  border-radius: 5px;
+  padding: 3px 5px;
+  color: inherit;
+}
+
+.lab-contributions-day[aria-pressed="true"] {
+  background: var(--background-color-accent-primary);
+  color: var(--text-color-on-color);
+}
+
+.lab-contribution-calendar-event {
+  border: 0 !important;
+  padding: 0 !important;
+  background: transparent !important;
+}
+
+.lab-contributions-day-project {
+  display: flex;
+  width: 100%;
+  min-width: 0;
+  flex-direction: column;
+  gap: 3px;
+  overflow: hidden;
+  border-left: 3px solid var(--lab-contribution-border);
+  border-radius: 5px;
+  padding: 5px 6px;
+  background: var(--lab-contribution-bg);
+  color: var(--lab-contribution-text);
+  text-align: left;
+  line-height: 1.35;
+}
+
+.lab-contributions-day-project-name {
+  overflow: hidden;
+  font-size: 12px;
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lab-contributions-day-project-values {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px 7px;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+.lab-contributions-entries {
+  overflow: hidden;
+  border: 1px solid var(--border-color-subtle);
+  border-radius: 10px;
+}
+
+.lab-contributions-entries:empty {
+  display: none;
+}
+
+.lab-contributions-entry {
+  display: flex;
+  width: 100%;
+  min-width: 0;
+  align-items: center;
+  gap: 12px;
+  border-bottom: 1px solid var(--border-color-subtle);
+  padding: 13px 16px;
+  background: var(--background-color-surface-1);
+  text-align: left;
+}
+
+.lab-contributions-entry:last-child {
+  border-bottom: 0;
+}
+
+.lab-contributions-entry:hover {
+  background: var(--background-color-layer-1-hover);
+}
+
+.lab-contributions-entry-icon {
+  display: grid;
+  width: 32px;
+  height: 32px;
+  flex-shrink: 0;
+  place-items: center;
+  border-radius: 8px;
+  background: var(--label-emerald-bg);
+  color: var(--label-emerald-text);
+}
+
+.lab-contributions-reversal {
+  background: var(--label-orange-bg);
+  color: var(--label-orange-text);
+}
+
+.lab-contributions-entry-content {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 13px;
+}
+
+.lab-contributions-entry-content > strong {
+  font-weight: 500;
+  overflow-wrap: anywhere;
+}
+
+.lab-contributions-entry-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-color-secondary);
+  font-size: 12px;
+}
+
+.lab-contributions-project-tag {
+  max-width: 100%;
+  border-radius: 4px;
+  padding: 2px 6px;
+  background: var(--lab-contribution-bg);
+  color: var(--lab-contribution-text);
+  overflow-wrap: anywhere;
+}
+
+.lab-contributions-entry-amount {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 5px;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+
+.lab-contributions-entry-amount > strong {
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.lab-contributions-entry-amount > span {
+  color: var(--text-color-secondary);
+  font-size: 12px;
+}
+
+.lab-contributions-record-details {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 20px 16px;
+  font-size: 13px;
+}
+
+.lab-contributions-record-details dt {
+  color: var(--text-color-secondary);
+}
+
+.lab-contributions-record-details dd {
+  margin-top: 6px;
+  overflow-wrap: anywhere;
+}
+
+.lab-contributions-error {
+  border: 1px solid var(--border-color-danger-subtle);
+  border-radius: 8px;
+  padding: 12px;
+  background: color-mix(in srgb, var(--background-color-danger-subtle) 15%, var(--background-color-surface-1));
+  color: var(--text-color-danger-primary);
+  font-size: 13px;
+}
+
+@media (max-width: 640px) {
+  .lab-contributions {
+    gap: 20px;
+  }
+
+  .lab-contributions-totals {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+  }
+
+  .lab-contributions-net {
+    grid-column: 1 / -1;
+  }
+
+  .lab-contributions-total {
+    padding: 12px;
+  }
+
+  .lab-contributions-totals dd {
+    font-size: 19px;
+  }
+
+  .lab-contributions-net dd {
+    font-size: 26px;
+  }
+
+  .lab-contributions-projects {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .lab-contributions-filters > select {
+    width: 100%;
+  }
+
+  .lab-contributions-filters > div {
+    flex-wrap: wrap;
+  }
+
+  .lab-contributions-month-totals {
+    gap: 6px 14px;
+  }
+
+  .lab-contributions-calendar {
+    font-size: 11px;
+  }
+
+  .lab-contributions-day-project {
+    gap: 2px;
+    border-left-width: 2px;
+    padding: 4px 2px;
+  }
+
+  .lab-contributions-day-project-name,
+  .lab-contributions-day-project-values {
+    font-size: 10px;
+  }
+
+  .lab-contributions-day-project-values {
+    overflow-wrap: anywhere;
+  }
+
+  .lab-contributions-entry {
+    gap: 9px;
+    padding: 12px;
+  }
+
+  .lab-contributions-entry-icon {
+    width: 26px;
+    height: 26px;
+  }
+
+  .lab-contributions-entry-amount {
+    max-width: 38%;
+  }
+
+  .lab-contributions-record-details {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

@@ -14,6 +14,7 @@ export function LabBountyMaterials({ store, bounty }: { store: LabStore; bounty:
   const [sharing, setSharing] = useState(false);
   const [kind, setKind] = useState<"document_version" | "attachment">("document_version");
   const [viewed, setViewed] = useState<SharedDocument>();
+  const [readError, setReadError] = useState("");
   const [revoking, setRevoking] = useState<LabBountyMaterial>();
   const { data, error, mutate } = useSWR(["bounty-materials", store.slug, bounty.id, bounty.can_manage_materials], () =>
     store.request<{ materials: LabBountyMaterial[]; sources?: SharedSources }>(
@@ -32,6 +33,11 @@ export function LabBountyMaterials({ store, bounty }: { store: LabStore; bounty:
         )}
       </div>
       {error && <p className="text-12 text-secondary">{error instanceof Error ? error.message : "资料暂不可读取"}</p>}
+      {readError && (
+        <p role="alert" className="text-13 text-danger-primary">
+          {readError}
+        </p>
+      )}
       {data?.materials.map((material) => (
         <div key={material.id} className="flex flex-wrap items-center gap-2 rounded bg-layer-1 p-2 text-12">
           <span className="mr-auto">
@@ -41,11 +47,16 @@ export function LabBountyMaterials({ store, bounty }: { store: LabStore; bounty:
             <Button
               size="sm"
               variant="neutral-primary"
-              onClick={() =>
-                void store.execute(async () =>
-                  setViewed(await store.request<SharedDocument>(`bounties/${bounty.id}/materials/${material.id}/`))
-                )
-              }
+              onClick={() => {
+                setReadError("");
+                void store.execute(async () => {
+                  try {
+                    setViewed(await store.request<SharedDocument>(`bounties/${bounty.id}/materials/${material.id}/`));
+                  } catch (failure) {
+                    setReadError(failure instanceof Error ? failure.message : "资料读取失败，请重试");
+                  }
+                });
+              }}
             >
               读取共享版本
             </Button>

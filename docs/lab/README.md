@@ -30,7 +30,7 @@ tools/lab/lab.sh start
 tools/lab/lab.sh status
 ```
 
-默认入口为 `http://localhost:8080`，管理后台路径 `/god-mode/`，Space 路径 `/spaces/`。Space 保留上游服务端渲染，运行独立 Node 服务；前端服务不会挂载后台认证密钥。默认 8080 只监听 127.0.0.1；配置内网地址后改为监听 0.0.0.0。API 8010、MinIO 9100 和控制台 9190 始终只监听回环；数据库、Valkey、RabbitMQ 不向宿主机暴露端口。数据位于独立 Compose 项目的持久卷。停止用 `tools/lab/lab.sh stop`，再次运行用 `start`，停止不会删除数据。`start` 同时刷新代理挂载和 Space 服务端构建，保证重建后加载最新页面。
+默认入口为 `http://localhost:8080`，管理后台路径 `/god-mode/`，Space 路径 `/spaces/`。Space 保留上游服务端渲染，运行独立 Node 服务；前端服务不会挂载后台认证密钥。默认 8080 只监听 127.0.0.1；配置内网地址后改为监听 0.0.0.0。API 8010、MinIO 9100 和控制台 9190 始终只监听回环；数据库、Valkey、RabbitMQ 不向宿主机暴露端口。数据位于独立 Compose 项目的持久卷。停止用 `tools/lab/lab.sh stop`，再次运行用 `start`，停止不会删除数据。`start` 刷新代理挂载和 Space 服务端构建；已有独立运行目录时，Web/Admin 加载该目录中已发布的页面，构建后须先同步资源再运行 `start`。
 
 ### 配置内网入口
 
@@ -41,6 +41,7 @@ tools/lab/lab.sh setup --public-url http://192.168.137.90:8080
 RAYON_NUM_THREADS=1 pnpm --filter web build
 RAYON_NUM_THREADS=1 pnpm --filter admin build
 RAYON_NUM_THREADS=1 pnpm --filter space build
+# 已使用独立运行目录时，按下一节先发布新的 Web/Admin 构建。
 tools/lab/lab.sh start
 ```
 
@@ -48,7 +49,15 @@ tools/lab/lab.sh start
 
 本机首次构建已使用 DaoCloud 缓存拉取上游镜像，Alpine/PyPI 下载使用阿里云，Go 模块使用 goproxy.cn。容器下载较慢的依赖经宿主机缓存供构建使用，系统包保留签名校验，宿主机通过 HTTPS 验证远端下载。运行镜像已保存在 Docker 中，日常 `start`/`stop` 无需重新下载或依赖临时构建缓存。备份同样复用已有 Alpine 镜像，仅在本地缺失时拉取。
 
-前端开发可使用同一后台容器：把 web/admin 的 `VITE_API_BASE_URL` 改为 `http://localhost:8010`，对应 base URL 改为 localhost:3000/3001，执行 `pnpm --filter web dev` 和 `pnpm --filter admin dev`。完成后重新 `setup` 与串行构建，再运行 `start`，恢复已配置的 8080 入口。不要同时启动第二套数据库来占用有限内存；同一次访问使用一致的主机名，确保 cookie 来源一致。
+前端开发可使用同一后台容器：把 web/admin 的 `VITE_API_BASE_URL` 改为 `http://localhost:8010`，对应 base URL 改为 localhost:3000/3001，执行 `pnpm --filter web dev` 和 `pnpm --filter admin dev`。完成后重新 `setup` 与串行构建；已有独立运行目录时先发布新的构建，再运行 `start`，恢复已配置的 8080 入口。不要同时启动第二套数据库来占用有限内存；同一次访问使用一致的主机名，确保 cookie 来源一致。
+
+### 运行静态文件与构建隔离
+
+构建验证必须使用独立 checkout 或输出目录。React Router 构建会替换整个输出目录，若运行中的代理直接挂载该目录，容器会继续指向已删除的旧目录，首页将返回 404。
+
+本机当前代理使用 `.temp/lab-runtime/web` 和 `.temp/lab-runtime/admin` 的已发布文件；挂载配置为 `.temp/lab-runtime/compose.proxy.yml`。`lab.sh` 对默认正式项目自动加载这个配置，独立测试项目仍使用自己的构建目录。不要将这组运行文件当作测试缓存清理。
+
+正式发布时，将经确认版本的完整构建同步到运行目录，先更新资源，最后原子替换 `index.html`；保留已有哈希资源，避免正在使用页面的成员读不到旧文件。再次执行 `start` 会保留运行目录挂载。单纯构建验证不会发布新页面。
 
 ## SSH 身份管理
 
@@ -141,3 +150,5 @@ python3 tools/lab/backup.py restore-verify /ABSOLUTE/BACKUP_DIRECTORY /SEPARATE/
 个人规划的并排工作台、增强卡片、筛选和团队共享说明见 [个人规划使用说明](personal-planning-guide.md)。
 
 项目自定义奖励公式、资金分池、最终核准及悬赏公开认领说明见 [资金与悬赏使用说明](finance-guide.md)；接口契约见 [Finance API](finance-api.md)，实施与验证记录见 [交付记录](finance-progress.md)。
+
+个人参与项目、历史 VC、月历和逐笔贡献查询说明见 [我的项目与 VC](contributions-guide.md)；确认方案见 [页面与接口契约](contributions-spec.md)，验证与审查见 [交付记录](contributions-progress.md)。

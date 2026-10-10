@@ -17,9 +17,9 @@ export const LabTaskOverview = observer(function LabTaskOverview({
   onAdjust,
 }: {
   store: LabStore;
-  item: LabItem;
+  item: Pick<LabItem, "title"> & Partial<Pick<LabItem, "bounty_id" | "issue_key" | "category_color" | "category_name">>;
   onClose: () => void;
-  onSchedule: () => void;
+  onSchedule?: () => void;
   onAdjust?: () => void;
 }) {
   const { data, error, isLoading, isValidating } = useSWR(
@@ -77,9 +77,11 @@ export const LabTaskOverview = observer(function LabTaskOverview({
         </>
       )}
       <div className="flex gap-2">
-        <Button variant="primary" onClick={onAdjust ?? onSchedule} disabled={store.busy}>
-          {onAdjust ? "调整时间块" : "安排时间"}
-        </Button>
+        {(onAdjust || onSchedule) && (
+          <Button variant="primary" onClick={onAdjust ?? onSchedule} disabled={store.busy}>
+            {onAdjust ? "调整时间块" : "安排时间"}
+          </Button>
+        )}
         <a
           className="rounded px-3 py-2 text-13 text-accent-primary"
           href={`/${store.slug}/lab/bounties?bounty_id=${encodeURIComponent(item.bounty_id ?? "")}`}

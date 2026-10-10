@@ -11,6 +11,7 @@ from .bounty_urls import bounty_patterns
 from .lifecycle_workflow import lifecycle_patterns
 from .finance_urls import finance_patterns
 from .auth_views import LabAuthView
+from .contributions import ContributionsCalendarView, ContributionsEntriesView, ContributionsView
 from .planning_views import (
     BlockDetailView,
     CalendarView,
@@ -44,6 +45,9 @@ auth_patterns = [
 ]
 
 business_patterns = [
+    path("me/contributions/", ContributionsView.as_view()),
+    path("me/contributions/calendar/", ContributionsCalendarView.as_view()),
+    path("me/contributions/entries/", ContributionsEntriesView.as_view()),
     path("analytics/", AnalyticsView.as_view()),
     path("analytics/drilldown/", AnalyticsDrilldownView.as_view()),
     *workflow_patterns,
