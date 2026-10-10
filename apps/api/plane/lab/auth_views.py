@@ -11,6 +11,7 @@ from django.views.decorators.debug import sensitive_post_parameters, sensitive_v
 from django.views.decorators.cache import never_cache
 
 from .auth import AccessError, authenticate, begin_enrollment, confirm_enrollment
+from .mobile import session_capabilities
 
 
 @method_decorator([csrf_protect, never_cache, sensitive_post_parameters()], name="dispatch")
@@ -29,8 +30,11 @@ class LabAuthView(View):
                 user = confirm_enrollment(data)
                 result, status = {"username": user.username, "message": "绑定成功，请等待下一动态码登录"}, 201
             else:
-                user = authenticate(data, request, admin=self.operation == "admin")
+                mobile = self.operation in ("mobile", "mobile-admin")
+                user = authenticate(data, request, admin=self.operation in ("admin", "mobile-admin"), mobile=mobile)
                 result, status = {"username": user.username}, 200
+                if mobile:
+                    result.update(session_capabilities(request))
             return JsonResponse(result, status=status)
         except AccessError as error:
             response = JsonResponse({"error": error.message, "retry_after": error.retry_after}, status=error.status)

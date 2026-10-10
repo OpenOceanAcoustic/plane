@@ -1,0 +1,12 @@
+:80 {
+  @assets path /uploads /uploads/*
+  handle @assets {
+    reverse_proxy ooa-android-contract-minio:9000
+  }
+  handle /live/* {
+    reverse_proxy ooa-android-contract-live:3000
+  }
+  handle {
+    reverse_proxy ooa-android-contract-http:8000
+  }
+}

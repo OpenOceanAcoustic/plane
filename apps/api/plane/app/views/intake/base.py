@@ -76,6 +76,9 @@ class IntakeViewSet(BaseViewSet):
         return Response(IntakeSerializer(intake).data, status=status.HTTP_200_OK)
 
     @allow_permission([ROLE.ADMIN, ROLE.MEMBER])
+    def create(self, request, slug, project_id):
+        return super().create(request, slug=slug, project_id=project_id)
+
     def perform_create(self, serializer):
         serializer.save(project_id=self.kwargs.get("project_id"))
 

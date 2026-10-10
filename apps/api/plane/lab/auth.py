@@ -296,7 +296,7 @@ def confirm_enrollment(data):
 
 
 @sensitive_variables()
-def authenticate(data, request, admin=False):
+def authenticate(data, request, admin=False, mobile=False):
     from django.contrib.auth import login
 
     username = str(data.get("username", "")).strip().casefold()[:128]
@@ -340,6 +340,8 @@ def authenticate(data, request, admin=False):
                 credential.save(update_fields=["last_step"])
                 login(request, credential.user, backend="django.contrib.auth.backends.ModelBackend")
                 request.session["lab_generation"] = str(credential.generation)
+                # Only the dedicated server route can grant an Android session.
+                request.session["lab_client"] = "android" if mobile else "web"
                 request.session["device_info"] = {}
                 if admin:
                     request.session.set_expiry(settings.ADMIN_SESSION_COOKIE_AGE)

@@ -1,0 +1,1838 @@
+import { useEffect, useMemo, useRef, useState } from "react";
+import { DescriptionVersions } from "./versions";
+import { CommentReactions } from "./reactions";
+import { RichHtmlEditor } from "../../components/rich-editor";
+import { TaskDocuments } from "../lab/documents";
+import { useLabTransport } from "../lab/transport";
+import { Gantt } from "../lab/gantt";
+import {
+  ArrowLeft,
+  ArrowRight,
+  Bell,
+  CalendarDays,
+  Columns2,
+  Link2,
+  List,
+  MessageSquare,
+  MoreHorizontal,
+  Paperclip,
+  Plus,
+  Search,
+  Settings2,
+  Rows3,
+  ChartNoAxesGantt,
+  UserRound,
+} from "lucide-react";
+import {
+  ActionButton,
+  ErrorMessage,
+  FormSheet,
+  Html,
+  PageHeading,
+  Sheet,
+  records,
+  useData,
+  type Entity,
+  type FormField,
+} from "../../components/ui";
+import {
+  AddButton,
+  DetailFields,
+  Empty,
+  MultiSelectSheet,
+  ProjectPicker,
+  ResultState,
+  TaskSearchSheet,
+} from "./shared";
+import {
+  CoreService,
+  dateLabel,
+  issueRows,
+  plainText,
+  priorities,
+  priorityName,
+  relationNames,
+  userName,
+  type CoreProps,
+  type Member,
+  type Session,
+  type Task,
+} from "./model";
+import {
+  displayFields,
+  objectValue,
+  layoutValue,
+  preferencePayload,
+  firstFilter,
+  type TaskLayout,
+} from "./preferences";
+
+export function TaskCard({
+  task,
+  project,
+  states = [],
+  members = [],
+  labels = [],
+  cycles = [],
+  modules = [],
+  estimates = [],
+  display,
+  onOpen,
+}: {
+  task: Task;
+  project?: Entity;
+  states?: Entity[];
+  members?: Member[];
+  labels?: Entity[];
+  cycles?: Entity[];
+  modules?: Entity[];
+  estimates?: Entity[];
+  display?: Entity;
+  onOpen: () => void;
+}) {
+  const state = states.find((row) => row.id === task.state_id);
+  const names = task.assignee_ids
+    ?.map((id) => userName(members.find((row) => row.member.id === id)?.member))
+    .join("、");
+  return (
+    <article className="card">
+      {display?.key !== false && (
+        <span className="muted">
+          {String(project?.identifier ?? "")}
+          {task.sequence_id ? `-${task.sequence_id}` : ""}
+        </span>
+      )}
+      <button className="core-task-name" onClick={onOpen}>
+        {task.name}
+      </button>
+      <div className="core-task-meta">
+        {display?.state !== false && state && <span className="chip">{String(state.name)}</span>}
+        {display?.priority !== false && <span>优先级 · {priorityName(task.priority)}</span>}
+        {display?.due_date !== false && task.target_date && (
+          <span>
+            <CalendarDays size={13} /> {dateLabel(task.target_date)}
+          </span>
+        )}
+        {display?.assignee !== false && names && (
+          <span>
+            <UserRound size={13} /> {names}
+          </span>
+        )}
+        {display?.labels !== false &&
+          labels
+            .filter((row) => task.label_ids?.includes(String(row.id)))
+            .map((row) => (
+              <span key={row.id} className="chip">
+                {String(row.name)}
+              </span>
+            ))}
+        {display?.cycle !== false && task.cycle_id && (
+          <span>周期 · {String(cycles.find((row) => row.id === task.cycle_id)?.name ?? "已设置")}</span>
+        )}
+        {display?.module !== false && task.module_ids?.length ? (
+          <span>
+            模块 ·{" "}
+            {modules
+              .filter((row) => task.module_ids?.includes(String(row.id)))
+              .map((row) => String(row.name))
+              .join("、") || "已设置"}
+          </span>
+        ) : null}
+        {display?.estimate !== false && task.estimate_point && (
+          <span>估算 · {String(estimates.find((row) => row.id === task.estimate_point)?.value ?? "已设置")}</span>
+        )}
+        {display?.start_date !== false && task.start_date && <span>开始 · {dateLabel(task.start_date)}</span>}
+        {display?.attachment_count !== false && Number(task.attachment_count) > 0 && (
+          <span>附件 · {String(task.attachment_count)}</span>
+        )}
+        {display?.link !== false && Number(task.link_count) > 0 && <span>链接 · {String(task.link_count)}</span>}
+        {display?.sub_issue_count !== false && Number(task.sub_issues_count) > 0 && (
+          <span>子任务 · {String(task.sub_issues_count)}</span>
+        )}
+        {Boolean(display?.created_on) && <span>创建 · {dateLabel(task.created_at)}</span>}
+        {Boolean(display?.updated_on) && <span>更新 · {dateLabel(task.updated_at)}</span>}
+      </div>
+    </article>
+  );
+}
+
+export function TaskForm({
+  service,
+  task,
+  states,
+  members = [],
+  labels = [],
+  parentId,
+  onDone,
+  onClose,
+}: {
+  service: CoreService;
+  task?: Task;
+  states: Entity[];
+  members?: Member[];
+  labels?: Entity[];
+  parentId?: string;
+  onDone: (task: Task, continueCreating?: boolean) => Promise<unknown> | void;
+  onClose: () => void;
+}) {
+  const [created, setCreated] = useState<Task>();
+  const continuing = useRef(false);
+  const [generation, setGeneration] = useState(0);
+  const estimates = useData<Entity[]>(service.client, `${service.projectPath}/project-estimates/`);
+  const formCycles = useData<Entity[]>(service.client, !task ? `${service.projectPath}/cycles/` : null);
+  const formModules = useData<Entity[]>(service.client, !task ? `${service.projectPath}/modules/` : null);
+  const formParents = useData(
+    service.client,
+    !task && !parentId ? `${service.projectPath}/issues/?per_page=100&sub_issue=true` : null
+  );
+  const defaultState =
+    states.find((row) => row.default) ?? states.find((row) => row.group === "unstarted") ?? states[0];
+  const fields: FormField[] = [
+    { key: "name", label: "任务标题", required: true, value: task?.name },
+    {
+      key: "state_id",
+      label: "状态",
+      type: "select",
+      value: task?.state_id ?? defaultState?.id,
+      options: states.map((row) => ({ value: String(row.id), label: String(row.name) })),
+    },
+    { key: "priority", label: "优先级", type: "select", value: task?.priority ?? "none", options: priorities },
+    { key: "start_date", label: "开始日期", type: "date", value: task?.start_date },
+    { key: "target_date", label: "截止日期", type: "date", value: task?.target_date },
+  ];
+  if (records(estimates.data).length)
+    fields.push({
+      key: "estimate_point",
+      label: "估算",
+      type: "select",
+      value: task?.estimate_point,
+      options: records(estimates.data).map((row) => ({ value: String(row.id), label: String(row.value) })),
+    });
+  if (!task)
+    fields.push(
+      {
+        key: "assignee_id",
+        label: "负责人",
+        type: "select",
+        options: members
+          .filter((row) => row.is_active !== false)
+          .map((row) => ({ value: row.member.id, label: userName(row.member) })),
+      },
+      {
+        key: "label_id",
+        label: "标签",
+        type: "select",
+        options: labels.map((row) => ({ value: String(row.id), label: String(row.name) })),
+      },
+      { key: "description", label: "描述", type: "rich" },
+      {
+        key: "continue",
+        label: "创建后继续添加",
+        type: "select",
+        value: "no",
+        options: [
+          { value: "no", label: "打开任务详情" },
+          { value: "yes", label: "继续添加" },
+        ],
+      },
+      {
+        key: "cycle",
+        label: "周期",
+        type: "select",
+        options: records(formCycles.data).map((row) => ({ value: String(row.id), label: String(row.name) })),
+      },
+      {
+        key: "module",
+        label: "模块",
+        type: "select",
+        options: records(formModules.data).map((row) => ({ value: String(row.id), label: String(row.name) })),
+      },
+      ...(!parentId
+        ? [
+            {
+              key: "parent",
+              label: "父任务",
+              type: "select" as const,
+              options: issueRows(formParents.data).map((row) => ({ value: row.id, label: row.name })),
+            },
+          ]
+        : [])
+    );
+  return (
+    <FormSheet
+      key={generation}
+      title={task ? "编辑任务" : parentId ? "创建子任务" : "创建任务"}
+      fields={fields}
+      onClose={() => {
+        if (continuing.current) {
+          continuing.current = false;
+          setCreated(undefined);
+          setGeneration((value) => value + 1);
+        } else onClose();
+      }}
+      onSubmit={async (values) => {
+        if (values.start_date && values.target_date && values.start_date > values.target_date)
+          throw new Error("开始日期不能晚于截止日期");
+        const result = await service.saveTask(
+          values,
+          task?.id ?? created?.id,
+          task ? undefined : values.assignee_id ? [values.assignee_id] : [],
+          task ? undefined : values.label_id ? [values.label_id] : [],
+          parentId || values.parent
+        );
+        if (!task) setCreated(result);
+        if (!task && values.cycle)
+          await service.client.request(`${service.projectPath}/cycles/${values.cycle}/cycle-issues/`, "POST", {
+            issues: [result.id],
+          });
+        if (!task && values.module)
+          await service.client.request(`${service.projectPath}/modules/${values.module}/issues/`, "POST", {
+            issues: [result.id],
+          });
+        continuing.current = values.continue === "yes";
+        await onDone(result, continuing.current);
+      }}
+    />
+  );
+}
+
+function MonthCalendar({
+  tasks,
+  selectedDate,
+  onSelect,
+  month,
+  onMonth,
+}: {
+  tasks: Task[];
+  selectedDate: string;
+  onSelect: (date: string) => void;
+  month: Date;
+  onMonth: (date: Date) => void;
+}) {
+  const monthStart = new Date(month.getFullYear(), month.getMonth(), 1);
+  const days = new Date(month.getFullYear(), month.getMonth() + 1, 0).getDate();
+  const offset = (monthStart.getDay() + 6) % 7;
+  const keyForDay = (day: number) =>
+    `${month.getFullYear()}-${String(month.getMonth() + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+  return (
+    <>
+      <div className="row">
+        <button
+          className="icon-button"
+          aria-label="上个月"
+          onClick={() => onMonth(new Date(month.getFullYear(), month.getMonth() - 1, 1))}
+        >
+          <ArrowLeft size={18} />
+        </button>
+        <strong>
+          {month.getFullYear()}年{month.getMonth() + 1}月
+        </strong>
+        <button
+          className="icon-button"
+          aria-label="下个月"
+          onClick={() => onMonth(new Date(month.getFullYear(), month.getMonth() + 1, 1))}
+        >
+          <ArrowRight size={18} />
+        </button>
+      </div>
+      <div className="core-calendar">
+        {["一", "二", "三", "四", "五", "六", "日"].map((day) => (
+          <span className="muted" key={day}>
+            {day}
+          </span>
+        ))}
+        {Array.from({ length: offset }, (_, i) => (
+          <span key={`pad-${i}`} />
+        ))}
+        {Array.from({ length: days }, (_, i) => {
+          const day = i + 1,
+            date = keyForDay(day);
+          return (
+            <button
+              className="core-calendar-day"
+              key={date}
+              aria-pressed={date === selectedDate}
+              onClick={() => onSelect(date)}
+            >
+              {day}
+              {tasks.some((task) => task.target_date === date || task.start_date === date) && (
+                <span className="core-calendar-dot" />
+              )}
+            </button>
+          );
+        })}
+      </div>
+    </>
+  );
+}
+
+export default function Tasks(props: CoreProps) {
+  const { projectId } = props;
+  if (!projectId)
+    return (
+      <>
+        <PageHeading title="任务" />
+        <ProjectPicker {...props} section="tasks" />
+      </>
+    );
+  return <ProjectTasks {...props} projectId={projectId} />;
+}
+
+export function ProjectTasks(
+  props: CoreProps & {
+    projectId: string;
+    collectionPath?: string;
+    extraFilters?: Record<string, unknown>;
+    collectionTitle?: string;
+    initialLayout?: TaskLayout;
+  }
+) {
+  const {
+    client,
+    workspaceSlug,
+    projectId,
+    onNavigate,
+    collectionPath,
+    extraFilters,
+    collectionTitle,
+    initialLayout = "list",
+  } = props;
+  const service = useMemo(() => new CoreService(client, workspaceSlug, projectId), [client, workspaceSlug, projectId]);
+  const project = useData<Entity>(client, `${service.projectPath}/`);
+  const states = useData<Entity[]>(client, `${service.projectPath}/states/`);
+  const members = useData<Member[]>(client, `${service.projectPath}/members/`);
+  const labels = useData<Entity[]>(client, `${service.projectPath}/issue-labels/`);
+  const [query, setQuery] = useState("");
+  const [layout, setLayout] = useState<TaskLayout>(initialLayout);
+  const preferences = useData<Entity>(client, `${service.projectPath}/user-properties/`);
+  const [orderBy, setOrderBy] = useState("-created_at");
+  const [groupBy, setGroupBy] = useState("");
+  const [secondaryGroup, setSecondaryGroup] = useState("");
+  const [showEmpty, setShowEmpty] = useState(true);
+  const [subIssues, setSubIssues] = useState(true);
+  const [advanced, setAdvanced] = useState<Entity>({});
+  const availableCycles = useData<Entity[]>(client, `${service.projectPath}/cycles/`),
+    availableModules = useData<Entity[]>(client, `${service.projectPath}/modules/`);
+  const availableEstimates = useData<Entity[]>(
+    client,
+    Number(project.data?.member_role) >= 15 ? `${service.projectPath}/project-estimates/` : null
+  );
+  const [assigneeId, setAssigneeId] = useState("");
+  const [labelId, setLabelId] = useState("");
+  const [fields, setFields] = useState(displayFields.map((row) => row.id));
+  const [settings, setSettings] = useState(false);
+  const [savingView, setSavingView] = useState(false);
+  const [properties, setProperties] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const display = Object.fromEntries(displayFields.map((row) => [row.id, fields.includes(row.id)]));
+  const [stateId, setStateId] = useState("");
+  const [priority, setPriority] = useState("");
+  const [creating, setCreating] = useState(false);
+  const [cursors, setCursors] = useState([""]);
+  const [month, setMonth] = useState(new Date());
+  const [selectedDate, setSelectedDate] = useState(new Date().toLocaleDateString("en-CA"));
+  useEffect(() => {
+    if (!preferences.data || collectionTitle || collectionPath) return;
+    const filters = objectValue(preferences.data.filters),
+      displaySettings = objectValue(preferences.data.display_filters),
+      displayProperties = objectValue(preferences.data.display_properties);
+    setLayout(layoutValue(displaySettings.layout));
+    setOrderBy(String(displaySettings.order_by ?? "-created_at"));
+    setGroupBy(String(displaySettings.group_by ?? ""));
+    setSecondaryGroup(String(displaySettings.sub_group_by ?? ""));
+    setShowEmpty(displaySettings.show_empty_groups !== false);
+    setSubIssues(displaySettings.sub_issue !== false);
+    setAdvanced(
+      Object.fromEntries(
+        Object.entries(filters).filter(([key]) => !["state", "priority", "assignees", "labels"].includes(key))
+      )
+    );
+    setStateId(firstFilter(filters.state));
+    setPriority(firstFilter(filters.priority));
+    setAssigneeId(firstFilter(filters.assignees));
+    setLabelId(firstFilter(filters.labels));
+    setFields(displayFields.filter((row) => displayProperties[row.id] !== false).map((row) => row.id));
+  }, [preferences.data, collectionTitle, collectionPath]);
+  const filterKey = JSON.stringify({ ...extraFilters, ...advanced });
+  useEffect(() => {
+    setCursors([""]);
+  }, [projectId, stateId, priority, assigneeId, labelId, orderBy, subIssues, query, filterKey]);
+  useEffect(() => {
+    setLayout(initialLayout);
+  }, [initialLayout]);
+  const params = new URLSearchParams({ per_page: "100", sub_issue: String(subIssues) });
+  const cursor = cursors[cursors.length - 1];
+  if (cursor) params.set("cursor", cursor);
+  for (const [key, value] of Object.entries({ ...advanced, ...extraFilters })) {
+    if (value != null) params.set(key, Array.isArray(value) ? value.join(",") : String(value));
+  }
+  if (stateId) params.set("state", stateId);
+  if (priority) params.set("priority", priority);
+  if (assigneeId) params.set("assignees", assigneeId);
+  if (labelId) params.set("labels", labelId);
+  params.set("order_by", orderBy);
+  if (query.trim()) params.set("name", query.trim());
+  const items = useData<unknown>(client, `${collectionPath ?? `${service.projectPath}/issues/`}?${params}`);
+  const fetchedTasks = issueRows(items.data);
+  const tasks = fetchedTasks.filter(
+    (task) =>
+      (!query.trim() || task.name.toLocaleLowerCase().includes(query.toLocaleLowerCase())) &&
+      (!stateId || task.state_id === stateId) &&
+      (!priority || task.priority === priority) &&
+      (!assigneeId || task.assignee_ids?.includes(assigneeId)) &&
+      (!labelId || task.label_ids?.includes(labelId))
+  );
+  const pageData =
+    items.data && typeof items.data === "object" && !Array.isArray(items.data) ? (items.data as Entity) : undefined;
+  const visible = tasks.filter(
+    (task) => layout !== "calendar" || task.target_date === selectedDate || task.start_date === selectedDate
+  );
+  const canEdit = Number(project.data?.member_role) >= 15 && !collectionPath?.includes("archived-issues");
+  const stateRows = records(states.data);
+  const card = (task: Task) => (
+    <TaskCard
+      key={task.id}
+      task={task}
+      project={project.data}
+      states={stateRows}
+      members={members.data}
+      labels={records(labels.data)}
+      cycles={records(availableCycles.data)}
+      modules={records(availableModules.data)}
+      estimates={records(availableEstimates.data)}
+      display={display}
+      onOpen={() => onNavigate({ page: "issue", projectId: task.project_id ?? projectId, issueId: task.id })}
+    />
+  );
+  return (
+    <>
+      <PageHeading title={collectionTitle ?? String(project.data?.name ?? "任务")}>
+        <button className="icon-button" aria-label="视图设置" onClick={() => setSettings(true)}>
+          <Settings2 size={19} />
+        </button>
+        {canEdit && <AddButton onClick={() => setCreating(true)}>新任务</AddButton>}
+      </PageHeading>
+      <label className="core-search">
+        <Search size={18} />
+        <input
+          value={query}
+          placeholder="搜索任务"
+          aria-label="搜索任务"
+          onChange={(event) => setQuery(event.target.value)}
+        />
+      </label>
+      <div className="core-toolbar">
+        <select aria-label="按状态筛选" value={stateId} onChange={(event) => setStateId(event.target.value)}>
+          <option value="">所有状态</option>
+          {stateRows.map((state) => (
+            <option key={state.id} value={state.id}>
+              {String(state.name)}
+            </option>
+          ))}
+        </select>
+        <select aria-label="按优先级筛选" value={priority} onChange={(event) => setPriority(event.target.value)}>
+          <option value="">所有优先级</option>
+          {priorities.map((row) => (
+            <option key={row.value} value={row.value}>
+              {row.label}
+            </option>
+          ))}
+        </select>
+      </div>
+      <div className="core-tabs">
+        <ActionButton
+          className="chip"
+          action={async () => {
+            await client.request(
+              `${service.projectPath}/user-properties/`,
+              "PATCH",
+              preferencePayload(preferences.data, {
+                layout,
+                state: stateId,
+                priority,
+                assignees: assigneeId,
+                labels: labelId,
+                orderBy,
+                groupBy,
+                fields,
+              })
+            );
+            setSaved(true);
+          }}
+        >
+          保存视图
+        </ActionButton>
+        {saved && <span className="muted">已保存</span>}
+        <button className={`chip ${layout === "list" ? "active" : ""}`} onClick={() => setLayout("list")}>
+          <List size={15} />
+          列表
+        </button>
+        <button className={`chip ${layout === "board" ? "active" : ""}`} onClick={() => setLayout("board")}>
+          <Columns2 size={15} />
+          看板
+        </button>
+        <button className={`chip ${layout === "calendar" ? "active" : ""}`} onClick={() => setLayout("calendar")}>
+          <CalendarDays size={15} />
+          日历
+        </button>
+      </div>
+      <div className="core-tabs">
+        <button className={`chip ${layout === "timeline" ? "active" : ""}`} onClick={() => setLayout("timeline")}>
+          <ChartNoAxesGantt size={15} />
+          时间线
+        </button>
+        <button className={`chip ${layout === "records" ? "active" : ""}`} onClick={() => setLayout("records")}>
+          <Rows3 size={15} />
+          记录
+        </button>
+        <button className="chip" onClick={() => onNavigate({ page: "archived-tasks", projectId })}>
+          归档任务
+        </button>
+      </div>
+      {layout === "timeline" && <ProjectTimeline {...props} />}
+      {layout === "calendar" && (
+        <MonthCalendar
+          tasks={tasks}
+          selectedDate={selectedDate}
+          onSelect={setSelectedDate}
+          month={month}
+          onMonth={setMonth}
+        />
+      )}
+      {layout !== "timeline" && (
+        <ResultState loading={items.loading} error={items.error}>
+          {layout === "board" || (groupBy && layout === "list") ? (
+            <>
+              {taskGroups(tasks, groupBy || "state", stateRows, members.data ?? [])
+                .filter(([, grouped]) => showEmpty || grouped.length)
+                .map(([name, grouped]) => (
+                  <section key={name}>
+                    <div className="core-section-heading">
+                      <h2>{name}</h2>
+                      <span className="chip">{grouped.length}</span>
+                    </div>
+                    <div className="list">
+                      {secondaryGroup && secondaryGroup !== groupBy
+                        ? taskGroups(grouped, secondaryGroup, stateRows, members.data ?? [])
+                            .filter(([, rows]) => showEmpty || rows.length)
+                            .map(([title, rows]) => (
+                              <div key={title}>
+                                <h3 className="muted">{title}</h3>
+                                {rows.map(card)}
+                              </div>
+                            ))
+                        : grouped.map(card)}
+                      {!grouped.length && <Empty>暂无任务</Empty>}
+                    </div>
+                  </section>
+                ))}
+            </>
+          ) : (
+            <div className="list">
+              {visible.map((task) =>
+                layout === "records" ? (
+                  <article key={task.id} className="card">
+                    <button
+                      className="core-task-name"
+                      onClick={() =>
+                        onNavigate({ page: "issue", projectId: task.project_id ?? projectId, issueId: task.id })
+                      }
+                    >
+                      {task.name}
+                    </button>
+                    <DetailFields
+                      values={recordFields(
+                        task,
+                        project.data,
+                        stateRows,
+                        members.data ?? [],
+                        records(labels.data),
+                        fields,
+                        records(availableCycles.data),
+                        records(availableModules.data),
+                        records(availableEstimates.data)
+                      )}
+                    />
+                  </article>
+                ) : (
+                  card(task)
+                )
+              )}
+              {!visible.length && <Empty>{layout === "calendar" ? "当天暂无任务" : "暂无任务"}</Empty>}
+            </div>
+          )}
+        </ResultState>
+      )}
+      {layout !== "timeline" && (
+        <div className="core-pager">
+          <button className="button" disabled={cursors.length <= 1} onClick={() => setCursors(cursors.slice(0, -1))}>
+            上一页
+          </button>
+          <span className="muted">第 {cursors.length} 页</span>
+          <button
+            className="button"
+            disabled={!pageData?.next_page_results}
+            onClick={() => setCursors([...cursors, String(pageData?.next_cursor)])}
+          >
+            下一页
+          </button>
+        </div>
+      )}
+      <ErrorMessage error={project.error ?? states.error ?? members.error ?? labels.error ?? preferences.error} />
+      {settings && (
+        <FormSheet
+          title="筛选、排序与分组"
+          fields={[
+            {
+              key: "state_group",
+              label: "状态组",
+              type: "select",
+              value: firstFilter(advanced.state_group),
+              options: [
+                { value: "backlog", label: "待办" },
+                { value: "unstarted", label: "未开始" },
+                { value: "started", label: "进行中" },
+                { value: "completed", label: "已完成" },
+                { value: "cancelled", label: "已取消" },
+              ],
+            },
+            {
+              key: "created_by",
+              label: "创建人",
+              type: "select",
+              value: firstFilter(advanced.created_by),
+              options: (members.data ?? []).map((row) => ({ value: row.member.id, label: userName(row.member) })),
+            },
+            {
+              key: "cycle",
+              label: "周期",
+              type: "select",
+              value: firstFilter(advanced.cycle),
+              options: records(availableCycles.data).map((row) => ({ value: String(row.id), label: String(row.name) })),
+            },
+            {
+              key: "module",
+              label: "模块",
+              type: "select",
+              value: firstFilter(advanced.module),
+              options: records(availableModules.data).map((row) => ({
+                value: String(row.id),
+                label: String(row.name),
+              })),
+            },
+            {
+              key: "start_date",
+              label: "开始日期",
+              type: "date",
+              value: firstFilter(advanced.start_date).split(";")[0],
+            },
+            {
+              key: "start_operator",
+              label: "开始日期范围",
+              type: "select",
+              value: firstFilter(advanced.start_date).includes("after") ? "after" : "before",
+              options: [
+                { value: "before", label: "此日或之前" },
+                { value: "after", label: "此日或之后" },
+              ],
+            },
+            {
+              key: "target_date",
+              label: "截止日期",
+              type: "date",
+              value: firstFilter(advanced.target_date).split(";")[0],
+            },
+            {
+              key: "target_operator",
+              label: "截止日期范围",
+              type: "select",
+              value: firstFilter(advanced.target_date).includes("after") ? "after" : "before",
+              options: [
+                { value: "before", label: "此日或之前" },
+                { value: "after", label: "此日或之后" },
+              ],
+            },
+            {
+              key: "secondary",
+              label: "次级分组",
+              type: "select",
+              value: secondaryGroup,
+              options: [
+                { value: "", label: "不分组" },
+                { value: "state", label: "状态" },
+                { value: "priority", label: "优先级" },
+                { value: "assignees", label: "负责人" },
+              ],
+            },
+            {
+              key: "empty",
+              label: "显示空分组",
+              type: "select",
+              value: String(showEmpty),
+              options: [
+                { value: "true", label: "显示" },
+                { value: "false", label: "隐藏" },
+              ],
+            },
+            {
+              key: "children",
+              label: "显示子任务",
+              type: "select",
+              value: String(subIssues),
+              options: [
+                { value: "true", label: "显示" },
+                { value: "false", label: "隐藏" },
+              ],
+            },
+            {
+              key: "order",
+              label: "排序",
+              type: "select",
+              value: orderBy,
+              options: [
+                { value: "-created_at", label: "创建时间 · 新到旧" },
+                { value: "created_at", label: "创建时间 · 旧到新" },
+                { value: "target_date", label: "截止日期" },
+                { value: "priority", label: "优先级" },
+                { value: "name", label: "标题" },
+              ],
+            },
+            {
+              key: "group",
+              label: "分组",
+              type: "select",
+              value: groupBy,
+              options: [
+                { value: "", label: "不分组" },
+                { value: "state", label: "状态" },
+                { value: "priority", label: "优先级" },
+                { value: "assignees", label: "负责人" },
+              ],
+            },
+            {
+              key: "assignee",
+              label: "负责人",
+              type: "select",
+              value: assigneeId,
+              options: (members.data ?? []).map((row) => ({ value: row.member.id, label: userName(row.member) })),
+            },
+            {
+              key: "label",
+              label: "标签",
+              type: "select",
+              value: labelId,
+              options: records(labels.data).map((row) => ({ value: String(row.id), label: String(row.name) })),
+            },
+          ]}
+          onClose={() => setSettings(false)}
+          onSubmit={async (values) => {
+            setOrderBy(values.order);
+            setGroupBy(values.group);
+            setAssigneeId(values.assignee);
+            setLabelId(values.label);
+            setSecondaryGroup(values.secondary);
+            setShowEmpty(values.empty === "true");
+            setSubIssues(values.children === "true");
+            setAdvanced({
+              ...advanced,
+              ...Object.fromEntries(
+                ["state_group", "created_by", "cycle", "module"].map((key) => [key, values[key] ? [values[key]] : null])
+              ),
+              start_date: values.start_date ? [`${values.start_date};${values.start_operator}`] : null,
+              target_date: values.target_date ? [`${values.target_date};${values.target_operator}`] : null,
+            });
+            setSaved(false);
+          }}
+        />
+      )}
+      <ActionButton
+        className="chip"
+        action={async () => {
+          setStateId("");
+          setPriority("");
+          setAssigneeId("");
+          setLabelId("");
+          setAdvanced({
+            ...Object.fromEntries(
+              Object.keys({ ...objectValue(preferences.data?.filters), ...advanced }).map((key) => [key, null])
+            ),
+            state_group: null,
+            created_by: null,
+            cycle: null,
+            module: null,
+            start_date: null,
+            target_date: null,
+          });
+          setSaved(false);
+        }}
+      >
+        清除筛选
+      </ActionButton>
+      <button className="chip" onClick={() => setSavingView(true)}>
+        保存为视图
+      </button>
+      {savingView && (
+        <FormSheet
+          title="保存为视图"
+          fields={[
+            { key: "name", label: "视图名称", required: true },
+            {
+              key: "access",
+              label: "可见性",
+              type: "select",
+              value: "0",
+              options: [
+                { value: "0", label: "私人" },
+                { value: "1", label: "项目共享" },
+              ],
+            },
+          ]}
+          onClose={() => setSavingView(false)}
+          onSubmit={async (values) => {
+            const body = preferencePayload(preferences.data, {
+              layout,
+              state: stateId,
+              priority,
+              assignees: assigneeId,
+              labels: labelId,
+              orderBy,
+              groupBy,
+              fields,
+              extraFilters: advanced,
+              secondaryGroup,
+              showEmpty,
+              subIssues,
+            });
+            await client.request(`${service.projectPath}/views/`, "POST", {
+              name: values.name.trim(),
+              access: Number(values.access),
+              ...body,
+            });
+            onNavigate({ page: "views", projectId });
+          }}
+        />
+      )}
+      <button className="chip" onClick={() => setProperties(true)}>
+        显示属性
+      </button>
+      {properties && (
+        <MultiSelectSheet
+          title="显示属性"
+          options={displayFields}
+          selected={fields}
+          onClose={() => setProperties(false)}
+          onSave={async (ids) => {
+            setFields(ids);
+            setSaved(false);
+          }}
+        />
+      )}
+      {creating && (
+        <TaskForm
+          service={service}
+          states={stateRows}
+          members={members.data}
+          labels={records(labels.data)}
+          onClose={() => setCreating(false)}
+          onDone={async (task, continueCreating) => {
+            await items.refresh();
+            if (!continueCreating) onNavigate({ page: "issue", projectId, issueId: task.id });
+          }}
+        />
+      )}
+    </>
+  );
+}
+
+export function MyTasks(props: CoreProps) {
+  const { client, workspaceSlug, onNavigate } = props;
+  const session = useData<Session>(client, "/api/lab/session/");
+  const projects = useData<Entity[]>(client, `/api/workspaces/${encodeURIComponent(workspaceSlug)}/projects/`);
+  const [tab, setTab] = useState("assigned");
+  const [query, setQuery] = useState("");
+  const [cursors, setCursors] = useState([""]);
+  const userId = session.data?.user.id;
+  const params = new URLSearchParams({ per_page: "100", sub_issue: "true" });
+  if (userId) params.set(tab === "created" ? "created_by" : tab === "subscribed" ? "subscriber" : "assignees", userId);
+  if (cursors[cursors.length - 1]) params.set("cursor", cursors[cursors.length - 1]);
+  const items = useData(
+    client,
+    userId ? `/api/workspaces/${encodeURIComponent(workspaceSlug)}/user-issues/${userId}/?${params}` : null
+  );
+  const rows = issueRows(items.data).filter(
+    (task) => !query || task.name.toLocaleLowerCase().includes(query.toLocaleLowerCase())
+  );
+  const page = items.data as Entity | undefined;
+  return (
+    <>
+      <PageHeading title="我的任务" />
+      <div className="core-tabs">
+        {[
+          ["assigned", "分配给我"],
+          ["created", "我创建的"],
+          ["subscribed", "我关注的"],
+        ].map(([key, label]) => (
+          <button
+            className={`chip ${tab === key ? "active" : ""}`}
+            key={key}
+            onClick={() => {
+              setTab(key);
+              setCursors([""]);
+            }}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+      <label className="core-search">
+        <Search size={18} />
+        <input placeholder="搜索当前页" value={query} onChange={(event) => setQuery(event.target.value)} />
+      </label>
+      <ResultState loading={session.loading || items.loading} error={session.error ?? items.error}>
+        <div className="list">
+          {rows.map((task) => (
+            <TaskCard
+              key={task.id}
+              task={task}
+              project={records(projects.data).find((project) => project.id === task.project_id)}
+              onOpen={() => onNavigate({ page: "issue", projectId: task.project_id, issueId: task.id })}
+            />
+          ))}
+          {!rows.length && <Empty>暂无任务</Empty>}
+        </div>
+      </ResultState>
+      <div className="core-pager">
+        <button className="button" disabled={cursors.length <= 1} onClick={() => setCursors(cursors.slice(0, -1))}>
+          上一页
+        </button>
+        <span className="muted">第 {cursors.length} 页</span>
+        <button
+          className="button"
+          disabled={!page?.next_page_results}
+          onClick={() => setCursors([...cursors, String(page?.next_cursor)])}
+        >
+          下一页
+        </button>
+      </div>
+    </>
+  );
+}
+
+function ProjectTimeline(props: CoreProps & { projectId: string }) {
+  const store = useLabTransport(props.client, props.workspaceSlug);
+  return (
+    <Gantt
+      store={store}
+      projectId={props.projectId}
+      onOpenIssue={(project, issue) => props.onNavigate({ page: "issue", projectId: project, issueId: issue })}
+    />
+  );
+}
+function taskGroups(tasks: Task[], group: string, states: Entity[], members: Member[]): [string, Task[]][] {
+  const groups = new Map<string, Task[]>();
+  if (group === "state") for (const state of states) groups.set(String(state.name), []);
+  if (group === "priority") for (const priority of priorities) groups.set(priority.label, []);
+  for (const task of tasks) {
+    const names =
+      group === "priority"
+        ? [priorityName(task.priority)]
+        : group === "assignees"
+          ? task.assignee_ids?.length
+            ? task.assignee_ids.map((id) => userName(members.find((row) => row.member.id === id)?.member))
+            : ["未分配"]
+          : [String(states.find((row) => row.id === task.state_id)?.name ?? "其他")];
+    for (const name of names) groups.set(name, [...(groups.get(name) ?? []), task]);
+  }
+  return [...groups.entries()];
+}
+function recordFields(
+  task: Task,
+  project: Entity | undefined,
+  states: Entity[],
+  members: Member[],
+  labels: Entity[],
+  fields: string[],
+  cycles: Entity[] = [],
+  modules: Entity[] = [],
+  estimates: Entity[] = []
+): [string, string][] {
+  const values: Record<string, string> = {
+    key: `${String(project?.identifier ?? "")}-${task.sequence_id ?? ""}`,
+    state: String(states.find((row) => row.id === task.state_id)?.name ?? "未设置"),
+    priority: priorityName(task.priority),
+    assignee:
+      task.assignee_ids?.map((id) => userName(members.find((row) => row.member.id === id)?.member)).join("、") ||
+      "未分配",
+    labels:
+      labels
+        .filter((row) => task.label_ids?.includes(String(row.id)))
+        .map((row) => String(row.name))
+        .join("、") || "无标签",
+    cycle: String(cycles.find((row) => row.id === task.cycle_id)?.name ?? "无周期"),
+    module:
+      modules
+        .filter((row) => task.module_ids?.includes(String(row.id)))
+        .map((row) => String(row.name))
+        .join("、") || "无模块",
+    estimate: String(estimates.find((row) => row.id === task.estimate_point)?.value ?? "未设置"),
+    start_date: dateLabel(task.start_date),
+    due_date: dateLabel(task.target_date),
+    attachment_count: String(task.attachment_count ?? 0),
+    link: String(task.link_count ?? 0),
+    sub_issue_count: String(task.sub_issues_count ?? 0),
+    created_on: dateLabel(task.created_at),
+    updated_on: dateLabel(task.updated_at),
+  };
+  return displayFields.filter((row) => fields.includes(row.id)).map((row) => [row.name, values[row.id]]);
+}
+
+export function ArchivedTasks(props: CoreProps) {
+  if (!props.projectId)
+    return (
+      <>
+        <PageHeading title="归档任务" />
+        <ProjectPicker {...props} section="archived-tasks" />
+      </>
+    );
+  const path = `/api/workspaces/${encodeURIComponent(props.workspaceSlug)}/projects/${props.projectId}/archived-issues/`;
+  return <ProjectTasks {...props} projectId={props.projectId} collectionPath={path} collectionTitle="归档任务" />;
+}
+
+export function IssueDetail(props: CoreProps) {
+  const { client, workspaceSlug, projectId, issueId } = props;
+  if (!projectId || !issueId) return <Tasks {...props} />;
+  return (
+    <TaskDetail {...props} projectId={projectId} issueId={issueId} client={client} workspaceSlug={workspaceSlug} />
+  );
+}
+
+function TaskDetail(props: CoreProps & { projectId: string; issueId: string }) {
+  const { client, workspaceSlug, projectId, issueId, onNavigate } = props;
+  const service = useMemo(() => new CoreService(client, workspaceSlug, projectId), [client, workspaceSlug, projectId]);
+  const lab = useLabTransport(client, workspaceSlug);
+  const path = service.taskPath(issueId);
+  const detail = useData<Task>(client, path);
+  const project = useData<Entity>(client, `${service.projectPath}/`);
+  const session = useData<Session>(client, "/api/lab/session/");
+  const states = useData<Entity[]>(client, `${service.projectPath}/states/`);
+  const members = useData<Member[]>(client, `${service.projectPath}/members/`);
+  const labels = useData<Entity[]>(client, `${service.projectPath}/issue-labels/`);
+  const comments = useData<Entity[]>(client, `${path}comments/`);
+  const activities = useData<Entity[]>(client, `${path}history/?activity_type=issue-property`);
+  const children = useData(client, `${path}sub-issues/`);
+  const relations = useData<Record<string, Task[]>>(client, `${path}issue-relation/`);
+  const links = useData<Entity[]>(client, `${path}issue-links/`);
+  const attachmentPath = `/api/assets/v2/workspaces/${encodeURIComponent(workspaceSlug)}/projects/${projectId}/issues/${issueId}/attachments/`;
+  const attachments = useData<Entity[]>(client, attachmentPath);
+  const cycles = useData<Entity[]>(client, `${service.projectPath}/cycles/`);
+  const modules = useData<Entity[]>(client, `${service.projectPath}/modules/`);
+  const task = detail.data;
+  const [modal, setModal] = useState<string>();
+  const [selected, setSelected] = useState<Entity>();
+  const [commentText, setCommentText] = useState("");
+  const [tab, setTab] = useState("comments");
+  const [relationType, setRelationType] = useState("relates_to");
+  const role = Number(project.data?.member_role);
+  const myId = session.data?.user.id;
+  const canEdit = Boolean(task && !task.archived_at && (role >= 15 || task.created_by === myId));
+  const canAdmin = role >= 20;
+  const stateRows = records(states.data),
+    labelRows = records(labels.data),
+    cycleRows = records(cycles.data),
+    moduleRows = records(modules.data);
+  const state = stateRows.find((row) => row.id === task?.state_id);
+  const assigned =
+    members.data
+      ?.filter((row) => task?.assignee_ids?.includes(row.member.id))
+      .map((row) => userName(row.member))
+      .join("、") || "未分配";
+  const taskLabels =
+    labelRows
+      .filter((row) => task?.label_ids?.includes(String(row.id)))
+      .map((row) => String(row.name))
+      .join("、") || "无标签";
+  const taskCycle = cycleRows.find((row) => row.id === task?.cycle_id);
+  const taskModules =
+    moduleRows
+      .filter((row) => task?.module_ids?.includes(String(row.id)))
+      .map((row) => String(row.name))
+      .join("、") || "未设置";
+  const close = () => {
+    setModal(undefined);
+    setSelected(undefined);
+  };
+  const refresh = async () => {
+    await detail.refresh();
+    await children.refresh();
+    await activities.refresh();
+  };
+  const openTask = (row: Task) =>
+    onNavigate({ page: "issue", projectId: row.project_id ?? projectId, issueId: row.id });
+  const childRows = issueRows(children.data);
+  const relationRows = Object.entries(relations.data ?? {}).flatMap(([key, rows]) =>
+    rows.map((row) => ({ ...row, relationKey: key }))
+  );
+  const fieldNames: Record<string, string> = {
+    name: "标题",
+    state: "状态",
+    priority: "优先级",
+    assignees: "负责人",
+    labels: "标签",
+    start_date: "开始日期",
+    target_date: "截止日期",
+    description: "描述",
+    parent: "父任务",
+    cycle: "周期",
+    module: "模块",
+  };
+  return (
+    <>
+      <PageHeading
+        title={task?.sequence_id ? `${String(project.data?.identifier ?? "任务")}-${task.sequence_id}` : "任务详情"}
+        onBack={() => onNavigate({ page: "tasks", projectId })}
+      >
+        <button className="icon-button" aria-label="任务操作" onClick={() => setModal("actions")}>
+          <MoreHorizontal size={21} />
+        </button>
+      </PageHeading>
+      <ResultState loading={detail.loading} error={detail.error}>
+        {task && (
+          <>
+            <h1 className="core-task-title">{task.name}</h1>
+            <div className="core-chips">
+              <button className="chip" disabled={!canEdit} onClick={() => setModal("edit")}>
+                {state?.name ? String(state.name) : "状态"}
+              </button>
+              <button className="chip" disabled={!canEdit} onClick={() => setModal("edit")}>
+                优先级 · {priorityName(task.priority)}
+              </button>
+              <button className="chip" disabled={!canEdit} onClick={() => setModal("owners")}>
+                <UserRound size={15} />
+                {assigned}
+              </button>
+              <button className="chip" disabled={!canEdit} onClick={() => setModal("labels")}>
+                {taskLabels}
+              </button>
+              <button className="chip" disabled={!canEdit} onClick={() => setModal("edit")}>
+                <CalendarDays size={15} />
+                {dateLabel(task.target_date)}
+              </button>
+            </div>
+            <DetailFields
+              values={[
+                ["开始日期", dateLabel(task.start_date)],
+                ["截止日期", dateLabel(task.target_date)],
+                [
+                  "周期",
+                  <button key="cycle" className="chip" disabled={!canEdit} onClick={() => setModal("cycle")}>
+                    {String(taskCycle?.name ?? "未设置")}
+                  </button>,
+                ],
+                [
+                  "模块",
+                  <button key="modules" className="chip" disabled={!canEdit} onClick={() => setModal("modules")}>
+                    {taskModules}
+                  </button>,
+                ],
+                [
+                  "父任务",
+                  task.parent_id ? (
+                    <button
+                      key="parent"
+                      className="chip"
+                      onClick={() => onNavigate({ page: "issue", projectId, issueId: String(task.parent_id) })}
+                    >
+                      查看父任务
+                    </button>
+                  ) : (
+                    "无"
+                  ),
+                ],
+              ]}
+            />
+            <div className="core-section-heading">
+              <h2>描述</h2>
+              <button className="chip" onClick={() => setModal("versions")}>
+                历史版本
+              </button>
+              {canEdit && (
+                <button className="chip" onClick={() => setModal("description")}>
+                  编辑
+                </button>
+              )}
+            </div>
+            <div className="card">
+              {task.description_html &&
+              (plainText(task.description_html) || /<(?:img|table)/i.test(task.description_html)) ? (
+                <Html html={task.description_html} />
+              ) : (
+                <Empty>暂无描述</Empty>
+              )}
+            </div>
+            <TaskDocuments
+              store={lab}
+              projectId={projectId}
+              issueId={issueId}
+              onOpenDocument={(targetProject, page) =>
+                onNavigate({ page: "document", projectId: targetProject, pageId: page })
+              }
+            />
+            <div className="core-section-heading">
+              <h2>
+                子任务 <span className="muted">{childRows.length}</span>
+              </h2>
+              {canEdit && (
+                <button className="chip" onClick={() => setModal("child")}>
+                  <Plus size={15} />
+                  新建
+                </button>
+              )}
+            </div>
+            <div className="list">
+              {childRows.map((child) => (
+                <div key={child.id}>
+                  <TaskCard
+                    task={child}
+                    project={project.data}
+                    states={stateRows}
+                    members={members.data}
+                    onOpen={() => openTask(child)}
+                  />
+                  {canEdit && (
+                    <ActionButton
+                      className="chip"
+                      action={() => client.request(service.taskPath(child.id), "PATCH", { parent_id: null })}
+                      onDone={() => {
+                        void children.refresh();
+                      }}
+                    >
+                      解除关联
+                    </ActionButton>
+                  )}
+                </div>
+              ))}
+              {!childRows.length && <Empty>暂无子任务</Empty>}
+            </div>
+            {canEdit && (
+              <button className="chip" onClick={() => setModal("search-child")}>
+                关联已有任务
+              </button>
+            )}
+            <div className="core-section-heading">
+              <h2>相关任务</h2>
+              {canEdit && (
+                <button className="chip" onClick={() => setModal("relation-kind")}>
+                  <Link2 size={15} />
+                  添加
+                </button>
+              )}
+            </div>
+            <ErrorMessage error={relations.error} />
+            <div className="list">
+              {relationRows.map((row) => (
+                <article className="card" key={`${row.relationKey}-${row.id}`}>
+                  <span className="chip">{relationNames[row.relationKey] ?? "相关"}</span>
+                  <button className="core-task-name" onClick={() => openTask(row)}>
+                    {row.name}
+                  </button>
+                  {canEdit && (
+                    <ActionButton
+                      className="chip"
+                      action={() => service.unrelate(issueId, row.id)}
+                      onDone={() => {
+                        void relations.refresh();
+                      }}
+                    >
+                      解除关联
+                    </ActionButton>
+                  )}
+                </article>
+              ))}
+              {!relationRows.length && <Empty>暂无相关任务</Empty>}
+            </div>
+            <div className="core-section-heading">
+              <h2>链接</h2>
+              {canEdit && (
+                <button className="chip" onClick={() => setModal("link")}>
+                  <Plus size={15} />
+                  添加
+                </button>
+              )}
+            </div>
+            <ErrorMessage error={links.error} />
+            <div className="list">
+              {records(links.data).map((link) => (
+                <article className="card" key={link.id}>
+                  <a
+                    href={/^https?:\/\//.test(String(link.url)) ? String(link.url) : undefined}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    {String(link.title || link.url)}
+                  </a>
+                  {canEdit && (
+                    <div className="core-card-actions">
+                      <button
+                        className="chip"
+                        onClick={() => {
+                          setSelected(link);
+                          setModal("link");
+                        }}
+                      >
+                        编辑
+                      </button>
+                      <ActionButton
+                        className="chip"
+                        action={() => client.request(`${path}issue-links/${link.id}/`, "DELETE")}
+                        onDone={() => {
+                          void links.refresh();
+                        }}
+                      >
+                        删除
+                      </ActionButton>
+                    </div>
+                  )}
+                </article>
+              ))}
+              {!records(links.data).length && <Empty>暂无链接</Empty>}
+            </div>
+            <div className="core-section-heading">
+              <h2>附件</h2>
+              {canEdit && (
+                <ActionButton
+                  className="chip"
+                  action={() => client.uploadAttachment(workspaceSlug, projectId, issueId)}
+                  onDone={() => {
+                    void attachments.refresh();
+                  }}
+                >
+                  <Paperclip size={15} />
+                  上传
+                </ActionButton>
+              )}
+            </div>
+            <ErrorMessage error={attachments.error} />
+            <div className="list">
+              {records(attachments.data).map((file) => {
+                const attributes = file.attributes as Entity | undefined;
+                return (
+                  <article className="card" key={file.id}>
+                    <div className="core-file-row">
+                      <Paperclip size={20} />
+                      <span>
+                        {String(attributes?.name || "附件")}
+                        <small className="muted">
+                          {attributes?.size ? ` · ${Math.ceil(Number(attributes.size) / 1024)} KB` : ""}
+                        </small>
+                      </span>
+                      <ActionButton
+                        className="chip"
+                        action={() =>
+                          client.download(`${attachmentPath}${file.id}/`, String(attributes?.name ?? "附件"))
+                        }
+                      >
+                        下载
+                      </ActionButton>
+                    </div>
+                    {(canAdmin || file.created_by === myId) && (
+                      <ActionButton
+                        className="chip"
+                        action={() => client.request(`${attachmentPath}${file.id}/`, "DELETE")}
+                        onDone={() => {
+                          void attachments.refresh();
+                        }}
+                      >
+                        删除
+                      </ActionButton>
+                    )}
+                  </article>
+                );
+              })}
+              {!records(attachments.data).length && <Empty>暂无附件</Empty>}
+            </div>
+            <div className="core-tabs">
+              <button className={`chip ${tab === "comments" ? "active" : ""}`} onClick={() => setTab("comments")}>
+                <MessageSquare size={15} />
+                评论
+              </button>
+              <button className={`chip ${tab === "activity" ? "active" : ""}`} onClick={() => setTab("activity")}>
+                动态
+              </button>
+            </div>
+            {tab === "comments" ? (
+              <>
+                <ResultState loading={comments.loading} error={comments.error}>
+                  <div className="list">
+                    {records(comments.data).map((comment) => {
+                      const actor = comment.actor_detail as Session["user"] | undefined;
+                      return (
+                        <article className="card" key={comment.id}>
+                          <div className="core-comment-meta">
+                            <strong>{userName(actor)}</strong>
+                            <span>
+                              {dateLabel(comment.created_at)}
+                              {comment.edited_at ? " · 已编辑" : ""}
+                            </span>
+                          </div>
+                          <Html html={comment.comment_html} />
+                          <CommentReactions
+                            service={service}
+                            comment={comment}
+                            userId={myId}
+                            onDone={() => {
+                              void comments.refresh();
+                            }}
+                          />
+                          {(canAdmin || comment.actor === myId) && (
+                            <div className="core-comment-actions">
+                              <button
+                                className="chip"
+                                onClick={() => {
+                                  setSelected(comment);
+                                  setModal("comment");
+                                }}
+                              >
+                                编辑
+                              </button>
+                              <ActionButton
+                                className="chip"
+                                action={() => client.request(`${path}comments/${comment.id}/`, "DELETE")}
+                                onDone={() => {
+                                  void comments.refresh();
+                                }}
+                              >
+                                删除
+                              </ActionButton>
+                            </div>
+                          )}
+                        </article>
+                      );
+                    })}
+                    {!records(comments.data).length && <Empty>暂无评论</Empty>}
+                  </div>
+                </ResultState>
+                {!task.archived_at && (
+                  <div className="card core-inline-form">
+                    <RichHtmlEditor value={commentText} onChange={setCommentText} />
+                    <ActionButton
+                      className="button primary"
+                      action={async () => {
+                        if (!plainText(commentText).trim() && !/<(?:img|table)/i.test(commentText))
+                          throw new Error("请填写评论");
+                        await service.comment(issueId, commentText);
+                        setCommentText("");
+                        await comments.refresh();
+                      }}
+                    >
+                      发送
+                    </ActionButton>
+                  </div>
+                )}
+              </>
+            ) : (
+              <ResultState loading={activities.loading} error={activities.error}>
+                <div className="list core-activity">
+                  {records(activities.data)
+                    .slice()
+                    // oxlint-disable-next-line unicorn/no-array-sort -- ES2022-compatible immutable ordering
+                    .sort((left, right) => String(right.created_at).localeCompare(String(left.created_at)))
+                    .map((activity) => (
+                      <article className="card" key={activity.id}>
+                        <div className="core-comment-meta">
+                          <strong>{userName(activity.actor_detail as Session["user"] | undefined)}</strong>
+                          <span>{dateLabel(activity.created_at)}</span>
+                        </div>
+                        <p>
+                          {fieldNames[String(activity.field)]
+                            ? `更新${fieldNames[String(activity.field)]}`
+                            : activity.verb === "created"
+                              ? "创建任务"
+                              : "更新任务"}
+                          {activity.new_value && !/^[a-f0-9-]{36}$/.test(String(activity.new_value))
+                            ? ` · ${String(activity.new_value)}`
+                            : ""}
+                        </p>
+                      </article>
+                    ))}
+                  {!records(activities.data).length && <Empty>暂无动态</Empty>}
+                </div>
+              </ResultState>
+            )}
+            <ErrorMessage error={project.error ?? states.error ?? labels.error ?? members.error ?? children.error} />
+          </>
+        )}
+      </ResultState>
+      {modal === "edit" && task && (
+        <TaskForm service={service} task={task} states={stateRows} onDone={refresh} onClose={close} />
+      )}
+      {modal === "owners" && task && (
+        <MultiSelectSheet
+          title="负责人"
+          options={(members.data ?? [])
+            .filter((row) => row.is_active !== false)
+            .map((row) => ({ id: row.member.id, name: userName(row.member) }))}
+          selected={task.assignee_ids ?? []}
+          onSave={async (ids) => {
+            await client.request(path, "PATCH", { assignee_ids: ids });
+            await refresh();
+          }}
+          onClose={close}
+        />
+      )}
+      {modal === "labels" && task && (
+        <MultiSelectSheet
+          title="标签"
+          options={labelRows.map((row) => ({ id: String(row.id), name: String(row.name) }))}
+          selected={task.label_ids ?? []}
+          onSave={async (ids) => {
+            await client.request(path, "PATCH", { label_ids: ids });
+            await refresh();
+          }}
+          onClose={close}
+        />
+      )}
+      {modal === "modules" && task && (
+        <MultiSelectSheet
+          title="模块"
+          options={moduleRows.map((row) => ({ id: String(row.id), name: String(row.name) }))}
+          selected={task.module_ids ?? []}
+          onSave={async (ids) => {
+            await client.request(`${path}modules/`, "POST", {
+              modules: ids.filter((id) => !task.module_ids?.includes(id)),
+              removed_modules: task.module_ids?.filter((id) => !ids.includes(id)) ?? [],
+            });
+            await refresh();
+          }}
+          onClose={close}
+        />
+      )}
+      {modal === "cycle" && task && (
+        <FormSheet
+          title="周期"
+          fields={[
+            {
+              key: "cycle",
+              label: "周期",
+              type: "select",
+              value: task.cycle_id,
+              options: [
+                { value: "none", label: "无周期" },
+                ...cycleRows.map((row) => ({ value: String(row.id), label: String(row.name) })),
+              ],
+            },
+          ]}
+          onClose={close}
+          onSubmit={async (values) => {
+            if (!values.cycle || values.cycle === "none") {
+              if (task.cycle_id)
+                await client.request(
+                  `${service.projectPath}/cycles/${task.cycle_id}/cycle-issues/${issueId}/`,
+                  "DELETE"
+                );
+            } else if (values.cycle !== task.cycle_id)
+              await client.request(`${service.projectPath}/cycles/${values.cycle}/cycle-issues/`, "POST", {
+                issues: [issueId],
+              });
+            await refresh();
+          }}
+        />
+      )}
+      {modal === "versions" && task && (
+        <DescriptionVersions
+          service={service}
+          issueId={issueId}
+          canEdit={canEdit}
+          onClose={close}
+          onRestore={refresh}
+        />
+      )}
+      {modal === "description" && task && (
+        <FormSheet
+          title="编辑描述"
+          fields={[{ key: "description", label: "描述", type: "rich", value: task.description_html }]}
+          onClose={close}
+          onSubmit={async (values) => {
+            await service.saveDescription(issueId, values.description);
+            await refresh();
+          }}
+        />
+      )}
+      {modal === "comment" && selected && (
+        <FormSheet
+          title="编辑评论"
+          fields={[
+            {
+              key: "comment",
+              label: "评论",
+              type: "rich",
+              value: String(selected.comment_html ?? ""),
+              required: true,
+            },
+          ]}
+          onClose={close}
+          onSubmit={async (values) => {
+            await service.comment(issueId, values.comment, String(selected.id));
+            await comments.refresh();
+          }}
+        />
+      )}
+      {modal === "link" && (
+        <FormSheet
+          title={selected ? "编辑链接" : "添加链接"}
+          fields={[
+            { key: "title", label: "标题", value: selected?.title },
+            { key: "url", label: "网址", type: "url", value: selected?.url, required: true },
+          ]}
+          onClose={close}
+          onSubmit={async (values) => {
+            await client.request(
+              `${path}issue-links/${selected ? `${selected.id}/` : ""}`,
+              selected ? "PATCH" : "POST",
+              values
+            );
+            await links.refresh();
+          }}
+        />
+      )}
+      {modal === "child" && (
+        <TaskForm
+          service={service}
+          states={stateRows}
+          members={members.data}
+          labels={labelRows}
+          parentId={issueId}
+          onDone={refresh}
+          onClose={close}
+        />
+      )}
+      {modal === "search-child" && (
+        <TaskSearchSheet
+          client={client}
+          workspaceSlug={workspaceSlug}
+          projectId={projectId}
+          title="关联子任务"
+          exclude={[issueId, ...childRows.map((row) => row.id)]}
+          onClose={close}
+          onSelect={async (row) => {
+            await client.request(service.taskPath(String(row.id)), "PATCH", { parent_id: issueId });
+            await children.refresh();
+          }}
+        />
+      )}
+      {modal === "relation-kind" && (
+        <Sheet title="添加任务关系" onClose={close}>
+          <div className="list">
+            {Object.entries(relationNames).map(([key, label]) => (
+              <button
+                className="button"
+                key={key}
+                onClick={() => {
+                  setRelationType(key);
+                  setModal("relation");
+                }}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        </Sheet>
+      )}
+      {modal === "relation" && (
+        <TaskSearchSheet
+          client={client}
+          workspaceSlug={workspaceSlug}
+          title={relationNames[relationType]}
+          exclude={[issueId, ...relationRows.map((row) => row.id)]}
+          onClose={close}
+          onSelect={async (row) => {
+            await service.relate(issueId, String(row.id), relationType);
+            await relations.refresh();
+          }}
+        />
+      )}
+      {modal === "parent" && (
+        <TaskSearchSheet
+          client={client}
+          workspaceSlug={workspaceSlug}
+          projectId={projectId}
+          title="设置父任务"
+          exclude={[issueId, ...childRows.map((row) => row.id)]}
+          onClose={close}
+          onSelect={async (row) => {
+            await client.request(path, "PATCH", { parent_id: row.id });
+            await refresh();
+          }}
+        />
+      )}
+      {modal === "actions" && task && (
+        <Sheet title="任务操作" onClose={close}>
+          <div className="list">
+            {canEdit && (
+              <>
+                <button className="button" onClick={() => setModal("edit")}>
+                  编辑属性
+                </button>
+                <button className="button" onClick={() => setModal("parent")}>
+                  设置父任务
+                </button>
+                {task.parent_id && (
+                  <ActionButton
+                    action={() => client.request(path, "PATCH", { parent_id: null })}
+                    onDone={() => {
+                      close();
+                      void refresh();
+                    }}
+                  >
+                    移除父任务
+                  </ActionButton>
+                )}
+              </>
+            )}
+            <ActionButton
+              action={() => client.request(`${path}subscribe/`, task.is_subscribed ? "DELETE" : "POST")}
+              onDone={() => {
+                close();
+                void detail.refresh();
+              }}
+            >
+              <Bell size={17} />
+              {task.is_subscribed ? "取消关注" : "关注任务"}
+            </ActionButton>
+            {(role >= 15 || canAdmin) &&
+              (task.archived_at || ["completed", "cancelled"].includes(String(state?.group))) && (
+                <ActionButton
+                  action={() => client.request(`${path}archive/`, task.archived_at ? "DELETE" : "POST")}
+                  onDone={() => {
+                    close();
+                    void refresh();
+                  }}
+                >
+                  {task.archived_at ? "取消归档" : "归档任务"}
+                </ActionButton>
+              )}
+            {canEdit && (
+              <button className="button danger" onClick={() => setModal("delete")}>
+                删除任务
+              </button>
+            )}
+          </div>
+        </Sheet>
+      )}
+      {modal === "delete" && task && (
+        <FormSheet
+          title="删除任务"
+          fields={[
+            { key: "reason", label: "删除原因", type: "textarea", required: true },
+            { key: "confirmation", label: `输入「${task.name}」确认删除`, required: true },
+          ]}
+          onClose={close}
+          onSubmit={async (values) => {
+            if (values.confirmation !== task.name) throw new Error("任务标题不一致");
+            await service.deleteTask(issueId, values.reason);
+            onNavigate({ page: "tasks", projectId });
+          }}
+        />
+      )}
+    </>
+  );
+}

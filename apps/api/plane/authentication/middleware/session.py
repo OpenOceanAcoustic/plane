@@ -21,11 +21,17 @@ class SessionMiddleware(MiddlewareMixin):
         self.SessionStore = engine.SessionStore
 
     def process_request(self, request):
-        if admin_path(request.path):
+        if self.is_admin_request(request):
             session_key = request.COOKIES.get(settings.ADMIN_SESSION_COOKIE_NAME)
         else:
             session_key = request.COOKIES.get(settings.SESSION_COOKIE_NAME)
         request.session = self.SessionStore(session_key)
+
+    @staticmethod
+    def is_admin_request(request):
+        return admin_path(request.path) or (
+            request.path == "/api/lab/session/" and request.GET.get("admin") == "true"
+        )
 
     def process_response(self, request, response):
         """
@@ -41,7 +47,7 @@ class SessionMiddleware(MiddlewareMixin):
             return response
         # First check if we need to delete this cookie.
         # The session should be deleted only if the session is entirely empty.
-        is_admin_path = admin_path(request.path)
+        is_admin_path = self.is_admin_request(request)
         cookie_name = settings.ADMIN_SESSION_COOKIE_NAME if is_admin_path else settings.SESSION_COOKIE_NAME
 
         if cookie_name in request.COOKIES and empty:

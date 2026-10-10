@@ -12,14 +12,14 @@ import { AppError } from "@/lib/errors";
 import { APIService } from "@/services/api.service";
 
 export class UserService extends APIService {
-  constructor() {
-    super();
-  }
-
   currentUserConfig() {
     return {
       url: `${this.baseURL}/api/users/me/`,
     };
+  }
+
+  async currentSession(cookie: string): Promise<{ client_platform: string; capabilities: { data_export: boolean } }> {
+    return this.get("/api/lab/session/", { headers: { Cookie: cookie } }).then((response) => response.data);
   }
 
   async currentUser(cookie: string): Promise<IUser> {

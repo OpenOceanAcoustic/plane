@@ -9,6 +9,7 @@ import type { IncomingHttpHeaders } from "http";
 import type { TUserDetails } from "@plane/editor";
 import { logger } from "@plane/logger";
 import { AppError } from "@/lib/errors";
+import { consumeMobileTicket } from "@/lib/mobile-auth";
 // services
 import { UserService } from "@/services/user.service";
 // types
@@ -26,14 +27,44 @@ export const onAuthenticate = async ({
   requestParameters,
   context,
   token,
+  documentName,
+  connection,
 }: {
   requestHeaders: IncomingHttpHeaders;
   context: HocusPocusServerContext;
   requestParameters: URLSearchParams;
   token: string;
+  documentName: string;
+  connection: { readOnly: boolean };
 }) => {
   let cookie: string | undefined = undefined;
   let userId: string | undefined = undefined;
+
+  let ticket: string | undefined;
+  try {
+    const parsed: unknown = JSON.parse(token);
+    if (parsed && typeof parsed === "object" && "ticket" in parsed) {
+      if (typeof parsed.ticket !== "string") {
+        throw new AppError("Ticket is invalid or expired", { code: "AUTH_INVALID_TICKET" });
+      }
+      ticket = parsed.ticket;
+    }
+  } catch (error) {
+    if (error instanceof AppError) throw error;
+  }
+  if (ticket !== undefined) {
+    const credentials = await consumeMobileTicket(ticket, documentName, requestParameters);
+    context.cookie = credentials.cookie;
+    context.userId = credentials.user_id;
+    context.workspaceSlug = credentials.workspace_slug;
+    context.projectId = credentials.project_id;
+    context.documentType = credentials.document_type;
+    connection.readOnly = credentials.read_only;
+    const authenticated = await handleAuthentication({ cookie: context.cookie, userId: context.userId });
+    // Hocuspocus replaces hook context while asynchronous onConnect hooks finish.
+    // Return the complete trusted context so onLoadDocument receives the ticket binding.
+    return { ...context, ...authenticated };
+  }
 
   // Extract cookie (fallback to request headers) and userId from token (for scenarios where
   // the cookies are not passed in the request headers)
@@ -66,10 +97,11 @@ export const onAuthenticate = async ({
   context.userId = userId;
   context.workspaceSlug = requestParameters.get("workspaceSlug");
 
-  return await handleAuthentication({
+  const authenticated = await handleAuthentication({
     cookie: context.cookie,
     userId: context.userId,
   });
+  return { ...context, ...authenticated };
 };
 
 export const handleAuthentication = async ({ cookie, userId }: { cookie: string; userId: string }) => {

@@ -9,7 +9,9 @@ from .models import Credential
 
 
 def admin_path(path):
-    return path.startswith("/api/instances/") or path == "/auth/lab/admin/sign-in/"
+    return path.startswith("/api/instances/") or path in (
+        "/auth/lab/admin/sign-in/", "/auth/lab/mobile/admin/sign-in/",
+    )
 
 
 class LabAccessMiddleware:
@@ -19,8 +21,8 @@ class LabAccessMiddleware:
         self.get_response = get_response
 
     def __call__(self, request):
+        path = request.path
         if settings.LAB_AUTH_ENABLED:
-            path = request.path
             allowed_auth = path.startswith("/auth/lab/") or path in (
                 "/auth/get-csrf-token/",
                 "/auth/sign-out/",
@@ -49,4 +51,11 @@ class LabAccessMiddleware:
                 if not credential or request.session.get("lab_generation") != str(credential.generation):
                     logout(request)
                     return JsonResponse({"error": "认证已失效，请重新绑定或登录"}, status=401)
+        if request.session.get("lab_client") == "android" and path.startswith("/api/"):
+            from .mobile import is_export_request
+
+            if is_export_request(request):
+                return JsonResponse(
+                    {"error": "手机端不支持数据导出", "code": "mobile_export_disabled"}, status=403
+                )
         return self.get_response(request)
