@@ -559,7 +559,7 @@ const App = observer(function App() {
                   className="button"
                   onClick={() => {
                     setWorkspacePicker(false);
-                    setNewWorkspace(true);
+                    requestMobileNavigation(() => setNewWorkspace(true));
                   }}
                 >
                   创建工作区
