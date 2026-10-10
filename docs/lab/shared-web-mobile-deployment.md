@@ -14,16 +14,16 @@ python3 tools/lab/setup.py --profile lab \
   --bind-address 0.0.0.0 --listen-port 50010
 ```
 
-| 参数 | 作用 |
-| --- | --- |
-| `LAB_BIND_ADDRESS` | 宿主机监听 IP，兼容默认 `127.0.0.1` |
-| `LAB_HTTP_PORT` | 宿主机 HTTP 端口，兼容默认 `8080`；当前设为 `50010` |
-| `LAB_PUBLIC_URL` | 设备实际访问的 HTTP/HTTPS 根地址 |
-| `WEB_URL` / `APP_BASE_URL` | API 生成链接和主站根地址 |
-| `ADMIN_BASE_URL` / `ADMIN_BASE_PATH` | 同一根地址，后台路径 `/god-mode` |
-| `SPACE_BASE_URL` / `SPACE_BASE_PATH` | 同一根地址，共享页路径 `/spaces` |
-| `LIVE_BASE_URL` / `LIVE_BASE_PATH` | 同一根地址，协作路径 `/live` |
-| `CORS_ALLOWED_ORIGINS` / `CSRF_TRUSTED_ORIGINS` | 精确的协议、主机、端口；lab 同时保留现有开发来源 |
+| 参数                                            | 作用                                                |
+| ----------------------------------------------- | --------------------------------------------------- |
+| `LAB_BIND_ADDRESS`                              | 宿主机监听 IP，兼容默认 `127.0.0.1`                 |
+| `LAB_HTTP_PORT`                                 | 宿主机 HTTP 端口，兼容默认 `8080`；当前设为 `50010` |
+| `LAB_PUBLIC_URL`                                | 设备实际访问的 HTTP/HTTPS 根地址                    |
+| `WEB_URL` / `APP_BASE_URL`                      | API 生成链接和主站根地址                            |
+| `ADMIN_BASE_URL` / `ADMIN_BASE_PATH`            | 同一根地址，后台路径 `/god-mode`                    |
+| `SPACE_BASE_URL` / `SPACE_BASE_PATH`            | 同一根地址，共享页路径 `/spaces`                    |
+| `LIVE_BASE_URL` / `LIVE_BASE_PATH`              | 同一根地址，协作路径 `/live`                        |
+| `CORS_ALLOWED_ORIGINS` / `CSRF_TRUSTED_ORIGINS` | 精确的协议、主机、端口；lab 同时保留现有开发来源    |
 
 监听端口与客户端 URL 分别配置，setup 不根据客户端端口猜测监听端口。未来 FRP 远端端口可以与本地端口不同。显式参数覆盖原值；未提供 `--listen-port` 时保留已有端口或默认 8080。未提供 `--bind-address` 时沿用原有规则：显式本机访问地址选择回环监听，其他访问地址选择 `0.0.0.0`；访问地址也未修改时保留原监听地址。
 
