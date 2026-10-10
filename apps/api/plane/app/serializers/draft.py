@@ -21,6 +21,9 @@ from plane.db.models import (
     DraftIssueCycle,
     DraftIssueModule,
     ProjectMember,
+    Project,
+    Cycle,
+    Module,
     EstimatePoint,
 )
 from plane.utils.content_validator import (
@@ -32,6 +35,7 @@ from plane.app.permissions import ROLE
 
 class DraftIssueCreateSerializer(BaseSerializer):
     # ids
+    project_id = serializers.UUIDField(required=False, allow_null=True, write_only=True)
     state_id = serializers.PrimaryKeyRelatedField(
         source="state", queryset=State.objects.all(), required=False, allow_null=True
     )
@@ -54,6 +58,7 @@ class DraftIssueCreateSerializer(BaseSerializer):
         fields = "__all__"
         read_only_fields = [
             "workspace",
+            "project",
             "created_by",
             "updated_by",
             "created_at",
@@ -69,6 +74,22 @@ class DraftIssueCreateSerializer(BaseSerializer):
         return data
 
     def validate(self, attrs):
+        project_id = self.context.get("project_id")
+        request = self.context.get("request")
+        workspace_id = self.context.get("workspace_id") or (self.instance.workspace_id if self.instance else None)
+        if project_id is not None:
+            if not Project.objects.filter(pk=project_id, workspace_id=workspace_id, archived_at__isnull=True).exists():
+                raise serializers.ValidationError({"project_id": "Project is not active in this workspace"})
+            if request and not ProjectMember.objects.filter(project_id=project_id, member=request.user, is_active=True).exists():
+                raise serializers.ValidationError({"project_id": "Project membership is required"})
+        if "project_id" in attrs:
+            attrs["project_id"] = project_id
+        cycle_id = self.initial_data.get("cycle_id")
+        modules = self.initial_data.get("module_ids")
+        if cycle_id and not Cycle.objects.filter(pk=cycle_id, project_id=project_id, archived_at__isnull=True).exists():
+            raise serializers.ValidationError({"cycle_id": "Cycle is not active in this project"})
+        if modules is not None and set(map(str, modules)) != set(map(str, Module.objects.filter(id__in=modules, project_id=project_id, archived_at__isnull=True).values_list("id", flat=True))):
+            raise serializers.ValidationError({"module_ids": "Modules must be active in this project"})
         if (
             attrs.get("start_date", None) is not None
             and attrs.get("target_date", None) is not None
@@ -140,6 +161,7 @@ class DraftIssueCreateSerializer(BaseSerializer):
         return attrs
 
     def create(self, validated_data):
+        validated_data.pop("project_id", None)
         assignees = validated_data.pop("assignee_ids", None)
         labels = validated_data.pop("label_ids", None)
         modules = validated_data.pop("module_ids", None)
@@ -219,12 +241,20 @@ class DraftIssueCreateSerializer(BaseSerializer):
     def update(self, instance, validated_data):
         assignees = validated_data.pop("assignee_ids", None)
         labels = validated_data.pop("label_ids", None)
-        cycle_id = self.context.get("cycle_id", None)
+        cycle_id = self.context.get("cycle_id", "not_provided")
         modules = self.initial_data.get("module_ids", None)
 
         # Related models
         workspace_id = instance.workspace_id
-        project_id = instance.project_id
+        project_id = self.context.get("project_id", instance.project_id)
+        if str(project_id) != str(instance.project_id):
+            for model in (DraftIssueAssignee, DraftIssueLabel, DraftIssueCycle, DraftIssueModule):
+                model.objects.filter(draft_issue=instance).delete()
+            for field in ("state", "parent", "estimate_point"):
+                if field not in validated_data:
+                    validated_data[field] = None
+            instance.project_id = project_id
+            validated_data["project_id"] = project_id
 
         created_by_id = instance.created_by_id
         updated_by_id = instance.updated_by_id

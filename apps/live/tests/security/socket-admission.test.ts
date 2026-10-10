@@ -74,6 +74,13 @@ async function fixture() {
     });
 }
 describe("admission at the real HTTP WebSocket upgrade", () => {
+  it("admits the fixed native Origin with the same source budget before ticket authentication", async () => {
+    const connect = await fixture();
+    expect(await connect({ Origin: "https://localhost" })).toBe(101);
+    expect(await connect({ Origin: "https://localhost" })).toBe(101);
+    expect(await connect({ Origin: "https://localhost" })).toBe(429);
+    expect(state.calls).toBe(3);
+  });
   it("rejects another Origin before Redis admission", async () => {
     const connect = await fixture();
     expect(await connect({ Origin: "https://evil.example.org" })).toBe(403);

@@ -34,6 +34,24 @@ def write_env(path, values):
     path.chmod(0o600)
 
 
+def listen_port(value):
+    try:
+        port = int(value)
+    except (TypeError, ValueError):
+        raise ValueError("监听端口须为 1 至 65535 的整数") from None
+    if not 1 <= port <= 65535:
+        raise ValueError("监听端口须为 1 至 65535 的整数")
+    return str(port)
+
+
+def bind_address(value):
+    try:
+        address = ipaddress.ip_address(value)
+    except ValueError:
+        raise ValueError("监听地址须为有效 IP 地址，例如 0.0.0.0 或 127.0.0.1") from None
+    return f"[{address.compressed}]" if address.version == 6 else address.compressed
+
+
 def public_url(value):
     try:
         parsed = urlsplit(value)
@@ -147,9 +165,15 @@ def main(argv=None):
     )
     parser.add_argument("--public-url", help="例如 http://192.168.137.90:8080")
     parser.add_argument("--profile", choices=("lab", "public"), default="lab")
+    parser.add_argument("--listen-port", help="宿主机 HTTP 监听端口，默认保留现值或 8080")
+    parser.add_argument(
+        "--bind-address", help="宿主机监听 IP，例如 0.0.0.0；与客户端地址分别配置"
+    )
     options = parser.parse_args(argv)
     os.umask(0o077)
     if options.profile == "public":
+        if options.listen_port is not None or options.bind_address is not None:
+            parser.error("监听端口参数仅用于 lab profile；public profile 使用正式 HTTPS 入口")
         value = options.public_url or read_env(ROOT / ".env.public").get("PUBLIC_ORIGIN")
         if not value:
             parser.error("公网配置必须提供 --public-url https://正式域名")
@@ -167,6 +191,20 @@ def main(argv=None):
         )
     except ValueError as error:
         parser.error(str(error))
+    try:
+        port = listen_port(
+            options.listen_port
+            if options.listen_port is not None
+            else root.get("LAB_HTTP_PORT", "8080")
+        )
+        explicit_bind = (
+            bind_address(options.bind_address)
+            if options.bind_address is not None
+            else None
+        )
+    except ValueError as error:
+        parser.error(str(error))
+    root["LAB_HTTP_PORT"] = port
     root["LAB_PUBLIC_URL"] = base_url
     if options.public_url is not None:
         root["LAB_BIND_ADDRESS"] = (
@@ -175,6 +213,23 @@ def main(argv=None):
             else "0.0.0.0"
         )
     root.setdefault("LAB_BIND_ADDRESS", "127.0.0.1")
+    if explicit_bind is not None:
+        root["LAB_BIND_ADDRESS"] = explicit_bind
+    allowed_origins = ",".join(
+        dict.fromkeys(
+            (
+                base_url,
+                "http://localhost:3000",
+                "http://localhost:3001",
+                "http://localhost:8080",
+                "http://127.0.0.1:3000",
+                "http://127.0.0.1:3001",
+                "http://127.0.0.1:8080",
+                f"http://localhost:{port}",
+                f"http://127.0.0.1:{port}",
+            )
+        )
+    )
     defaults = {
         "POSTGRES_USER": "plane",
         "POSTGRES_DB": "plane",
@@ -222,11 +277,8 @@ def main(argv=None):
             "SPACE_BASE_PATH": "/spaces",
             "LIVE_BASE_URL": base_url,
             "LIVE_BASE_PATH": "/live",
-            "CORS_ALLOWED_ORIGINS": (
-                base_url
-                + ",http://localhost:3000,http://localhost:3001,http://localhost:8080"
-                + ",http://127.0.0.1:3000,http://127.0.0.1:3001,http://127.0.0.1:8080"
-            ),
+            "CORS_ALLOWED_ORIGINS": allowed_origins,
+            "CSRF_TRUSTED_ORIGINS": allowed_origins,
             "LAB_AUTH_ENABLED": "1",
             "LAB_TOTP_KEY_FILE": "/run/secrets/lab_totp_key",
             "POSTHOG_API_KEY": "",
@@ -262,13 +314,17 @@ def main(argv=None):
             "PORT": "3000",
             "API_BASE_URL": "http://api:8000",
             "WEB_BASE_URL": base_url,
+            "CORS_ALLOWED_ORIGINS": base_url,
             "LIVE_BASE_URL": base_url,
             "LIVE_BASE_PATH": "/live",
             "LIVE_SERVER_SECRET_KEY": root["LIVE_SERVER_SECRET_KEY"],
             "REDIS_URL": "redis://plane-redis:6379/",
         },
     )
-    print(f"访问地址已配置：{base_url}；认证密钥保留在 .secrets/lab-totp.key。")
+    print(
+        f"访问地址已配置：{base_url}；监听 {root['LAB_BIND_ADDRESS']}:{port}；"
+        "认证密钥保留在 .secrets/lab-totp.key。"
+    )
 
 
 if __name__ == "__main__":

@@ -5,7 +5,7 @@ import type { IncomingMessage } from "node:http";
 import type { WebSocket } from "ws";
 import { env } from "@/env";
 import { redisManager } from "@/redis";
-import { validOrigin } from "./auth";
+import { validSocketOrigin } from "./auth";
 
 const ADMIT = `
 for i,key in ipairs(KEYS) do
@@ -37,7 +37,7 @@ export function socketSource(request: IncomingMessage) {
 
 /** Runs before the HTTP upgrade allocates Hocuspocus connections or queues. */
 export const verifySocketHandshake: WebSocket.VerifyClientCallbackAsync = (info, done) => {
-  if (!validOrigin(info.origin)) {
+  if (!validSocketOrigin(info.origin)) {
     done(false, 403, "Origin denied");
     return;
   }

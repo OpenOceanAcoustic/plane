@@ -11,6 +11,7 @@ from .bounty_urls import bounty_patterns
 from .lifecycle_workflow import lifecycle_patterns
 from .finance_urls import finance_patterns
 from .auth_views import LabAuthView, LabBrowserView, LabSignOutView
+from .mobile import LiveTicketView
 from .contributions import ContributionsCalendarView, ContributionsEntriesView, ContributionsView
 from .planning_views import (
     BlockDetailView,
@@ -41,7 +42,9 @@ auth_patterns = [
     path("enroll/", LabAuthView.as_view(operation="enroll")),
     path("confirm/", LabAuthView.as_view(operation="confirm")),
     path("sign-in/", LabAuthView.as_view(operation="signin")),
+    path("mobile/sign-in/", LabAuthView.as_view(operation="mobile")),
     path("admin/sign-in/", LabAuthView.as_view(operation="admin")),
+    path("mobile/admin/sign-in/", LabAuthView.as_view(operation="mobile-admin")),
     path("admin/reauthenticate/", LabAuthView.as_view(operation="reauthenticate")),
     path("sign-out/", LabSignOutView.as_view()),
     path("admin/sign-out/", LabSignOutView.as_view()),
@@ -54,6 +57,7 @@ auth_patterns = [
 ]
 
 business_patterns = [
+    path("live-ticket/", LiveTicketView.as_view()),
     path("me/contributions/", ContributionsView.as_view()),
     path("me/contributions/calendar/", ContributionsCalendarView.as_view()),
     path("me/contributions/entries/", ContributionsEntriesView.as_view()),

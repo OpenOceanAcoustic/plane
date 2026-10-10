@@ -30,6 +30,10 @@ export class PdfAuthenticationError extends Schema.TaggedError<PdfAuthentication
   message: Schema.NonEmptyTrimmedString,
 }) {}
 
+export class PdfPermissionError extends Schema.TaggedError<PdfPermissionError>()("PdfPermissionError", {
+  message: Schema.NonEmptyTrimmedString,
+}) {}
+
 export class PdfContentFetchError extends Schema.TaggedError<PdfContentFetchError>()("PdfContentFetchError", {
   message: Schema.NonEmptyTrimmedString,
   cause: Schema.optional(Schema.Unknown),
@@ -60,6 +64,7 @@ export class PdfTimeoutError extends Schema.TaggedError<PdfTimeoutError>()("PdfT
 export type PdfExportError =
   | PdfValidationError
   | PdfAuthenticationError
+  | PdfPermissionError
   | PdfContentFetchError
   | PdfMetadataFetchError
   | PdfImageProcessingError

@@ -22,6 +22,7 @@ from .auth import (
     reauthenticate_admin,
     revoke_browser,
 )
+from .mobile import session_capabilities
 
 
 @method_decorator([csrf_protect, never_cache, sensitive_post_parameters()], name="dispatch")
@@ -32,6 +33,8 @@ class LabAuthView(View):
     def post(self, request):
         from .security import limit_auth, security_event
 
+        admin = self.operation in ("admin", "mobile-admin")
+        mobile = self.operation in ("mobile", "mobile-admin")
         try:
             if len(request.body) > 8192:
                 limit_auth(request)
@@ -55,7 +58,7 @@ class LabAuthView(View):
                 reauthenticate_admin(data, request)
                 result, status = {"message": "验证成功", "expires_at": request.session["lab_expires_at"]}, 200
             else:
-                user = authenticate(data, request, admin=self.operation == "admin")
+                user = authenticate(data, request, admin=admin, mobile=mobile)
                 result, status = (
                     {
                         "username": user.username,
@@ -64,9 +67,11 @@ class LabAuthView(View):
                     },
                     200,
                 )
+                if mobile:
+                    result.update(session_capabilities(request))
             if self.operation in ("enroll", "confirm"):
                 security_event(request, "auth.enrollment", purpose=self.operation, result="success")
-            return browser_cookie_response(request, JsonResponse(result, status=status), self.operation == "admin")
+            return browser_cookie_response(request, JsonResponse(result, status=status), admin)
         except AccessError as error:
             if error.code in ("RATE_LIMITED", "AUTH_UNAVAILABLE", "INVALID_REQUEST", "REQUEST_TOO_LARGE"):
                 security_event(request, "auth.denied", reason=error.code, result="denied")
@@ -77,7 +82,7 @@ class LabAuthView(View):
             )
             if error.retry_after:
                 response["Retry-After"] = str(error.retry_after)
-            return browser_cookie_response(request, response, self.operation == "admin")
+            return browser_cookie_response(request, response, admin)
         except (ValueError, TypeError):
             return JsonResponse({"error": "请求格式无效", "code": "INVALID_REQUEST"}, status=400)
 

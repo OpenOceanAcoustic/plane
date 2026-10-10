@@ -9,7 +9,13 @@ import { Effect, Schema, Cause } from "effect";
 import { Controller, Post } from "@plane/decorators";
 import { logger } from "@plane/logger";
 import { AppError } from "@/lib/errors";
-import { PdfExportRequestBody, PdfValidationError, PdfAuthenticationError } from "@/schema/pdf-export";
+import { authorizeDataExport } from "@/lib/export-authorization";
+import {
+  PdfExportRequestBody,
+  PdfValidationError,
+  PdfAuthenticationError,
+  PdfPermissionError,
+} from "@/schema/pdf-export";
 import { PdfExportService, exportToPdf } from "@/services/pdf-export";
 import type { PdfExportInput } from "@/services/pdf-export";
 
@@ -21,7 +27,7 @@ export class PdfExportController {
   private parseRequest(
     req: Request,
     requestId: string
-  ): Effect.Effect<PdfExportInput, PdfValidationError | PdfAuthenticationError> {
+  ): Effect.Effect<PdfExportInput, PdfValidationError | PdfAuthenticationError | PdfPermissionError> {
     return Effect.gen(function* () {
       const cookie = req.headers.cookie || "";
       if (!cookie) {
@@ -31,6 +37,14 @@ export class PdfExportController {
           })
         );
       }
+
+      yield* Effect.tryPromise({
+        try: () => authorizeDataExport(cookie),
+        catch: (error) =>
+          error instanceof AppError && error.statusCode === 403
+            ? new PdfPermissionError({ message: "手机端不支持数据导出" })
+            : new PdfAuthenticationError({ message: "Authentication required" }),
+      });
 
       const body = yield* Schema.decodeUnknown(PdfExportRequestBody)(req.body).pipe(
         Effect.mapError(
@@ -72,6 +86,8 @@ export class PdfExportController {
           return { status: 400, error: message };
         case "PdfAuthenticationError":
           return { status: 401, error: message };
+        case "PdfPermissionError":
+          return { status: 403, error: message };
         case "PdfContentFetchError":
           return {
             status: message.includes("not found") ? 404 : 502,

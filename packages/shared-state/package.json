@@ -10,6 +10,7 @@
   "types": "./dist/index.d.ts",
   "exports": {
     ".": "./dist/index.js",
+    "./mobile.store": "./dist/mobile.store.js",
     "./package.json": "./package.json"
   },
   "scripts": {

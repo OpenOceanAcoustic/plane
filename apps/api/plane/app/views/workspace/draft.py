@@ -35,6 +35,7 @@ from plane.db.models import (
     ModuleIssue,
     DraftIssueCycle,
     Workspace,
+    ProjectMember,
     FileAsset,
 )
 from .. import BaseViewSet
@@ -117,6 +118,7 @@ class WorkspaceDraftIssueViewSet(BaseViewSet):
             context={
                 "workspace_id": workspace.id,
                 "project_id": request.data.get("project_id", None),
+                "request": request,
             },
         )
         if serializer.is_valid():
@@ -156,7 +158,7 @@ class WorkspaceDraftIssueViewSet(BaseViewSet):
     @allow_permission(
         allowed_roles=[ROLE.ADMIN, ROLE.MEMBER],
         creator=True,
-        model=Issue,
+        model=DraftIssue,
         level="WORKSPACE",
     )
     def partial_update(self, request, slug, pk):
@@ -174,6 +176,7 @@ class WorkspaceDraftIssueViewSet(BaseViewSet):
             context={
                 "project_id": project_id,
                 "cycle_id": request.data.get("cycle_id", "not_provided"),
+                "request": request,
             },
         )
 
@@ -183,7 +186,7 @@ class WorkspaceDraftIssueViewSet(BaseViewSet):
             return Response(status=status.HTTP_204_NO_CONTENT)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
-    @allow_permission(allowed_roles=[ROLE.ADMIN], creator=True, model=Issue, level="WORKSPACE")
+    @allow_permission(allowed_roles=[ROLE.ADMIN], creator=True, model=DraftIssue, level="WORKSPACE")
     def retrieve(self, request, slug, pk=None):
         issue = self.get_queryset().filter(pk=pk, created_by=request.user).first()
 
@@ -204,13 +207,18 @@ class WorkspaceDraftIssueViewSet(BaseViewSet):
 
     @allow_permission(allowed_roles=[ROLE.ADMIN, ROLE.MEMBER], level="WORKSPACE")
     def create_draft_to_issue(self, request, slug, draft_id):
-        draft_issue = self.get_queryset().filter(pk=draft_id).first()
+        draft_issue = self.get_queryset().filter(pk=draft_id, created_by=request.user).first()
+        if draft_issue is None:
+            return Response({"error": "Draft not found"}, status=status.HTTP_404_NOT_FOUND)
 
         if not draft_issue.project_id:
             return Response(
                 {"error": "Project is required to create an issue."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
+
+        if not ProjectMember.objects.filter(project_id=draft_issue.project_id, member=request.user, is_active=True, role__gte=ROLE.MEMBER.value, project__archived_at__isnull=True).exists():
+            return Response({"error": "Active project membership is required"}, status=status.HTTP_403_FORBIDDEN)
 
         serializer = IssueCreateSerializer(
             data=request.data,
