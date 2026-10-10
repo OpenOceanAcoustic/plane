@@ -2,6 +2,12 @@
 
 应用：OpenOceanAcoustic 1.0.0（`org.openoceanacoustic.mobile`）。源码位于同一仓库的 `apps/mobile`，分支 `feat/android-app`；主应用、God Mode 和 Space 使用独立移动界面和真实后端接口。
 
+本次交付文件位于 `/mnt/repo/ly/android-delivery/OpenOceanAcoustic-1.0.0/`，APK 为 4,287,739 字节。产品实现提交为 `aa8a20b106e3d1dc16f4f4fb4011e470b162e588`，后续提交只补充测试支持和交付记录。
+
+SHA-256：`fd684efe685e663d2a6a40d8a801c6c2b92ce310a851c8a6da121f7bd7324441`。
+
+用户于 2026-10-10 决定自行测试，后续测试已停止。签名与原生 HTTP/Keystore 验证通过，安卓 React 界面验收尚未完成；浏览器测试的覆盖和实际设备边界见验收记录。
+
 ## 安装
 
 1. 将签名的 `OpenOceanAcoustic-1.0.0.apk` 传到手机，允许当前文件管理器安装此应用，然后打开 APK 安装。

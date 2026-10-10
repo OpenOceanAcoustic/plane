@@ -31,3 +31,7 @@ TDD at public API contracts, transport/server-switch boundaries, pure monetary/p
 ## Tickets and review
 
 Local dependency tickets are `.scratch/android-app/issues/01.md` through `08.md`. Their outcomes and verification are recorded in `android-app-progress.md`. Run Standards and Spec reviews against the pinned baseline and this specification, resolve findings, then commit the final implementation. No deployment or production account changes are implied by local build and test authorization.
+
+## User acceptance handoff
+
+On 2026-10-10 the user instructed “不用测试了，我自己测试”. Stop further test execution and emulator diagnosis, deliver the existing signed APK and instructions, and keep remaining Android UI acceptance explicitly unverified. This changes the final testing handoff; the implemented functional scope and existing passing evidence remain as specified.

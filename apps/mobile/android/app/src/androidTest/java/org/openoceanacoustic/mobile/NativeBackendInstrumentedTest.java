@@ -17,7 +17,7 @@ import org.junit.Assume;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 
-/** Opt-in isolated backend: fixtures are copied only into the debug app's private directory. */
+/** Opt-in isolated backend: fixtures are copied only into the isolated target app's private directory. */
 @RunWith(AndroidJUnit4.class)
 public class NativeBackendInstrumentedTest {
     private static JSONObject object(NativeHttp.Result response) throws Exception {

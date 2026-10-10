@@ -4,6 +4,8 @@ android {
     namespace = "org.openoceanacoustic.mobile"
     compileSdk = rootProject.ext.compileSdkVersion
     buildToolsVersion = "36.0.0"
+    // Allows device integration checks against the actual release certificate and APK.
+    testBuildType = project.findProperty('mobileTestBuildType') ?: 'debug'
     defaultConfig {
         applicationId "org.openoceanacoustic.mobile"
         minSdkVersion rootProject.ext.minSdkVersion

@@ -48,6 +48,9 @@ Sessions are scoped by origin and persisted with an AES-GCM key in Android Keyst
 GET redirects may fetch external attachments after removing cookies and CSRF/authorization headers;
 cross-origin write redirects are refused. Attachment content is streamed, not stored in JavaScript.
 The FileProvider exposes only the private downloads directory for granted viewer intents.
+Native failure diagnostics contain only a fixed operation name, error category and exception class;
+request values, exception messages, credentials and stack traces are omitted. Session storage failures
+return `MOBILE_SESSION_STORAGE` separately from network or file failures.
 
 ## Tests
 
@@ -59,7 +62,26 @@ cd apps/mobile/android
 # Or run both device tests against a private isolated-backend fixture (never commit it):
 cd ../../..
 ANDROID_HOME=/absolute/path/to/sdk tools/mobile/run-device-checks.py --fixture /private/fixture.json
+# To test the exact signed delivery APK, build a test APK with the same private signing properties:
+cd apps/mobile/android
+./gradlew -PmobileTestBuildType=release :app:assembleReleaseAndroidTest
+cd ../../..
+ANDROID_HOME=/absolute/path/to/sdk tools/mobile/run-device-checks.py --variant release \
+  --apk /absolute/output/OpenOceanAcoustic-1.0.0.apk --fixture /private/fixture.json
+# After the exact delivery APK and the matching test APK are installed:
+ANDROID_HOME=/absolute/path/to/sdk tools/mobile/run-device-checks.py --variant release \
+  --skip-install --ui --fixture /private/fixture.json
 ```
 
 Native transport tests use real local HTTP servers at the public HTTP seam. They cover cookie restart,
 origin isolation, redirects, signed upload credential isolation and cookie expiry/path behavior.
+Release fixture checks require an isolated rooted emulator because release apps disable `run-as`.
+The helper writes the fixture only into the target app's private directory and removes it afterward.
+The default instrumentation build type remains debug; `mobileTestBuildType` changes test packaging only.
+
+UI acceptance runs MainActivity and controls its bundled React DOM through WebView, including real
+server selection, login, task navigation, native back, a profile write verified with native HTTP,
+light/dark themes and Activity/Bridge recreation with the persisted session. It does not enable
+WebView debugging or add a product test mode. Fixtures are required and skipped UI tests fail the
+helper. Authenticated home screenshots are saved under the app external files directory in
+`native-ui-evidence`; login forms and credentials are not captured.

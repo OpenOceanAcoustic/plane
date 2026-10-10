@@ -4,14 +4,14 @@ Baseline: `98c234c4227e5265cb3f2a97ab3ae4469c67af1c`. Specification: [android-ap
 
 | Ticket | Outcome                                                                                                | State       |
 | ------ | ------------------------------------------------------------------------------------------------------ | ----------- |
-| 1      | Native bootstrap, server configuration, real authentication, encrypted session and export restrictions | in progress |
-| 2      | Workspaces, projects, tasks and attachments                                                            | in progress |
-| 3      | Personal/team planning                                                                                 | in progress |
-| 4      | Collaborative documents and Space                                                                      | in progress |
-| 5      | Bounties and acceptance                                                                                | in progress |
-| 6      | Finance, analytics and My Projects & VC                                                                | in progress |
-| 7      | Settings and God Mode                                                                                  | in progress |
-| 8      | Coverage, integration, reviews and signed APK                                                          | pending     |
+| 1      | Native bootstrap, server configuration, real authentication, encrypted session and export restrictions | implemented |
+| 2      | Workspaces, projects, tasks and attachments                                                            | implemented |
+| 3      | Personal/team planning                                                                                 | implemented |
+| 4      | Collaborative documents and Space                                                                      | implemented |
+| 5      | Bounties and acceptance                                                                                | implemented |
+| 6      | Finance, analytics and My Projects & VC                                                                | implemented |
+| 7      | Settings and God Mode                                                                                  | implemented |
+| 8      | Coverage, integration, reviews and signed APK                                                          | delivered; UI acceptance handed off |
 
 Verification results must be appended with exact commands and actual environments. A state is completed only after its acceptance criteria pass.
 
@@ -37,4 +37,20 @@ Final emulator UI, dual-axis review, final release signature and artifact SHA-25
 - Native JVM tests: **7/7**; native lint has zero errors (two non-security dependency/resource advisories). Safe diagnostics tests verify that credentials and exception messages never appear in logs.
 - [Independent Standards/Spec findings and resolutions](android-review.md). The Spec follow-up confirmed the other corrections and found the rapid-edit cache case, which was then fixed and tested. The original intake-alias concern was retracted after reading the actual endpoint mapping.
 
-Modern Android release UI acceptance is still pending: software-only emulators encountered system watchdog/ANR delays. APK signing alone does not complete ticket 8.
+## Exact release Android verification
+
+- Delivered product source: `aa8a20b106e3d1dc16f4f4fb4011e470b162e588`; subsequent device-test support does not change the application bundle.
+- The signed release APK is **4,287,739 bytes**; SHA-256: `fd684efe685e663d2a6a40d8a801c6c2b92ce310a851c8a6da121f7bd7324441`. `apksigner verify --verbose --print-certs` passed with v2 signing, RSA 3072 and certificate SHA-256 `6fab1f84864c680f21c34e5551005faba32ba8074a7ca9ed236e22faf9f3bed5`. Independent checksum and manifest checks passed.
+- **Android 13/API33 AOSP default x86_64 emulator**, AVD `ooa_api33`, software-only TCG/SwiftShader, 480×800 pixels at density 213, bundled **WebView 101.0.4951.61**. Exact delivered release APK and a separately signed test APK installed successfully; the installed `base.apk` was independently read back and its hash matches the delivery file.
+- **2/2 native instrumentation tests passed on that signed release**: actual Keystore encryption/restore/origin isolation/clear, real mobile dynamic-code sign-in, Android session and export capability, project query, profile write/read/restore, dynamic-code replay rejection and session-clear rejection. The isolated backend was reached through `adb reverse tcp:18100 tcp:18100` and a private localhost fixture because this software emulator did not acquire a network route. This is actual native HTTP, not a mocked response.
+- Public evidence: delivery `evidence/api33-release-native-tests.log` and `evidence/device-installed-apk.json`. The signing key and private backend fixtures are outside Git and the delivery folder.
+
+## Delivery and user acceptance handoff
+
+On **2026-10-10**, the user explicitly instructed: “不用测试了，我自己测试”. Further tests and emulator diagnosis were stopped; isolated emulator test fixtures were removed and the emulator was shut down. Implementation and the signed APK are delivered. Remaining Android React UI acceptance is **handed off to the user**, rather than marked as passed.
+
+The API33 UI instrumentation did not complete: its stock WebView 101 renderer crashed during initialization. No passing UI business loop or authenticated screenshot is claimed. API36/Google APIs software emulation also encountered system watchdog/ANR delays; its diagnostic screenshot is explicitly named `api36-initial-launch-not-accepted.png`. The unsuccessful API33 attempt is recorded in delivery `evidence/api33-release-ui-not-accepted.log`. No physical-device tests were performed.
+
+The implemented UI test class, including Activity/Bridge session restoration, was compiled before the failed attempt. The final additional stage logging and streamed helper output were not recompiled or rerun after the user's stop instruction; they do not change the delivered APK. Earlier native, API, Live and browser results above remain valid within their stated boundaries.
+
+Delivery folder: `/mnt/repo/ly/android-delivery/OpenOceanAcoustic-1.0.0/`, containing the APK, SHA-256 file, verified signature, install guide, build metadata and public evidence. Persistent signing materials are outside Git at `/mnt/repo/ly/.android-release/`. Production services and deployed Web/Admin files were not replaced; install the updated API and Live source before connecting a phone.
