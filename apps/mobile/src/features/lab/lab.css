@@ -1331,7 +1331,10 @@
 }
 .lab-week-hours > span {
   height: 42px;
-  padding: 5px 3px;
+  padding: 5px 1px;
+  white-space: nowrap;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
 }
 .lab-week-day {
   height: 546px;
@@ -1340,6 +1343,11 @@
   background: repeating-linear-gradient(transparent, transparent 41px, var(--line) 41px, var(--line) 42px);
 }
 .lab-week-event {
+  display: flex;
+  align-items: flex-start;
+  justify-content: flex-start;
+  text-align: left;
+  overflow-wrap: anywhere;
   position: absolute;
   left: 2px;
   right: 2px;
