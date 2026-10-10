@@ -1,7 +1,6 @@
 import { useContext, useEffect, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import useSWR from "swr";
-import { ChevronLeft, X } from "lucide-react";
 import sanitizeHtml from "sanitize-html";
 import type { ApiClient } from "../lib/client";
 import { isTopDialog } from "../lib/dialog";
@@ -107,23 +106,23 @@ export function PageHeading({
   if (header?.title && !inline)
     return (
       <>
-        {header.detail ? (
-          <span className="detail-issue-id">{title}</span>
-        ) : (
-          createPortal(
-            <>
-              <h1>{title}</h1>
-              {subtitle && <small className="header-project-code">{subtitle}</small>}
-            </>,
-            header.title
-          )
+        {createPortal(
+          <>
+            <h1>{title}</h1>
+            {subtitle && <small className="header-project-code">{subtitle}</small>}
+          </>,
+          header.title
         )}
         {children && header.actions && createPortal(children, header.actions)}
         {onBack &&
           header.back &&
           createPortal(
-            <button className="icon-button" onClick={onBack} aria-label="返回">
-              <CanonicalIcon name="back" />
+            <button className="icon-button m3-icon-button" onClick={() => header.onBack(onBack)} aria-label="返回">
+              <CanonicalIcon
+                name={header.backIconRotated ? "arrow" : "back"}
+                size={header.backIconSize}
+                style={header.backIconRotated ? { transform: "rotate(180deg)" } : undefined}
+              />
             </button>,
             header.back
           )}
@@ -133,7 +132,7 @@ export function PageHeading({
     <div className="page-heading">
       {onBack && (
         <button className="icon-button" onClick={onBack} aria-label="返回">
-          <ChevronLeft />
+          <CanonicalIcon name="back" size={24} />
         </button>
       )}
       <div>
@@ -268,12 +267,14 @@ export function RecordList({
 }
 export function Sheet({
   title,
+  subtitle,
   children,
   onClose,
   busy = false,
   className = "",
 }: {
   title: string;
+  subtitle?: string;
   children: ReactNode;
   onClose: () => void;
   busy?: boolean;
@@ -324,9 +325,12 @@ export function Sheet({
       <div className={`sheet ${className}`} role="dialog" aria-modal="true" aria-label={title} ref={ref} tabIndex={-1}>
         <div className="handle" />
         <header>
-          <h2>{title}</h2>
+          <div>
+            <h2>{title}</h2>
+            {subtitle && <p className="sheet-subtitle">{subtitle}</p>}
+          </div>
           <button className="icon-button" aria-label="关闭" onClick={onClose} disabled={busy}>
-            <X />
+            <CanonicalIcon name="close" size={22} />
           </button>
         </header>
         {children}

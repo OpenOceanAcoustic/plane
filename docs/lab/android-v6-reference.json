@@ -1,0 +1,338 @@
+{
+  "baseline": "V6",
+  "archiveSha256": "a22370a06f7ed0474040eaba8fb46e58a8886f9c1361424938a56ada54071889",
+  "appContentHeight": 828,
+  "firstScreens": 52,
+  "expandedPages": 12,
+  "previewOnly": "Rounded outer frame and PNG row 828 are not Android app widgets; system bars are absent in references.",
+  "referenceImages": [
+    {
+      "path": "renders/360/dark/biz-analytics-vc.png",
+      "sha256": "7721d202344f2498236f932094a593019a666cf9e223cbe7ee1978947c95aba9",
+      "kind": "first-screen"
+    },
+    {
+      "path": "renders/360/dark/biz-finance-actions.png",
+      "sha256": "2a8c9a9b648dd83998a1d0373ef00733a10cce53062d2c79398be68993330fd6",
+      "kind": "first-screen"
+    },
+    {
+      "path": "renders/360/dark/biz-finance.png",
+      "sha256": "40556ee04f889502006996634c8d8362ae505d163084986f4f7b8ada3cfb5b89",
+      "kind": "first-screen"
+    },
+    {
+      "path": "renders/360/dark/biz-market.png",
+      "sha256": "2f72ac2ea5274f347cd56b266c41aa4c1303da9d024711f137d44d02c9aed6fc",
+      "kind": "first-screen"
+    },
+    {
+      "path": "renders/360/dark/native-home.png",
+      "sha256": "185be3689231569b7160c0dfd0ff8a2929fd323a95273ebbb8dde50661200837",
+      "kind": "first-screen"
+    },
+    {
+      "path": "renders/360/dark/native-issue-detail.png",
+      "sha256": "2b1c27b552b4b8b3bbf8d7eba1c9d761a6305ea3c41b5916783aa7872f7ecd64",
+      "kind": "first-screen"
+    },
+    {
+      "path": "renders/360/dark/native-issue-state.png",
+      "sha256": "8afccc26b7dc68b7c8f94d8eedafb7493c3acb1ac3b98f3973563b9fe98c7fea",
+      "kind": "first-screen"
+    },
+    {
+      "path": "renders/360/dark/native-project-list.png",
+      "sha256": "ee9fd292a18eb94df3eab811121afc295e2d111ea81b7dd53d1ca69ef724ade6",
+      "kind": "first-screen"
+    },
+    {
+      "path": "renders/360/dark/native-project-overview.png",
+      "sha256": "d5257e0c7f808e8d17678c8b096f001873fea7b3d1413396dd2de936146728fe",
+      "kind": "first-screen"
+    },
+    {
+      "path": "renders/360/dark/native-projects.png",
+      "sha256": "c42f17daee506e9547530cde8ae497dff78fdafbeba438993c097d797487cf9b",
+      "kind": "first-screen"
+    },
+    {
+      "path": "renders/360/dark/nav-more.png",
+      "sha256": "2298e2d10986dbe0fc0db1425622393d79121db39a581190fed6ef3cd0cb6a9a",
+      "kind": "first-screen"
+    },
+    {
+      "path": "renders/360/dark/plan-home.png",
+      "sha256": "0a2dbb4b14c692b8952c36e0a9dfe967f34c6ee456ec82ae988fcfaf30e9980f",
+      "kind": "first-screen"
+    },
+    {
+      "path": "renders/360/dark/settings-profile.png",
+      "sha256": "06045da33303880b5da806f5774d8402445f7f5bb194207c83b9b8bbee5bca1d",
+      "kind": "first-screen"
+    },
+    {
+      "path": "renders/360/light/biz-analytics-vc.png",
+      "sha256": "50d4683463eb078ed02cfd6c1794bd08fc9b3834cbd689c0786f3e6403bad623",
+      "kind": "first-screen"
+    },
+    {
+      "path": "renders/360/light/biz-finance-actions.png",
+      "sha256": "d7b8aac1591a4bd19389e562214fc94b42400259d40e549a501710d7e0d2f324",
+      "kind": "first-screen"
+    },
+    {
+      "path": "renders/360/light/biz-finance.png",
+      "sha256": "cee124920dc0dca74e95da12d901d6845ab6bda5856b154bbe205beaef0c34a7",
+      "kind": "first-screen"
+    },
+    {
+      "path": "renders/360/light/biz-market.png",
+      "sha256": "7bdb2360f1386964299803dbb79dd254277f23e814ab87f52cc1114395df8bff",
+      "kind": "first-screen"
+    },
+    {
+      "path": "renders/360/light/native-home.png",
+      "sha256": "6307934100e32f3c1b8d501c0c61d30d2d7d0b8ddc9881af6e2c4d153eeda696",
+      "kind": "first-screen"
+    },
+    {
+      "path": "renders/360/light/native-issue-detail.png",
+      "sha256": "d59413ab41f26d65baaa951a46650b7163026268db755f87fa58f553c3ebf59d",
+      "kind": "first-screen"
+    },
+    {
+      "path": "renders/360/light/native-issue-state.png",
+      "sha256": "ad596302141503165e45e4bd0d95ed40bf021f281f05bd7d297a216c7b016dbc",
+      "kind": "first-screen"
+    },
+    {
+      "path": "renders/360/light/native-project-list.png",
+      "sha256": "232f13a1d661b54d08f3b6a080b4fd8d88f3a35c388b34ffcfcb37192d04c03a",
+      "kind": "first-screen"
+    },
+    {
+      "path": "renders/360/light/native-project-overview.png",
+      "sha256": "9dce56282516b109d78858ff167043e95fe91d496083ab94f3cf4e480ed2658a",
+      "kind": "first-screen"
+    },
+    {
+      "path": "renders/360/light/native-projects.png",
+      "sha256": "0b9866a8f17384e9f4eed9f925eca36fa373560c9854a8ba7b884058a9ae93f9",
+      "kind": "first-screen"
+    },
+    {
+      "path": "renders/360/light/nav-more.png",
+      "sha256": "4a3656d5f693e44937b7b40fbfb8930158860f96c7cddb357054d46590b343dc",
+      "kind": "first-screen"
+    },
+    {
+      "path": "renders/360/light/plan-home.png",
+      "sha256": "98f72bebbb0401599eb72b54ac7f46fdf4c9a9faca70dff269b26d953892ad80",
+      "kind": "first-screen"
+    },
+    {
+      "path": "renders/360/light/settings-profile.png",
+      "sha256": "029fe4150d07d765fb5e43af46675f68a26530d70eb7d55245ef2fc81976d7c9",
+      "kind": "first-screen"
+    },
+    {
+      "path": "renders/412/dark/biz-analytics-vc.png",
+      "sha256": "96139f26740d904465a998f25fd134a9fcde43ab42236d77221858e78ce9af26",
+      "kind": "first-screen"
+    },
+    {
+      "path": "renders/412/dark/biz-finance-actions.png",
+      "sha256": "eac632fd451a9bd8c2ac85ee8bfb8c09ebcd73447aa4f686cceb04ca2a274d19",
+      "kind": "first-screen"
+    },
+    {
+      "path": "renders/412/dark/biz-finance.png",
+      "sha256": "b9fc1481d47ed5a0abf24197c964df7ac16f56a6d47519ae043e11fbd3088083",
+      "kind": "first-screen"
+    },
+    {
+      "path": "renders/412/dark/biz-market.png",
+      "sha256": "3a914ed552c5bb8992dfbdbea7cb5f5734ab13065500275e9d791fdf7c5203bf",
+      "kind": "first-screen"
+    },
+    {
+      "path": "renders/412/dark/native-home.png",
+      "sha256": "07f64f901ba39e04681fc8af677d5f7993d06aba94a798004563aed5e1abb4e2",
+      "kind": "first-screen"
+    },
+    {
+      "path": "renders/412/dark/native-issue-detail.png",
+      "sha256": "28362811e56ca732ce2e70aea5c9b00c2901be64c858545e21291465fa6f48bd",
+      "kind": "first-screen"
+    },
+    {
+      "path": "renders/412/dark/native-issue-state.png",
+      "sha256": "e56e93f2f3ec2326000af52138ac98b28b597fa763a98805388ae77eb7c5be40",
+      "kind": "first-screen"
+    },
+    {
+      "path": "renders/412/dark/native-project-list.png",
+      "sha256": "2133c0e9692f7e535862ffe6eaf21c05f1c1505b66c6035f6f2ab5f6d84284a1",
+      "kind": "first-screen"
+    },
+    {
+      "path": "renders/412/dark/native-project-overview.png",
+      "sha256": "09e8c06d82e96ccc6af71e652834adf1ec11b125611d967200075398307a39f5",
+      "kind": "first-screen"
+    },
+    {
+      "path": "renders/412/dark/native-projects.png",
+      "sha256": "df35ad5fb60f13eec333a65a670fb40ca395be35c26832529fa2a10a5f8e1d6f",
+      "kind": "first-screen"
+    },
+    {
+      "path": "renders/412/dark/nav-more.png",
+      "sha256": "a1b3671e54ebfc16cbfefb511407b10607144b34e0598ce3fe39b89dc58311a7",
+      "kind": "first-screen"
+    },
+    {
+      "path": "renders/412/dark/plan-home.png",
+      "sha256": "d2d450bb3b60a8c8caee6cb85544775f0f44395f2b02297e73cc8d1827870325",
+      "kind": "first-screen"
+    },
+    {
+      "path": "renders/412/dark/settings-profile.png",
+      "sha256": "4ae93f22fc1df56e290019f3e0421978260d042e401290d2ac43355ab8a661c6",
+      "kind": "first-screen"
+    },
+    {
+      "path": "renders/412/light/biz-analytics-vc.png",
+      "sha256": "06b645b82be90cd591624b29539543468530b6d2d4c0000ba958ac20e7a98707",
+      "kind": "first-screen"
+    },
+    {
+      "path": "renders/412/light/biz-finance-actions.png",
+      "sha256": "bbb896aeac82591ad4cb27765889fa9b4ed3640fe2eee220eb1f36802be67b5b",
+      "kind": "first-screen"
+    },
+    {
+      "path": "renders/412/light/biz-finance.png",
+      "sha256": "5ecb855fa605348540c64b919b139e16c08766658f5c35ceaedc47f96b84181f",
+      "kind": "first-screen"
+    },
+    {
+      "path": "renders/412/light/biz-market.png",
+      "sha256": "687528caa8d6aa22cdbc85b426b3ca3e3819bea6db8137bcb0bc8902858cbccf",
+      "kind": "first-screen"
+    },
+    {
+      "path": "renders/412/light/native-home.png",
+      "sha256": "ac1a3282eee12bfb39029a00a185d617b2ba1a3a4dd5901f800b49fb33633f58",
+      "kind": "first-screen"
+    },
+    {
+      "path": "renders/412/light/native-issue-detail.png",
+      "sha256": "5ca747a8a6f5f803ecd80357a190b398d7e104509644ee11728ae8b3d90236c5",
+      "kind": "first-screen"
+    },
+    {
+      "path": "renders/412/light/native-issue-state.png",
+      "sha256": "1653c1ecd82b8c8c39ce41536631f930a128be318182408facfd2667d8a6ea78",
+      "kind": "first-screen"
+    },
+    {
+      "path": "renders/412/light/native-project-list.png",
+      "sha256": "ce5c48e3e59f4131db15f2fb1a3cea93e0e4cd0894a4d5008f8a5e5f32730493",
+      "kind": "first-screen"
+    },
+    {
+      "path": "renders/412/light/native-project-overview.png",
+      "sha256": "0ff5e541cbdabf973a7eaf04b5ae818ff97e0766eca55a76a730cd10b8da6a54",
+      "kind": "first-screen"
+    },
+    {
+      "path": "renders/412/light/native-projects.png",
+      "sha256": "a5428e7f92c218597d78b7fa540ad93d8abcf976aa0b3c9a8f7da10a7d0a9410",
+      "kind": "first-screen"
+    },
+    {
+      "path": "renders/412/light/nav-more.png",
+      "sha256": "184cf0a0f952b1347b42bd22f5663825340cef5f601917fb6bacde6a44eb7fc6",
+      "kind": "first-screen"
+    },
+    {
+      "path": "renders/412/light/plan-home.png",
+      "sha256": "5732244a60506e4c45ad3d5fb667446c7613dc8d0292289693723d21c6863b47",
+      "kind": "first-screen"
+    },
+    {
+      "path": "renders/412/light/settings-profile.png",
+      "sha256": "d61e388da08e5d49ef0b21202364c9b1b4c3aec17906eef179e3cad3498ea988",
+      "kind": "first-screen"
+    },
+    {
+      "path": "long-renders/360/dark/biz-analytics-vc.png",
+      "sha256": "44649b83b7f7d6bbe8dd399e6170f3fdb7a8363330c27d8690334e926b22601e",
+      "kind": "expanded-scroll-content"
+    },
+    {
+      "path": "long-renders/360/dark/biz-finance-actions.png",
+      "sha256": "2617512a4a57fcf0005c0c9900fe80c262a0f8c4c14b35171ae74732edad69bb",
+      "kind": "expanded-scroll-content"
+    },
+    {
+      "path": "long-renders/360/dark/nav-more.png",
+      "sha256": "e8ada3e5d3ef85f25458143034e193c960e797c5053dbe8e5fea501118108a83",
+      "kind": "expanded-scroll-content"
+    },
+    {
+      "path": "long-renders/360/light/biz-analytics-vc.png",
+      "sha256": "464a1fc97444941c2b5dbc6d848b9793d5a9f2af1b838be7cc759dae257bd7f0",
+      "kind": "expanded-scroll-content"
+    },
+    {
+      "path": "long-renders/360/light/biz-finance-actions.png",
+      "sha256": "2c2811199cbe8a51bcdb0f411b65c4b155c45e97d4382ffd26bdf71cff0159ed",
+      "kind": "expanded-scroll-content"
+    },
+    {
+      "path": "long-renders/360/light/nav-more.png",
+      "sha256": "07a159f29f0d7b9733b119540a776480981e9e0204907196ab591df9d9581a07",
+      "kind": "expanded-scroll-content"
+    },
+    {
+      "path": "long-renders/412/dark/biz-analytics-vc.png",
+      "sha256": "feafb26ede131a093799d60dc6e684181f5bfec05b43fede643a23918a3c4c9e",
+      "kind": "expanded-scroll-content"
+    },
+    {
+      "path": "long-renders/412/dark/biz-finance-actions.png",
+      "sha256": "0a8088992c91a046e8ef31670cb9ff151852d2f9990debe99a3895819618ffeb",
+      "kind": "expanded-scroll-content"
+    },
+    {
+      "path": "long-renders/412/dark/nav-more.png",
+      "sha256": "1620f3b4364b0da581ab4bfcf8ca57b8c9405d1605d6aa5bfb2924bea8615820",
+      "kind": "expanded-scroll-content"
+    },
+    {
+      "path": "long-renders/412/light/biz-analytics-vc.png",
+      "sha256": "d6c82d0f91d8369d20754cfbd8bfbf320eaf1ebbf29175afa163d7319080a756",
+      "kind": "expanded-scroll-content"
+    },
+    {
+      "path": "long-renders/412/light/biz-finance-actions.png",
+      "sha256": "00f7f5b3f1ae8ab93a5b7ef238b8b450a5ecf60792ea58d618f3c35e2a0bb93a",
+      "kind": "expanded-scroll-content"
+    },
+    {
+      "path": "long-renders/412/light/nav-more.png",
+      "sha256": "14e58ba8bcb1e93603b68eddddca49fa951deaba225ed04d9f8be991fb8e7076",
+      "kind": "expanded-scroll-content"
+    }
+  ],
+  "effectiveStyles": ["project-pages.css", "business-pages.css", "personal-pages.css", "material.css"],
+  "fontRoles": {
+    "latin400500": "Liberation Sans 2.1.5 Regular",
+    "cjk400": "Noto Sans CJK SC 2.004 Regular",
+    "cjk500": "Noto Sans CJK SC 2.004 Medium",
+    "cjk600": "Noto Sans CJK SC 2.004 Bold"
+  },
+  "acceptance": "Installed identical delivery APK; no CSS injection/mock responses. Typography, icons, colours and geometry must match. Text antialiasing/system-bar/frame differences are recorded separately."
+}

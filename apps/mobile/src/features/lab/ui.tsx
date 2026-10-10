@@ -160,7 +160,17 @@ export function LabDialog({
   );
 }
 /** A detail route shares the native shell; editing continues in a nested sheet. */
-export function LabDetail({ title, onClose, children }: { title: string; onClose: () => void; children: ReactNode }) {
+export function LabDetail({
+  title,
+  onClose,
+  children,
+  actions,
+}: {
+  title: string;
+  onClose: () => void;
+  children: ReactNode;
+  actions?: ReactNode;
+}) {
   const closeRef = useRef(onClose);
   const pageRef = useRef<HTMLElement>(null);
   closeRef.current = onClose;
@@ -188,7 +198,9 @@ export function LabDetail({ title, onClose, children }: { title: string; onClose
   }, []);
   return (
     <section className="lab-detail-page" ref={pageRef}>
-      <PageHeading title={title} onBack={onClose} />
+      <PageHeading title={title} onBack={onClose} inline>
+        {actions}
+      </PageHeading>
       {children}
     </section>
   );

@@ -1,0 +1,127 @@
+/* Adapters for live records and shared sheets; component geometry comes from v6-reference.css. */
+.home-notes-content h3 {
+  line-height: 1.5;
+}
+.v6-title-button {
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  padding: 0;
+  text-align: left;
+}
+.v6-project-list {
+  display: grid;
+  gap: 16px;
+}
+.v6-project-description .rich-content {
+  color: var(--secondary);
+  font-size: 14px;
+  line-height: 24px;
+}
+.v6-project-description .rich-content > :first-child {
+  margin-top: 1px;
+}
+.v6-project-description .rich-content > :last-child {
+  margin-bottom: 20px;
+}
+.v6-task-card {
+  background: var(--surface);
+  border-radius: 24px;
+}
+.px-task-list .v6-task-card {
+  border-radius: 0;
+}
+.px-task-list .v6-task-card + .v6-task-card {
+  border-top: 1px solid var(--line);
+}
+.v6-task-extra {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+  color: var(--secondary);
+  font-size: 12px;
+}
+.v6-task-extra:empty {
+  display: none;
+}
+.v6-secondary-details {
+  margin-top: 16px;
+}
+.v6-secondary-details > summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 48px;
+  padding: 0 4px;
+  border-radius: 12px;
+  color: var(--secondary);
+  font-size: 12px;
+  line-height: 20px;
+  list-style: none;
+  cursor: pointer;
+}
+.v6-secondary-details > summary::-webkit-details-marker {
+  display: none;
+}
+.v6-secondary-details[open] > summary > svg {
+  transform: rotate(90deg);
+}
+.v6-secondary-details.px-detail-more {
+  margin-top: 0;
+}
+.v6-issue-description .rich-content {
+  color: inherit;
+  line-height: inherit;
+}
+.v6-issue-description .rich-content > :first-child {
+  margin-top: 0;
+}
+.v6-issue-description .rich-content > :last-child {
+  margin-bottom: 0;
+}
+.v6-issue-description > p {
+  margin: 0;
+}
+.v6-activity-list {
+  display: flex;
+  flex-direction: column;
+}
+.v6-state-sheet > .handle {
+  width: 32px;
+  height: 4px;
+  margin: 0 auto 10px;
+  background: var(--secondary);
+  opacity: 0.5;
+}
+.v6-state-sheet > header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 16px;
+  padding: 10px 0 0;
+}
+.v6-state-sheet > header h2 {
+  font-size: 22px;
+  line-height: 28px;
+  margin: 0;
+}
+.v6-state-sheet > header p {
+  color: var(--secondary);
+  font-size: 12px;
+  line-height: 20px;
+  margin: 4px 0 0;
+}
+.v6-state-sheet > header > .icon-button {
+  margin-right: -8px;
+}
+.v6-priority-medium,
+.v6-priority-low,
+.v6-priority-none {
+  color: var(--secondary);
+}
+.core-kanban-column {
+  border-radius: 24px;
+}

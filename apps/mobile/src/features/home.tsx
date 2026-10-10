@@ -10,6 +10,7 @@ import {
   Html,
   Loading,
   PageHeading,
+  Sheet,
   RecordList,
   records,
   textValue,
@@ -22,11 +23,13 @@ export function Home({
   workspaceSlug,
   navigate,
   userId,
+  userName,
 }: {
   client: ApiClient;
   workspaceSlug: string;
   navigate: (route: MobileRoute) => void;
   userId?: string;
+  userName?: string;
 }) {
   const path = `/api/workspaces/${encodeURIComponent(workspaceSlug)}/stickies/`;
   const stats = useData<import("../components/ui").Entity>(
@@ -36,6 +39,7 @@ export function Home({
   const stickies = useData(client, path);
   const [editing, setEditing] = useState<Sticky | "new">();
   const [actions, setActions] = useState<Sticky>();
+  const [panel, setPanel] = useState<"create" | "notes" | "widgets">();
   const notes = stickyRecords(stickies.data);
   const openEditor = (note: Sticky) => {
     if (editing !== "new" && editing?.id === note.id) return;
@@ -65,45 +69,7 @@ export function Home({
       }
       key={widget.key}
     >
-      {widget.key === "my_stickies" ? (
-        <>
-          <h2 className="section-label">
-            <button className="home-stickies-link" onClick={() => navigate({ page: "stickies" })}>
-              便签
-              <CanonicalIcon name="down" size={13} />
-            </button>
-          </h2>
-          <ErrorMessage error={stickies.error} />
-          {stickies.loading ? (
-            <Loading />
-          ) : notes.length ? (
-            <>
-              <div className="sticky-list">
-                {notes.slice(0, 3).map((note) => (
-                  <StickyCard key={note.id} note={note} onEdit={openEditor} onMore={openActions} />
-                ))}
-              </div>
-              <button className="text-button home-stickies-all" onClick={() => navigate({ page: "stickies" })}>
-                查看全部便签
-              </button>
-            </>
-          ) : (
-            <div className="sticky-empty">
-              <img src="./assets/sticky-empty.png" alt="" />
-              <p>
-                记录灵感，捕捉想法。
-                <br />
-                添加一张便签，
-                <br />
-                开始你的工作。
-              </p>
-              <button className="button" onClick={() => setEditing("new")}>
-                创建第一张便签
-              </button>
-            </div>
-          )}
-        </>
-      ) : widget.key === "quick_links" ? (
+      {widget.key === "quick_links" ? (
         <>
           <h2 className="section-label">快捷链接</h2>
           <ErrorMessage error={quickLinks.error} />
@@ -159,32 +125,216 @@ export function Home({
   );
 
   return (
-    <div className="home-content">
-      <button className="work-entry" onClick={() => navigate({ page: "more" })}>
-        <CanonicalIcon name="work" size={24} />
-        <strong>工作台</strong>
-        <CanonicalIcon name="arrow" size={21} />
-      </button>
-      <section className="home-work-section">
-        <h2 className="section-label">
-          我的工作
-          <CanonicalIcon name="down" size={13} />
-        </h2>
-        <button className="home-work-row" onClick={() => navigate({ page: "my-tasks" })}>
-          <CanonicalIcon name="workItems" size={23} />
-          <span>任务</span>
-          <small>{stats.data?.assigned_issues === undefined ? "—" : textValue(stats.data.assigned_issues)}</small>
-          <CanonicalIcon name="arrow" size={19} />
+    <main className="m3-home-body">
+      <div className="m3-home-heading">
+        <div>
+          <h1>我的工作</h1>
+          <p>你好，{userName || "成员"}</p>
+        </div>
+        <button
+          className="m3-icon-button"
+          aria-label="新建"
+          onClick={() => requestMobileNavigation(() => setPanel("create"))}
+        >
+          <CanonicalIcon name="plus" size={24} />
         </button>
-        <button className="home-work-row" onClick={() => navigate({ page: "documents" })}>
-          <CanonicalIcon name="files" size={23} />
-          <span>文档</span>
-          <small>—</small>
-          <CanonicalIcon name="arrow" size={19} />
+      </div>
+      <button
+        className="m3-searchbar"
+        style={{ width: "100%", textAlign: "left" }}
+        onClick={() => navigate({ page: "search" })}
+      >
+        <CanonicalIcon name="search" size={22} />
+        <span>搜索工作空间</span>
+      </button>
+      <section className="home-stats" aria-label="我的工作统计">
+        <button className="home-stat tasks" onClick={() => navigate({ page: "my-tasks" })}>
+          <span className="home-stat-top">
+            任务
+            <CanonicalIcon name="arrow" size={18} />
+          </span>
+          <strong className="home-stat-value">
+            {stats.data?.assigned_issues === undefined ? "—" : textValue(stats.data.assigned_issues)}
+          </strong>
+          <span className="home-stat-subtitle">我的任务</span>
+        </button>
+        <button className="home-stat" onClick={() => navigate({ page: "documents" })}>
+          <span className="home-stat-top">
+            文档
+            <CanonicalIcon name="doc" size={20} />
+          </span>
+          <strong className="home-stat-value">—</strong>
+          <span className="home-stat-subtitle">工作空间文档</span>
         </button>
       </section>
+      <ErrorMessage error={stats.error} />
+      <section>
+        <div className="home-section-heading">
+          <h2>快捷入口</h2>
+          <button onClick={() => navigate({ page: "more" })}>
+            全部
+            <CanonicalIcon name="chevron" size={15} />
+          </button>
+        </div>
+        <div className="home-quick-grid">
+          {(
+            [
+              ["projects", "项目", "folder"],
+              ["planner", "个人规划", "calendar"],
+              ["finance", "资金与奖励", "wallet"],
+              ["more", "工作台", "grid"],
+            ] as const
+          ).map(([page, label, icon]) => (
+            <button key={page} onClick={() => navigate({ page })}>
+              <span className="home-quick-icon">
+                <CanonicalIcon name={icon} size={24} />
+              </span>
+              {label}
+            </button>
+          ))}
+        </div>
+      </section>
       <ErrorMessage error={preferences.error} />
-      {order.filter((item) => item.is_enabled && item.key === "my_stickies").map(renderWidget)}
+      {order.some((item) => item.is_enabled && item.key === "my_stickies") && (
+        <section>
+          <div className="home-section-heading">
+            <h2>便签</h2>
+            <button aria-label="便签选项" onClick={() => requestMobileNavigation(() => setPanel("notes"))}>
+              <CanonicalIcon name="more" size={20} />
+            </button>
+          </div>
+          <ErrorMessage error={stickies.error} />
+          {stickies.loading ? (
+            <Loading />
+          ) : notes.length ? (
+            <>
+              <div className="sticky-list">
+                {notes.slice(0, 3).map((note) => (
+                  <StickyCard key={note.id} note={note} onEdit={openEditor} onMore={openActions} />
+                ))}
+              </div>
+              <button className="m3-button text" onClick={() => navigate({ page: "stickies" })}>
+                查看全部便签
+              </button>
+            </>
+          ) : (
+            <div className="home-notes">
+              <span className="home-notes-icon">
+                <CanonicalIcon name="note" size={36} />
+              </span>
+              <div className="home-notes-content">
+                <h3>记录一个新想法</h3>
+                <p>灵感，从第一张便签开始。</p>
+                <button className="m3-button tonal" onClick={() => requestMobileNavigation(() => setEditing("new"))}>
+                  <CanonicalIcon name="plus" size={17} />
+                  创建便签
+                </button>
+              </div>
+            </div>
+          )}
+        </section>
+      )}
+      {panel === "create" && (
+        <Sheet title="新建" onClose={() => setPanel(undefined)}>
+          <div className="list">
+            <button
+              className="button"
+              onClick={() => {
+                setPanel(undefined);
+                setEditing("new");
+              }}
+            >
+              新建便签
+            </button>
+            <button
+              className="button"
+              onClick={() => {
+                setPanel(undefined);
+                navigate({ page: "projects" });
+              }}
+            >
+              项目
+            </button>
+            <button
+              className="button"
+              onClick={() => {
+                setPanel(undefined);
+                navigate({ page: "planner" });
+              }}
+            >
+              个人规划
+            </button>
+            <button
+              className="button"
+              onClick={() => {
+                setPanel(undefined);
+                navigate({ page: "stickies" });
+              }}
+            >
+              全部便签
+            </button>
+            <button className="button" onClick={() => setPanel("widgets")}>
+              快捷链接与最近访问
+            </button>
+            <button
+              className="button"
+              onClick={() => {
+                setPanel(undefined);
+                navigate({ page: "widgets" });
+              }}
+            >
+              管理首页组件
+            </button>
+          </div>
+        </Sheet>
+      )}
+      {panel === "notes" && (
+        <Sheet title="便签选项" onClose={() => setPanel(undefined)}>
+          <div className="list">
+            <button
+              className="button"
+              onClick={() => {
+                setPanel(undefined);
+                navigate({ page: "stickies" });
+              }}
+            >
+              全部便签
+            </button>
+            <button
+              className="button"
+              onClick={() => {
+                setPanel(undefined);
+                setPanel("widgets");
+              }}
+            >
+              快捷链接与最近访问
+            </button>
+            <button
+              className="button"
+              onClick={() => {
+                setPanel(undefined);
+                navigate({ page: "widgets" });
+              }}
+            >
+              管理首页组件
+            </button>
+          </div>
+        </Sheet>
+      )}
+      {panel === "widgets" && (
+        <Sheet title="快捷链接与最近访问" onClose={() => setPanel(undefined)}>
+          {order.filter((item) => item.is_enabled && item.key !== "my_stickies").map(renderWidget)}
+          <button
+            className="button"
+            onClick={() => {
+              setPanel(undefined);
+              navigate({ page: "widgets" });
+            }}
+          >
+            管理首页组件
+          </button>
+        </Sheet>
+      )}
       {editing && (
         <StickyEditor
           key={editing === "new" ? "new" : editing.id}
@@ -199,16 +349,6 @@ export function Home({
           }}
         />
       )}
-      <details className="home-secondary-details">
-        <summary>
-          快捷链接与最近访问
-          <CanonicalIcon name="down" size={15} />
-        </summary>
-        {order.filter((item) => item.is_enabled && item.key !== "my_stickies").map(renderWidget)}
-        <button className="button" onClick={() => navigate({ page: "widgets" })}>
-          管理首页组件
-        </button>
-      </details>
       {actions && (
         <StickyActions
           note={actions}
@@ -219,12 +359,7 @@ export function Home({
           onChanged={stickies.refresh}
         />
       )}
-      {!editing && (
-        <button className="create-fab" aria-label="新建便签" onClick={() => setEditing("new")}>
-          <CanonicalIcon name="plus" size={26} />
-        </button>
-      )}
-    </div>
+    </main>
   );
 }
 export function Inbox({

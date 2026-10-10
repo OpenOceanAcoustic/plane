@@ -1,0 +1,57 @@
+[
+  {
+    "asset": "LiberationSans-Regular.woff2",
+    "source": "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
+    "collectionFace": null,
+    "version": "Version 2.1.5",
+    "glyphMappings": 2327,
+    "referenceSubset": false,
+    "sourceSha256": "075e71be4c58beda172ecb574a799308f04c3d054c6a5b7434954d3b0f1b28d8",
+    "assetSha256": "70ab7e0c16b79df22396196096e66491997b32dda188c065d60a0089f30d5397",
+    "bytes": 146912
+  },
+  {
+    "asset": "LiberationSans-Bold.woff2",
+    "source": "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf",
+    "collectionFace": null,
+    "version": "Version 2.1.5",
+    "glyphMappings": 2327,
+    "referenceSubset": false,
+    "sourceSha256": "b72c65e551d653b54217ffad0d1454ce0657e4e8d4a28bcc79e0acd2598f4bf3",
+    "assetSha256": "068e097d429e3775d06c65bb483579cd6605012910a712a6685e0ea35f996d2c",
+    "bytes": 148460
+  },
+  {
+    "asset": "NotoSansCJKSC-Regular.woff2",
+    "source": "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
+    "collectionFace": 2,
+    "version": "Version 2.004;hotconv 1.0.118;makeotfexe 2.5.65603",
+    "glyphMappings": 44810,
+    "referenceSubset": false,
+    "sourceSha256": "b76b0433203017ca80401b2ee0dd69350349871c4b19d504c34dbdd80541690a",
+    "assetSha256": "514bb822830d3ac63e15c166d495890567507fd70ca3aa132cc9f0a48177f2e7",
+    "bytes": 11428848
+  },
+  {
+    "asset": "NotoSansCJKSC-Medium.woff2",
+    "source": "/usr/share/fonts/opentype/noto/NotoSansCJK-Medium.ttc",
+    "collectionFace": 2,
+    "version": "Version 2.004;hotconv 1.0.118;makeotfexe 2.5.65603",
+    "glyphMappings": 44810,
+    "referenceSubset": false,
+    "sourceSha256": "197d5e1e019faca33a4d55931c7d68b8056f3b97cb862049f5cb8de9efdfb8ce",
+    "assetSha256": "1e0c232d257ea73061b4afec856b857974ea56ca338e43a9b6c487612db0a9e8",
+    "bytes": 11688908
+  },
+  {
+    "asset": "NotoSansCJKSC-Bold.woff2",
+    "source": "/usr/share/fonts/opentype/noto/NotoSansCJK-Bold.ttc",
+    "collectionFace": 2,
+    "version": "Version 2.004;hotconv 1.0.118;makeotfexe 2.5.65603",
+    "glyphMappings": 44810,
+    "referenceSubset": false,
+    "sourceSha256": "faa5f3656a78b2e2d450d27fe8382c778bc2b6bb5ea29c986664a6a435056ceb",
+    "assetSha256": "95471541cad8a98e0d9e4e63f15620726f2e2b273c9f7925640f12a2c0ccb400",
+    "bytes": 12127544
+  }
+]

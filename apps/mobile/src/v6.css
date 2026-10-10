@@ -1,0 +1,503 @@
+/* Native shell and the V6 primitives shared by screens without a separate reference. */
+:root {
+  font-family: var(--v6-font-family);
+  font-size: 14px;
+  line-height: 1.5;
+  font-feature-settings: normal;
+  font-synthesis: none;
+  --ink: var(--text);
+  --canvas: var(--bg);
+  --border: var(--line);
+  --soft: var(--accent-soft);
+  --v6-secondary: #444746;
+  --native-inset-top: 0px;
+  --native-inset-bottom: 0px;
+  --native-inset-left: 0px;
+  --native-inset-right: 0px;
+  color: var(--text);
+  background: var(--bg);
+}
+:root[data-theme="dark"] {
+  --v6-secondary: #c4c7c5;
+}
+body {
+  background: var(--bg);
+  color: var(--text);
+}
+button,
+input,
+select,
+textarea {
+  font-family: inherit;
+}
+button {
+  border: 0;
+}
+svg {
+  display: block;
+  flex-shrink: 0;
+}
+.app-shell.v6-app {
+  position: relative;
+  width: 100%;
+  height: 100vh;
+  height: 100dvh;
+  max-width: none;
+  padding: var(--native-inset-top) var(--native-inset-right) var(--native-inset-bottom) var(--native-inset-left);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--bg);
+}
+.app-content.phone-content {
+  height: auto;
+  min-height: 0;
+  flex: 1;
+}
+.v6-app .topbar {
+  position: relative;
+  min-height: 64px;
+  flex-shrink: 0;
+  z-index: auto;
+  background: var(--bg);
+}
+.v6-app .home-topbar {
+  min-height: 68px;
+}
+.v6-app .app-heading {
+  flex: 1;
+  min-width: 0;
+}
+.v6-app .app-heading h1 {
+  margin: 0;
+  font-size: 20px;
+  line-height: 28px;
+  font-weight: 500;
+  letter-spacing: 0;
+}
+.v6-app[data-header="project"] .app-heading h1 {
+  font-size: 22px;
+  font-weight: 400;
+}
+.v6-app[data-page="projects"] .app-heading h1,
+.v6-app[data-page="finance"] .app-heading h1 {
+  font-weight: 400;
+}
+.v6-app .header-feature-title:not(:empty) + .header-title-fallback,
+.v6-app .header-back-slot:not(:empty) + .header-back-fallback,
+.v6-app .header-back-slot:empty,
+.v6-app .header-feature-actions:empty {
+  display: none;
+}
+.v6-app .header-back-slot {
+  flex: 0 0 48px;
+}
+.v6-app .header-feature-actions {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  margin-left: auto;
+}
+.v6-app .header-actions-group {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+  gap: 0;
+  margin-left: auto;
+}
+.v6-app .header-feature-actions .button {
+  min-width: 48px;
+  height: 48px;
+  border: 0;
+  background: transparent;
+  border-radius: 50%;
+  padding: 0;
+  color: var(--secondary);
+}
+.v6-app .header-project-code {
+  display: none;
+}
+.v6-app .page {
+  padding: 16px 20px 24px;
+  margin: 0;
+  max-width: none;
+  width: 100%;
+  min-height: 0;
+  overflow: visible;
+  flex: none;
+  overflow-wrap: normal;
+}
+.v6-app[data-page="home"] .page,
+.v6-app[data-page="more"] .page,
+.v6-app[data-page="projects"] .page,
+.v6-app[data-page="project-overview"] .page,
+.v6-app[data-page="tasks"] .page,
+.v6-app[data-page="issue"] .page,
+.v6-app[data-page="planner"] .page,
+.v6-app[data-page="finance"] .page,
+.v6-app[data-page="analytics"] .page,
+.v6-app[data-page="bounties"] .page,
+.v6-app[data-page="settings"] .page {
+  padding: 0;
+}
+.v6-app .bottom-nav {
+  position: relative;
+  flex: 0 0 76px;
+  bottom: auto;
+  left: auto;
+  right: auto;
+  width: 100%;
+}
+.keyboard-open .v6-app .bottom-nav {
+  display: none;
+}
+.v6-app .fab-mount {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+.v6-app .fab-mount > * {
+  pointer-events: auto;
+  position: absolute;
+  right: 20px;
+  bottom: calc(96px + var(--native-inset-bottom));
+}
+.v6-app .composer-mount:empty {
+  display: none;
+}
+.keyboard-open .v6-app .fab-mount {
+  display: none;
+}
+.v6-app .m3-fab {
+  bottom: calc(96px + var(--native-inset-bottom));
+}
+.v6-app .create-fab {
+  position: fixed;
+  right: 20px;
+  bottom: calc(96px + var(--native-inset-bottom));
+  width: 56px;
+  height: 56px;
+  border-radius: 18px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  box-shadow: none;
+}
+.v6-app .lab-feature,
+.lab-sheet {
+  --text: var(--ink);
+  --secondary: var(--v6-secondary);
+  --line: var(--border);
+  --layer: var(--subtle);
+  --brand: var(--accent);
+  --soft: var(--accent-soft);
+  gap: 0;
+  font-size: 14px;
+  line-height: 1.5;
+}
+.v6-app .lab-detail-page {
+  position: fixed;
+  inset: var(--native-inset-top) var(--native-inset-right) calc(76px + var(--native-inset-bottom))
+    var(--native-inset-left);
+  background: var(--bg);
+  overflow-y: auto;
+  padding: 0;
+  z-index: 25;
+  gap: 0;
+}
+.lab-detail-page > .page-heading > div:nth-child(2) {
+  flex: 1;
+  min-width: 0;
+}
+.keyboard-open .v6-app .lab-detail-page {
+  bottom: var(--native-inset-bottom);
+}
+.lab-detail-page > .page-heading {
+  height: 64px;
+  padding: 8px 12px;
+  margin: 0;
+}
+.lab-detail-page > .page-heading h1 {
+  font-size: 20px;
+  line-height: 28px;
+  font-weight: 500;
+}
+.button,
+.lab-button,
+.auth-page .button,
+.sheet form > .button.primary {
+  min-height: 48px;
+  min-width: 48px;
+  border-radius: 28px;
+  padding: 0 22px;
+  border: 0;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 14px;
+  line-height: 20px;
+  font-weight: 500;
+}
+.button.primary,
+.lab-button.primary {
+  background: var(--cta);
+  color: var(--cta-text);
+}
+.button.danger,
+.lab-button.danger {
+  background: var(--tertiary-soft);
+  color: var(--tertiary);
+}
+.text-button {
+  min-height: 48px;
+  color: var(--accent);
+}
+.icon-button {
+  height: 48px;
+  width: 48px;
+  min-height: 48px;
+  min-width: 48px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--secondary);
+  display: grid;
+  place-items: center;
+}
+.page-heading .heading-actions {
+  gap: 0;
+}
+.field,
+.lab-field {
+  gap: 6px;
+  font-size: 12px;
+  color: var(--secondary);
+}
+.field input,
+.field select,
+.field textarea,
+.lab-input,
+.lab-field input,
+.lab-field select,
+.lab-field textarea {
+  min-height: 56px;
+  font-size: 16px;
+  border: 0;
+  border-bottom: 1px solid var(--secondary);
+  border-radius: 12px 12px 4px 4px;
+  background: var(--subtle);
+  color: var(--text);
+  padding: 12px 16px;
+}
+.field input:focus,
+.field select:focus,
+.field textarea:focus,
+.lab-input:focus {
+  border-bottom-color: var(--accent);
+}
+.field input[type="checkbox"],
+.lab-field input[type="checkbox"] {
+  min-height: 24px;
+  width: 24px;
+}
+.card,
+.lab-card,
+.lab-panel,
+.lab-chart-card,
+.document-card,
+.sticky-card {
+  background: var(--surface);
+  border: 0;
+  border-radius: 24px;
+  box-shadow: none;
+}
+.card,
+.lab-card,
+.lab-panel {
+  padding: 20px;
+}
+.row {
+  min-height: 56px;
+  padding: 8px 16px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--line);
+  font-size: 14px;
+}
+.section-label,
+.lab-heading h2 {
+  font-size: 16px;
+  color: var(--secondary);
+  font-weight: 500;
+}
+.record-fields,
+.lab-values {
+  font-size: 14px;
+}
+.chip,
+.lab-badge {
+  background: var(--subtle);
+  color: var(--secondary);
+  border: 0;
+  border-radius: 12px;
+  font-size: 12px;
+}
+.tabs,
+.lab-tabs,
+.settings-tabs {
+  border-radius: 0;
+  background: transparent;
+  padding: 0;
+  gap: 0;
+  border-bottom: 1px solid var(--line);
+}
+.tabs button,
+.lab-tabs button,
+.settings-tabs button {
+  position: relative;
+  min-height: 48px;
+  min-width: 48px;
+  padding: 0 12px;
+  border-radius: 0;
+  background: transparent;
+  color: var(--secondary);
+  font-size: 14px;
+}
+.tabs button.active,
+.lab-tabs button.active,
+.settings-tabs button.active {
+  background: transparent;
+  color: var(--accent);
+}
+.tabs button.active::after,
+.lab-tabs button.active::after,
+.settings-tabs button.active::after {
+  content: "";
+  position: absolute;
+  bottom: 0;
+  height: 3px;
+  width: 36px;
+  left: 50%;
+  right: auto;
+  transform: translateX(-50%);
+  background: var(--accent);
+  border-radius: 4px 4px 0 0;
+}
+.overlay,
+.lab-overlay {
+  position: fixed;
+  inset: var(--native-inset-top) var(--native-inset-right) var(--native-inset-bottom) var(--native-inset-left);
+  z-index: 80;
+  background: #00000052;
+  backdrop-filter: none;
+}
+.lab-overlay {
+  padding: 0;
+}
+.scrim,
+.lab-scrim {
+  background: transparent;
+}
+.sheet,
+.lab-sheet {
+  width: 100%;
+  max-width: none;
+  max-height: calc(100vh - var(--native-inset-top) - var(--native-inset-bottom) - 20px);
+  max-height: calc(100dvh - var(--native-inset-top) - var(--native-inset-bottom) - 20px);
+  background: var(--subtle);
+  color: var(--text);
+  border-radius: 28px 28px 0 0;
+  padding: 12px 20px 24px;
+  box-shadow: none;
+  margin: 0;
+}
+.sheet > header,
+.lab-sheet-title {
+  min-height: 48px;
+  border: 0;
+  margin: 0 0 16px;
+  padding: 10px 0 0;
+  position: static;
+  background: transparent;
+}
+.sheet > header h2,
+.lab-sheet-title h2 {
+  font-size: 22px;
+  line-height: 28px;
+  font-weight: 400;
+  margin: 0;
+}
+.handle,
+.lab-sheet-handle {
+  width: 32px;
+  height: 4px;
+  border-radius: 4px;
+  background: var(--secondary);
+  opacity: 0.5;
+  margin: 0 auto 10px;
+}
+.lab-sheet-title > .lab-button {
+  width: 48px;
+  min-width: 48px;
+  padding: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--secondary);
+}
+.lab-form-body {
+  gap: 16px;
+}
+.lab-dialog-panel {
+  border-radius: 28px;
+}
+.lab-overlay.is-confirmation {
+  align-items: center;
+  padding: 24px;
+}
+.error,
+.lab-error {
+  background: var(--tertiary-soft);
+  color: var(--tertiary);
+  border-radius: 16px;
+}
+.network-status {
+  background: var(--subtle);
+  color: var(--secondary);
+  font-size: 12px;
+}
+.empty,
+.lab-empty {
+  color: var(--secondary);
+  font-size: 14px;
+  background: transparent;
+  border: 0;
+}
+.auth-page {
+  background: var(--bg);
+  color: var(--text);
+  padding-top: calc(40px + var(--native-inset-top));
+  padding-bottom: calc(24px + var(--native-inset-bottom));
+  font-family: var(--v6-font-family);
+}
+.auth-page h1 {
+  font-size: 28px;
+  font-weight: 500;
+}
+.auth-page .brand-icon {
+  background: var(--accent-soft);
+  color: var(--accent);
+  border-radius: 24px;
+}
+.rich-content {
+  overflow-wrap: anywhere;
+}
+.pm-profile .pm-profile-tabs button {
+  font-size: 12px;
+}
+.v6-state-sheet {
+  font-weight: 400;
+}
+.v6-state-sheet > header h2 {
+  font-weight: 400;
+}
+.v6-app[data-page="projects"] .header-feature-actions:not(:empty) + button {
+  display: none;
+}

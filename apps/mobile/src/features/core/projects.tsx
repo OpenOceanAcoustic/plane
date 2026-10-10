@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useContext, useState } from "react";
+import { createPortal } from "react-dom";
 import { Archive, Star } from "lucide-react";
 import {
   ActionButton,
@@ -11,8 +12,10 @@ import {
   type Entity,
   type FormField,
 } from "../../components/ui";
-import { DetailFields, Empty, ResultState, AddButton } from "./shared";
-import { CanonicalIcon } from "../../components/navigation";
+import { DetailFields, Empty, ResultState } from "./shared";
+import { CanonicalIcon, MobileHeaderContext } from "../../components/navigation";
+// oxlint-disable-next-line import/no-unassigned-import -- live V6 component adapters
+import "./v6.css";
 import { dateLabel, userName, type Session, type Member, type CoreProps, type NamedEntity } from "./model";
 
 function projectFields(project?: Entity, members: Member[] = []): FormField[] {
@@ -54,8 +57,9 @@ function projectFields(project?: Entity, members: Member[] = []): FormField[] {
 
 export default function Projects(props: CoreProps) {
   const { client, workspaceSlug, onNavigate } = props;
+  const header = useContext(MobileHeaderContext);
   const base = `/api/workspaces/${encodeURIComponent(workspaceSlug)}`;
-  const { data, error, loading, refresh } = useData<NamedEntity[]>(client, `${base}/projects/`);
+  const { data, error, loading, refresh } = useData<NamedEntity[]>(client, `${base}/projects/details/`);
   const projectStats = useData<Entity[]>(client, `${base}/project-stats/`);
   const workspace = useData<Entity>(client, `${base}/`);
   const members = useData<Member[]>(client, `${base}/members/`);
@@ -137,113 +141,150 @@ export default function Projects(props: CoreProps) {
   }
   return (
     <>
-      <PageHeading title="项目">
-        {canCreate && <AddButton onClick={() => setModal("create")}>新项目</AddButton>}
+      <PageHeading title="工作空间" onBack={() => onNavigate({ page: "home" })}>
+        <button className="m3-icon-button" aria-label="打开工作台" onClick={() => onNavigate({ page: "more" })}>
+          <CanonicalIcon name="apps" size={22} />
+        </button>
       </PageHeading>
-      <label className="field core-project-search">
-        <span>搜索项目</span>
-        <input
-          aria-label="搜索项目"
-          placeholder="搜索名称或标识"
-          value={query}
-          onChange={(event) => setQuery(event.target.value)}
-        />
-      </label>
-      <div className="core-tabs">
-        {[
-          ["all", "全部项目"],
-          ["mine", "我的项目"],
-          ["favorites", "收藏"],
-        ].map(([key, label]) => (
-          <button
-            key={key}
-            className={`chip ${projectFilter === key ? "active" : ""}`}
-            onClick={() => setProjectFilter(key)}
-          >
-            {label}
+      <main className="m3-projects-body">
+        <div className="projects-title-row">
+          <h1>项目</h1>
+          <span className="project-count">{projects.length} 个项目</span>
+        </div>
+        <label className="m3-searchbar">
+          <CanonicalIcon name="search" size={22} />
+          <input
+            type="search"
+            aria-label="搜索项目"
+            placeholder="搜索项目"
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+          />
+        </label>
+        <div className="m3-tabs m3-project-tabs" role="tablist" aria-label="项目筛选">
+          {[
+            ["all", "全部"],
+            ["mine", "我的项目"],
+            ["favorites", "收藏"],
+          ].map(([key, label]) => (
+            <button
+              key={key}
+              className={projectFilter === key ? "active" : ""}
+              role="tab"
+              aria-selected={projectFilter === key}
+              onClick={() => setProjectFilter(key)}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+        <div className="m3-list-toolbar">
+          <button onClick={() => setFilterPanel(true)}>
+            {visibility === "0" ? "私有项目" : visibility === "2" ? "公开项目" : "全部状态"}
+            <CanonicalIcon name="down" size={14} />
+          </button>
+          <button onClick={() => setFilterPanel(true)}>
+            <CanonicalIcon name="sort" size={17} />
+            {orderBy === "updated" ? "按更新" : "按名称"}
+          </button>
+        </div>
+        <ResultState loading={loading} error={error}>
+          <div className="v6-project-list">
+            {projects.map((project) => {
+              const metrics = records(projectStats.data).find((row) => row.id === project.id);
+              const total = Number(metrics?.total_issues ?? 0);
+              const complete = Number(metrics?.completed_issues ?? 0);
+              const lead = members.data?.find((row) => row.member.id === project.project_lead)?.member;
+              const open = () =>
+                onNavigate({
+                  page: project.archived_at ? "archived-tasks" : "project-overview",
+                  projectId: String(project.id),
+                });
+              return (
+                <article className="m3-project-card" key={project.id}>
+                  <div className="project-leading">
+                    <button
+                      className="m3-project-symbol"
+                      aria-label={`${project.name}项目操作`}
+                      onClick={() => {
+                        setSelected(project);
+                        setModal("details");
+                      }}
+                    >
+                      <CanonicalIcon name="ocean" size={28} />
+                    </button>
+                    <div>
+                      <h2>
+                        <button className="v6-title-button" onClick={open}>
+                          {project.name}
+                        </button>
+                      </h2>
+                      <div className="project-code-line">
+                        <strong>{String(project.identifier)}</strong>
+                        <span>·</span>
+                        <CanonicalIcon name="lock" size={12} />
+                        <span>{Number(project.network) === 0 ? "私有项目" : "公开项目"}</span>
+                      </div>
+                    </div>
+                  </div>
+                  <p className="m3-project-description">{String(project.description || "暂无描述")}</p>
+                  <div className="m3-project-owner">
+                    <i className="m3-avatar">{lead ? userName(lead).slice(0, 1) : "—"}</i>
+                    <span>{lead ? userName(lead) : "未设置负责人"}</span>
+                    <span>
+                      <CanonicalIcon name="users" size={15} />
+                      {String(
+                        metrics?.total_members ?? (Array.isArray(project.members) ? project.members.length : "—")
+                      )}{" "}
+                      名成员
+                    </span>
+                  </div>
+                  <div className="m3-project-bottom">
+                    <time>{project.updated_at ? `${dateLabel(project.updated_at)}更新` : "未更新"}</time>
+                    <button className="m3-button text" onClick={open}>
+                      打开项目
+                      <CanonicalIcon name="arrow" size={17} />
+                    </button>
+                  </div>
+                  {metrics && total > 0 && (
+                    <div
+                      className="m3-project-progress"
+                      role="progressbar"
+                      aria-label="项目进展"
+                      aria-valuemin={0}
+                      aria-valuemax={total}
+                      aria-valuenow={complete}
+                    >
+                      <span style={{ width: `${Math.min(100, Math.max(0, (complete / total) * 100))}%` }} />
+                    </div>
+                  )}
+                </article>
+              );
+            })}
+            {!projects.length && <Empty>暂无项目</Empty>}
+          </div>
+        </ResultState>
+        <button className="m3-archive" onClick={() => setShowArchived(!showArchived)}>
+          <CanonicalIcon name="archive" size={22} />
+          {showArchived ? "返回活跃项目" : "已归档项目"}
+          <CanonicalIcon name="chevron" size={18} />
+        </button>
+      </main>
+      {canCreate &&
+        (header?.fab ? (
+          createPortal(
+            <button className="m3-fab" onClick={() => setModal("create")}>
+              <CanonicalIcon name="plus" size={22} />
+              新建项目
+            </button>,
+            header.fab
+          )
+        ) : (
+          <button className="m3-fab" onClick={() => setModal("create")}>
+            <CanonicalIcon name="plus" size={22} />
+            新建项目
           </button>
         ))}
-      </div>
-      <div className="core-rows">
-        <button className="row" onClick={() => setFilterPanel(true)}>
-          <span className="row-main">
-            {visibility === "0" ? "私有项目" : visibility === "2" ? "公开项目" : "全部状态"}
-          </span>
-          <span className="row-value">{orderBy === "updated" ? "按更新时间排序" : "按名称排序"}</span>
-          <CanonicalIcon name="arrow" size={16} />
-        </button>
-      </div>
-      <ResultState loading={loading} error={error}>
-        <div className="list">
-          {projects.map((project) => {
-            const metrics = records(projectStats.data).find((row) => row.id === project.id);
-            const total = Number(metrics?.total_issues ?? 0);
-            const complete = Number(metrics?.completed_issues ?? 0);
-            const lead = members.data?.find((row) => row.member.id === project.project_lead)?.member;
-            return (
-              <article className="card core-project-card" key={project.id}>
-                <div className="core-project-identity">
-                  <span>{String(project.identifier)}</span>
-                  <button
-                    className="core-pill core-tone-indigo"
-                    aria-label={`${project.name}项目操作`}
-                    onClick={() => {
-                      setSelected(project);
-                      setModal("details");
-                    }}
-                  >
-                    {Number(project.network) === 0 ? "私有项目" : "公开项目"}
-                  </button>
-                  {Boolean(project.archived_at) && <span className="core-pill">已归档</span>}
-                </div>
-                <button
-                  className="core-task-name"
-                  onClick={() => onNavigate({ page: "project-overview", projectId: String(project.id) })}
-                >
-                  {project.name}
-                </button>
-                {Boolean(project.description) && <p className="core-card-subtitle">{String(project.description)}</p>}
-                <div className="core-card-meta">
-                  {lead && (
-                    <span>
-                      <CanonicalIcon name="tag" size={14} />
-                      {userName(lead)} · 项目负责人
-                    </span>
-                  )}
-                  {project.total_members != null && (
-                    <span>
-                      <CanonicalIcon name="tag" size={14} />
-                      {String(project.total_members)}名成员
-                    </span>
-                  )}
-                  {Boolean(project.updated_at) && (
-                    <span>
-                      <CanonicalIcon name="plan" size={14} />
-                      {dateLabel(project.updated_at)}更新
-                    </span>
-                  )}
-                </div>
-                {metrics && total > 0 && (
-                  <div
-                    className="core-mini-progress"
-                    role="progressbar"
-                    aria-label="项目完成进度"
-                    aria-valuemin={0}
-                    aria-valuemax={total}
-                    aria-valuenow={complete}
-                  >
-                    <span style={{ width: `${Math.min(100, Math.max(0, (complete / total) * 100))}%` }} />
-                  </div>
-                )}
-              </article>
-            );
-          })}
-          {!projects.length && <Empty>暂无项目</Empty>}
-        </div>
-      </ResultState>
-      <button className="button" onClick={() => setShowArchived(!showArchived)}>
-        {showArchived ? "返回活跃项目" : "已归档项目"}
-      </button>
       {filterPanel && (
         <FormSheet
           title="项目筛选与排序"

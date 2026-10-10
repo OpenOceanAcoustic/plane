@@ -1,0 +1,102 @@
+/* Real data and native controls within the canonical V6 compositions. */
+.bx-stack-legend dd {
+  text-align: left;
+}
+.m3-budget-top h2 {
+  line-height: 1.5;
+}
+.v6-select-chip {
+  position: relative;
+  cursor: pointer;
+  font-weight: 500;
+}
+.m3-fund-selector.v6-select-chip {
+  width: fit-content;
+}
+.v6-select-chip > select {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  cursor: pointer;
+}
+.v6-select-chip > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.v6-select-chip:has(> select:focus-visible) {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.bx-project-filter.v6-select-chip {
+  background: var(--subtle);
+}
+.m3-budget-bar > i.reserved {
+  background: var(--accent);
+}
+.m3-budget-bar > i.free {
+  background: var(--line);
+}
+.m3-budget-bar > i.granted {
+  background: var(--green);
+}
+.v6-finance-records {
+  margin-top: 16px;
+  border-top: 1px solid var(--line);
+}
+.v6-finance-records > summary {
+  list-style: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 48px;
+  color: var(--accent);
+  font-size: 14px;
+  cursor: pointer;
+}
+.v6-finance-records > summary::-webkit-details-marker {
+  display: none;
+}
+.v6-finance-records[open] > summary > svg {
+  transform: rotate(180deg);
+}
+.bx-total.v6-total-button {
+  border: 0;
+  padding: 0;
+  background: transparent;
+  text-align: left;
+  font-weight: 400;
+  min-height: 52px;
+  cursor: pointer;
+}
+.bx-person.v6-person-button {
+  font-weight: 400;
+  display: block;
+  width: 100%;
+  padding: 0;
+  text-align: left;
+  color: var(--text);
+  border: 0;
+  background: transparent;
+  min-height: 48px;
+}
+.bx-bounty-card + .bx-bounty-card {
+  margin-top: 16px;
+}
+.pm-folder-strip {
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.pm-folder-strip.is-scroll > button {
+  flex: 0 0 auto;
+}
+.pm-folder-strip::-webkit-scrollbar {
+  display: none;
+}
+.bx-create-bounty {
+  position: fixed;
+  bottom: calc(96px + var(--native-inset-bottom, 0px));
+}

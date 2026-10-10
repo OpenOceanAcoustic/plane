@@ -1,5 +1,6 @@
 /** Copyright (c) 2026 OpenOceanAcoustic and contributors. SPDX-License-Identifier: AGPL-3.0-only */
 import { useState } from "react";
+import { CanonicalIcon } from "../../components/navigation";
 import { Html, PageHeading } from "../../components/ui";
 import type { LabBounty, LabTodo, LabBountyMaterial, LabMember } from "@plane/types";
 import type { LabStore } from "./transport";
@@ -14,7 +15,6 @@ import {
   LabDialog,
   LabDetail,
   LabField,
-  Tabs,
   Empty,
   ErrorMessage,
   KeyValues,
@@ -22,7 +22,6 @@ import {
   labAmountError,
   labDecimalUnits,
   labDecimalText,
-  FloatingAction,
 } from "./ui";
 const statusNames: Record<string, string> = {
   draft: "草稿",
@@ -139,122 +138,150 @@ export function Bounties({
               })
           ) || targetTotal > (labDecimalUnits(bounty?.budget ?? "0") ?? 0n)
         : false;
+  const visibleBounties = (list.data ?? []).filter(
+    (row) =>
+      (!project || row.project_id === project) &&
+      (view !== "open" || row.status === "open") &&
+      (view !== "mine" ||
+        row.allocations.some((allocation) => allocation.user_id === store.planner?.user_id) ||
+        row.is_lead ||
+        row.is_reviewer ||
+        row.is_independent_reviewer) &&
+      `${row.title} ${row.public_summary} ${row.deliverable}`.toLowerCase().includes(query.toLowerCase())
+  );
+  const projectChoices = Array.from(
+    new Map(
+      [
+        ...(store.planner?.projects ?? []).map((row) => ({ id: row.id, name: row.name })),
+        ...(list.data ?? []).map((row) => ({ id: row.project_id, name: row.project })),
+      ].map((row) => [row.id, row])
+    ).values()
+  );
   return (
     <>
       {!selected && (
         <>
           <PageHeading title="悬赏大厅">
-            <Button onClick={() => void refresh().catch(() => {})}>刷新</Button>
-            <Button onClick={() => setExceptions(true)}>WIP 例外</Button>
+            <button className="icon-button" onClick={() => void refresh().catch(() => {})} aria-label="刷新悬赏列表">
+              <CanonicalIcon name="refresh" size={24} />
+            </button>
           </PageHeading>
-          {store.planner?.projects.some((row) => row.lead) && (
-            <FloatingAction label="发布悬赏" onClick={() => setPublish(true)} />
-          )}
-          <ErrorMessage error={list.error || todos.error || detail.error || flow.error || store.error} />
-          <LabField label="按项目查看">
-            <select value={project} onChange={(e) => setProject(e.target.value)}>
-              <option value="">全实验室公开悬赏</option>
-              {Array.from(
-                new Map(
-                  [
-                    ...(store.planner?.projects ?? []).map((row) => ({ id: row.id, name: row.name })),
-                    ...(list.data ?? []).map((row) => ({ id: row.project_id, name: row.project })),
-                  ].map((row) => [row.id, row])
-                ).values()
-              ).map((row) => (
-                <option key={row.id} value={row.id}>
-                  {row.name}
-                </option>
+          <main className="bx-body bx-market-body">
+            <ErrorMessage error={list.error || todos.error || detail.error || flow.error || store.error} />
+            <label className="bx-search">
+              <CanonicalIcon name="search" size={24} />
+              <input
+                type="search"
+                aria-label="搜索任务、交付物"
+                placeholder="搜索任务、交付物"
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+              />
+            </label>
+            <div className="bx-market-filters">
+              <label className="bx-scope-filter m3-chip v6-select-chip">
+                <span>{projectChoices.find((row) => row.id === project)?.name ?? "全实验室公开悬赏"}</span>
+                <CanonicalIcon name="down" size={18} />
+                <select aria-label="悬赏项目" value={project} onChange={(e) => setProject(e.target.value)}>
+                  <option value="">全实验室公开悬赏</option>
+                  {projectChoices.map((row) => (
+                    <option key={row.id} value={row.id}>
+                      {row.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <button className="bx-wip-filter m3-chip" onClick={() => setExceptions(true)}>
+                WIP 例外
+              </button>
+            </div>
+            <div className="m3-tabs bx-tabs bx-market-tabs" role="tablist">
+              {[
+                { id: "open", name: "开放认领" },
+                { id: "mine", name: "我的参与" },
+                { id: "all", name: "全部悬赏" },
+              ].map((item) => (
+                <button
+                  key={item.id}
+                  role="tab"
+                  aria-selected={view === item.id}
+                  className={`bx-tab${view === item.id ? " bx-selected" : ""}`}
+                  onClick={() => setView(item.id)}
+                >
+                  {item.name}
+                </button>
               ))}
-            </select>
-          </LabField>
-          <Tabs
-            value={view}
-            onChange={setView}
-            items={[
-              { id: "open", name: "开放认领" },
-              { id: "mine", name: "我的参与" },
-              { id: "all", name: "全部悬赏" },
-            ]}
-          />
-          {todos.data && todos.data.length > 0 && (
-            <section>
-              <h3 className="lab-section-heading">我的待办</h3>
-              <div className="lab-action-list">
-                {todos.data.map((row) => (
-                  <button key={row.id} className="lab-action-row" onClick={() => setSelected(row.id)}>
-                    <span>
-                      {row.action} · {row.title}
-                      {row.overdue ? " · 已逾期" : ""}
-                    </span>
-                    <span aria-hidden>›</span>
-                  </button>
-                ))}
-              </div>
-            </section>
-          )}
-          <input
-            className="lab-input"
-            aria-label="搜索悬赏"
-            placeholder="搜索任务、交付物"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-          />
-          <h3 className="lab-section-heading">
-            {view === "open" ? "开放认领" : view === "mine" ? "我的参与" : "全部悬赏"}
-          </h3>
-          {list.data
-            ?.filter(
-              (row) =>
-                (!project || row.project_id === project) &&
-                (view !== "open" || row.status === "open") &&
-                (view !== "mine" ||
-                  row.allocations.some((member) => member.user_id === store.planner?.user_id) ||
-                  row.is_lead ||
-                  row.is_reviewer ||
-                  row.is_independent_reviewer) &&
-                `${row.title} ${row.public_summary} ${row.deliverable}`.toLowerCase().includes(query.toLowerCase())
-            )
-            .map((row) => (
-              <article className="lab-card" key={row.id}>
-                <button className="lab-card-row" onClick={() => setSelected(row.id)}>
-                  <div className="lab-heading">
-                    <small className="lab-muted">{row.issue_key ?? "悬赏任务"}</small>
-                    <span className={`lab-badge ${row.status}`}>{statusNames[row.status] ?? row.status}</span>
+            </div>
+            <div className="bx-market-section">
+              <h2>{view === "open" ? "开放认领" : view === "mine" ? "我的参与" : "全部悬赏"}</h2>
+              <span>{visibleBounties.length} 项</span>
+            </div>
+            {visibleBounties.map((row) => (
+              <article className="bx-bounty-card" key={row.id}>
+                <div className="bx-bounty-top">
+                  <span>
+                    <CanonicalIcon name="folder" size={18} />
+                    {row.project}
+                  </span>
+                  <span className="bx-bounty-status">{statusNames[row.status] ?? row.status}</span>
+                </div>
+                <h3>{row.title}</h3>
+                <div className="bx-bounty-values">
+                  <div>
+                    <span>VC 配额</span>
+                    <strong>
+                      {row.budget}
+                      <small>VC</small>
+                    </strong>
                   </div>
-                  <h3>{row.title}</h3>
-                  <p className="lab-muted">
-                    {row.project} · {row.public_summary}
-                  </p>
-                  <div className="lab-card-meta">
-                    <span>{row.budget} VC 配额</span>
-                    <span>
-                      预算预计{" "}
+                  <div>
+                    <span>预算预计</span>
+                    <strong className="bx-estimate">
                       {(row.estimated_reward ?? row.reward_estimate?.amount)
                         ? `¥${row.estimated_reward ?? row.reward_estimate?.amount}`
                         : "—"}
-                      {(row.reward_formula_version ?? row.reward_estimate?.formula_version)
-                        ? ` · v${row.reward_formula_version ?? row.reward_estimate?.formula_version}`
-                        : ""}
-                    </span>
-                    {row.major && <span>重大任务</span>}
-                    {row.due_at && <span>{row.due_at.slice(0, 10)} 截止</span>}
+                    </strong>
                   </div>
+                </div>
+                {row.due_at && (
+                  <div className="lab-card-meta">
+                    <span>{row.due_at.slice(0, 10)} 截止</span>
+                  </div>
+                )}
+                <button className="bx-bounty-open" onClick={() => setSelected(row.id)}>
+                  <span>查看悬赏</span>
+                  <CanonicalIcon name="arrow" size={24} />
                 </button>
               </article>
             ))}
-          {list.data &&
-            !list.data.some(
-              (row) =>
-                (!project || row.project_id === project) &&
-                (view !== "open" || row.status === "open") &&
-                (view !== "mine" ||
-                  row.allocations.some((member) => member.user_id === store.planner?.user_id) ||
-                  row.is_lead ||
-                  row.is_reviewer ||
-                  row.is_independent_reviewer) &&
-                `${row.title} ${row.public_summary} ${row.deliverable}`.toLowerCase().includes(query.toLowerCase())
-            ) && <Empty>所选范围暂无悬赏。</Empty>}
+            {list.loading && <Empty>正在读取悬赏…</Empty>}
+            {list.data && !visibleBounties.length && <Empty>所选范围暂无悬赏。</Empty>}
+            {!!todos.data?.length && (
+              <details className="v6-finance-records">
+                <summary>
+                  我的待办
+                  <CanonicalIcon name="down" size={18} />
+                </summary>
+                <div className="lab-action-list">
+                  {todos.data.map((row) => (
+                    <button key={row.id} className="lab-action-row" onClick={() => setSelected(row.id)}>
+                      <span>
+                        {row.action} · {row.title}
+                        {row.overdue ? " · 已逾期" : ""}
+                      </span>
+                      <CanonicalIcon name="chevron" size={20} />
+                    </button>
+                  ))}
+                </div>
+              </details>
+            )}
+          </main>
+          {store.planner?.projects.some((row) => row.lead) && (
+            <button className="m3-fab bx-create-bounty" onClick={() => setPublish(true)}>
+              <CanonicalIcon name="plus" size={24} />
+              <span>新建悬赏</span>
+            </button>
+          )}
         </>
       )}
       {selected && (

@@ -4,6 +4,7 @@
 package org.openoceanacoustic.mobile;
 
 import android.graphics.Color;
+import android.graphics.Rect;
 import android.content.ActivityNotFoundException;
 import android.content.Intent;
 import android.net.Uri;
@@ -34,13 +35,34 @@ public class MainActivity extends BridgeActivity {
         getWindow().setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);
         getWindow().setStatusBarColor(Color.TRANSPARENT);
         getWindow().setNavigationBarColor(Color.TRANSPARENT);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            getWindow().setStatusBarContrastEnforced(false);
+            getWindow().setNavigationBarContrastEnforced(false);
+        }
         applyAppearance(false);
         bridge.getWebView().getSettings().setSaveFormData(false);
         ViewCompat.setOnApplyWindowInsetsListener(bridge.getWebView(), (view, insets) -> {
-            safeInsets = insets.getInsets(WindowInsetsCompat.Type.systemBars() | WindowInsetsCompat.Type.displayCutout());
+            int safeTypes = WindowInsetsCompat.Type.systemBars() | WindowInsetsCompat.Type.displayCutout();
+            safeInsets = insets.getInsets(safeTypes);
             keyboardHeight = insets.getInsets(WindowInsetsCompat.Type.ime()).bottom;
             emitInsets();
-            return insets;
+            // CSS owns the system safe area. WebView 144 also exposes these values
+            // through env(), so explicitly clear the forwarded values on every change.
+            WindowInsetsCompat.Builder forwarded = new WindowInsetsCompat.Builder(insets)
+                .setInsets(safeTypes, Insets.NONE)
+                .setInsetsIgnoringVisibility(safeTypes, Insets.NONE);
+            if (insets.isVisible(WindowInsetsCompat.Type.ime())) {
+                // adjustResize (including Capacitor's fullscreen workaround) may have
+                // already shortened the WebView. Forward only the remaining overlap
+                // so WebView 139+ does not shorten its visual viewport a second time.
+                Rect visibleFrame = new Rect();
+                view.getWindowVisibleDisplayFrame(visibleFrame);
+                int[] position = new int[2];
+                view.getLocationOnScreen(position);
+                int overlap = Math.max(0, position[1] + view.getHeight() - visibleFrame.bottom);
+                forwarded.setInsets(WindowInsetsCompat.Type.ime(), Insets.of(0, 0, 0, Math.min(keyboardHeight, overlap)));
+            }
+            return forwarded.build();
         });
         ViewCompat.requestApplyInsets(bridge.getWebView());
         if (!bridge.isMinimumWebViewInstalled()) {
@@ -62,8 +84,11 @@ public class MainActivity extends BridgeActivity {
         WindowInsetsControllerCompat controller = WindowCompat.getInsetsController(getWindow(), getWindow().getDecorView());
         controller.setAppearanceLightStatusBars(!dark);
         controller.setAppearanceLightNavigationBars(!dark);
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) getWindow().setNavigationBarColor(Color.rgb(15, 23, 42));
-        getWindow().getDecorView().setBackgroundColor(dark ? Color.rgb(15, 23, 42) : Color.rgb(248, 250, 252));
+        // Android 7 cannot draw dark navigation icons; retain contrast for that bar.
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) getWindow().setNavigationBarColor(Color.rgb(19, 19, 20));
+        int background = dark ? Color.rgb(19, 19, 20) : Color.rgb(248, 250, 253);
+        getWindow().getDecorView().setBackgroundColor(background);
+        if (bridge != null && bridge.getWebView() != null) bridge.getWebView().setBackgroundColor(background);
     }
 
     com.getcapacitor.JSObject insetValues() {
