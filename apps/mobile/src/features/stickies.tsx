@@ -1,10 +1,12 @@
-import { useEffect, useRef, useState } from "react";
+import { useContext, useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import useSWRInfinite from "swr/infinite";
 import { useSWRConfig } from "swr";
-import { CanonicalIcon } from "../components/navigation";
+import { CanonicalIcon, MobileHeaderContext } from "../components/navigation";
 import { RichHtmlEditor } from "../components/rich-editor";
-import { ErrorMessage, FloatingAction, Html, Loading, PageHeading, Sheet, records } from "../components/ui";
+import { ErrorMessage, Html, Loading, PageHeading, Sheet, records } from "../components/ui";
 import type { ApiClient } from "../lib/client";
+import { requestMobileNavigation } from "../lib/mobile-navigation";
 
 export type Sticky = {
   id: string;
@@ -34,11 +36,6 @@ export const stickyColors = [
 
 function knownColor(value: unknown): string {
   return stickyColors.some((color) => color.key === value) ? String(value) : "";
-}
-export function requestMobileNavigation(navigate: () => void) {
-  const event = new CustomEvent("mobileNavigate", { cancelable: true, detail: { navigate } });
-  window.dispatchEvent(event);
-  if (!event.defaultPrevented) navigate();
 }
 export function stickyRecords(data: unknown): Sticky[] {
   return records(data).filter((note) => typeof note.id === "string") as Sticky[];
@@ -329,6 +326,7 @@ export function StickyActions({
 }
 
 export default function Stickies({ client, workspaceSlug }: { client: ApiClient; workspaceSlug: string }) {
+  const header = useContext(MobileHeaderContext);
   const path = `/api/workspaces/${encodeURIComponent(workspaceSlug)}/stickies/`;
   const { mutate } = useSWRConfig();
   const [query, setQuery] = useState("");
@@ -375,6 +373,17 @@ export default function Stickies({ client, workspaceSlug }: { client: ApiClient;
       closeEditor();
       setActions(note);
     });
+  const createAction = (
+    <div className="sticky-action-bar">
+      <button
+        className="button primary"
+        disabled={editing === "new"}
+        onClick={() => requestMobileNavigation(() => setEditing("new"))}
+      >
+        新建便签
+      </button>
+    </div>
+  );
   return (
     <div className="stickies-content">
       <PageHeading title="便签" />
@@ -490,7 +499,7 @@ export default function Stickies({ client, workspaceSlug }: { client: ApiClient;
           </div>
         </Sheet>
       )}
-      {!editing && <FloatingAction label="新建便签" onClick={() => setEditing("new")} />}
+      {header?.composer ? createPortal(createAction, header.composer) : createAction}
     </div>
   );
 }

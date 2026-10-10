@@ -3,6 +3,7 @@ import { Search } from "lucide-react";
 import { CanonicalIcon } from "../components/navigation";
 import type { MobileRoute } from "@plane/shared-state/mobile";
 import type { ApiClient } from "../lib/client";
+import { requestMobileNavigation } from "../lib/mobile-navigation";
 import {
   ActionButton,
   ErrorMessage,
@@ -14,14 +15,7 @@ import {
   textValue,
   useData,
 } from "../components/ui";
-import {
-  StickyActions,
-  StickyCard,
-  StickyEditor,
-  requestMobileNavigation,
-  stickyRecords,
-  type Sticky,
-} from "./stickies";
+import { StickyActions, StickyCard, StickyEditor, stickyRecords, type Sticky } from "./stickies";
 
 export function Home({
   client,

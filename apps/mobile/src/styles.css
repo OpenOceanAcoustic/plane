@@ -341,11 +341,16 @@ img {
 }
 .error {
   color: #c74848;
-  background: color-mix(in srgb, #d74d4d 6%, var(--surface));
+  background: rgba(215, 77, 77, 0.06);
   padding: 10px 12px;
   border-radius: 8px;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
+}
+@supports (background: color-mix(in srgb, white, black)) {
+  .error {
+    background: color-mix(in srgb, #d74d4d 6%, var(--surface));
+  }
 }
 .empty {
   text-align: center;
@@ -1273,7 +1278,26 @@ dd {
   display: flex;
   flex-direction: column;
   gap: 18px;
-  padding-bottom: 80px;
+}
+.sticky-action-bar {
+  display: flex;
+  justify-content: flex-end;
+  flex-shrink: 0;
+  gap: 10px;
+  padding: 12px 17px 9px;
+  background: var(--canvas);
+  width: 100%;
+  max-width: 760px;
+  margin: 0 auto;
+}
+.sticky-action-bar .button {
+  flex: 1;
+  min-height: 46px;
+  padding: 10px;
+  border-radius: 9px;
+  font-size: 16px;
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 .sticky-search {
   margin: 0;
