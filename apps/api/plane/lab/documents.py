@@ -10,6 +10,7 @@ from rest_framework.response import Response
 from plane.db.models import Page, PageVersion, ProjectMember, ProjectPage
 from .auth import audit, lock
 from .document_models import TaskDocumentLink
+from .document_files import file_data, files_for_pages
 from .permissions import issue_access, readable_issues
 from .planning_views import LabView
 
@@ -66,7 +67,8 @@ def page_access(user, workspace, project_id, page_id, edit=False):
     return page, membership
 
 
-def document_data(page, project_id):
+def document_data(page, project_id, document_files=None):
+    document_files = files_for_pages([page]) if document_files is None else document_files
     return {
         "id": str(page.id),
         "name": page.name or "未命名文档",
@@ -76,6 +78,7 @@ def document_data(page, project_id):
         "is_locked": page.is_locked,
         "archived_at": page.archived_at.isoformat() if page.archived_at else None,
         "updated_at": page.updated_at.isoformat(),
+        "file": file_data(document_files.get(page.id), project_id),
     }
 
 
@@ -86,9 +89,11 @@ class ProjectDocumentsView(LabView):
         query = str(request.query_params.get("q", "")).strip()[:100]
         if query:
             pages = pages.filter(name__icontains=query)
+        pages = list(pages.order_by("-updated_at")[:100])
+        document_files = files_for_pages(pages)
         return Response(
             {
-                "documents": [document_data(page, project_id) for page in pages.order_by("-updated_at")[:100]],
+                "documents": [document_data(page, project_id, document_files) for page in pages],
                 "can_edit": membership.role >= 15,
             }
         )
@@ -136,9 +141,11 @@ class TaskDocumentsView(LabView):
         pages = accessible_pages(request.user, self.workspace, issue.project_id).filter(
             lab_tasks__issue=issue, lab_tasks__deleted_at__isnull=True
         )
+        pages = list(pages)
+        document_files = files_for_pages(pages)
         return Response(
             {
-                "documents": [document_data(page, issue.project_id) for page in pages],
+                "documents": [document_data(page, issue.project_id, document_files) for page in pages],
                 "can_edit": membership.role >= 15 and not issue.archived_at,
             }
         )

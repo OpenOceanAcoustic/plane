@@ -30,6 +30,51 @@ const planner = (minutes: number): LabPlanner => ({
   ],
 });
 
+test("document upload sends the original multipart body with credentials and a CSRF token", async (context) => {
+  const calls: { url: string; options?: RequestInit }[] = [];
+  context.mock.method(globalThis, "fetch", async (url: string, options?: RequestInit) => {
+    calls.push({ url, options });
+    return url.endsWith("/auth/get-csrf-token/")
+      ? Response.json({ csrf_token: "test-csrf" })
+      : Response.json({ id: "document" }, { status: 201 });
+  });
+  const form = new FormData();
+  form.set("file", new Blob(["# 实验记录"], { type: "text/markdown" }), "实验记录.md");
+  const store = new LabStore("", "lab");
+  assert.deepEqual(await store.upload("projects/project/documents/upload/", form), { id: "document" });
+  assert.equal(calls[1]?.options?.body, form);
+  assert.equal(calls[1]?.options?.credentials, "include");
+  assert.deepEqual(calls[1]?.options?.headers, { "X-CSRFToken": "test-csrf" });
+  assert.equal(calls[0]?.options?.credentials, "include");
+});
+
+test("document downloads retain original bytes and do not convert permission failures into files", async (context) => {
+  let allowed = true;
+  const original = new Uint8Array([0, 255, 10, 128]);
+  context.mock.method(globalThis, "fetch", async (_url: string, options?: RequestInit) => {
+    assert.equal(options?.credentials, "include");
+    return allowed
+      ? new Response(original, { headers: { "Content-Type": "application/msword" } })
+      : Response.json({ detail: "文档访问已撤销" }, { status: 403 });
+  });
+  const store = new LabStore("", "lab");
+  const { blob } = await store.download("projects/project/documents/page/versions/version/download/");
+  assert.deepEqual(new Uint8Array(await blob.arrayBuffer()), original);
+  allowed = false;
+  await assert.rejects(store.download("projects/project/documents/page/versions/version/download/"), /文档访问已撤销/);
+});
+
+test("document upload stops before sending a file when CSRF negotiation fails", async (context) => {
+  let requests = 0;
+  context.mock.method(globalThis, "fetch", async () => {
+    requests += 1;
+    return Response.json({ detail: "登录已失效" }, { status: 403 });
+  });
+  const store = new LabStore("", "lab");
+  await assert.rejects(store.upload("projects/project/documents/upload/", new FormData()), /登录已失效/);
+  assert.equal(requests, 1);
+});
+
 test("a slow earlier refresh cannot replace the planning summary fetched after a save", async (context) => {
   const responses: ((response: Response) => void)[] = [];
   context.mock.method(globalThis, "fetch", () => new Promise<Response>((resolve) => responses.push(resolve)));

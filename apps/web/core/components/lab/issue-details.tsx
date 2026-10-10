@@ -126,7 +126,7 @@ export const LabIssueDetails = observer(function LabIssueDetails({
         issueId={issueId}
         editable={editable}
       />
-      <LabTaskDocuments workspaceSlug={workspaceSlug} projectId={projectId} issueId={issueId} />
+      <LabTaskDocuments workspaceSlug={workspaceSlug} projectId={projectId} issueId={issueId} editable={editable} />
       {deleting && deletionAllowed && (
         <LabIssueDeleteDialog
           key={`${projectId}:${issueId}`}

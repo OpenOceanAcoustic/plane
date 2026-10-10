@@ -2129,6 +2129,12 @@ class IssueAttachmentDetailAPIEndpoint(BaseAPIView):
         # Get the asset
         asset = FileAsset.objects.get(id=pk, workspace__slug=slug, project_id=project_id)
 
+        from plane.lab.document_files import native_document_file_response
+
+        document_response = native_document_file_response(request.user, asset)
+        if document_response is not None:
+            return document_response
+
         # Check if the asset is uploaded
         if not asset.is_uploaded:
             return Response(

@@ -27,6 +27,7 @@ from plane.utils.path_validator import sanitize_filename
 from plane.bgtasks.storage_metadata_task import get_asset_object_metadata
 from plane.throttles.asset import AssetRateThrottle
 from .access import native_asset_access
+from plane.lab.document_files import native_document_file_response
 
 
 class UserAssetsV2Endpoint(BaseAPIView):
@@ -465,6 +466,10 @@ class WorkspaceFileAssetEndpoint(BaseAPIView):
                 status=status.HTTP_404_NOT_FOUND,
             )
 
+        document_response = native_document_file_response(request.user, asset)
+        if document_response is not None:
+            return document_response
+
         # Get the presigned URL
         storage = S3Storage(request=request)
         # Generate a presigned URL to share an S3 object
@@ -672,6 +677,10 @@ class ProjectAssetEndpoint(BaseAPIView):
                 {"error": "The requested asset could not be found."},
                 status=status.HTTP_404_NOT_FOUND,
             )
+
+        document_response = native_document_file_response(request.user, asset)
+        if document_response is not None:
+            return document_response
 
         # Get the presigned URL
         storage = S3Storage(request=request)
@@ -884,6 +893,10 @@ class WorkspaceAssetDownloadEndpoint(BaseAPIView):
         if not native_asset_access(request.user, asset):
             return Response({"error": "You don't have access to this asset."}, status=status.HTTP_403_FORBIDDEN)
 
+        document_response = native_document_file_response(request.user, asset)
+        if document_response is not None:
+            return document_response
+
         storage = S3Storage(request=request)
         signed_url = storage.generate_presigned_url(
             object_name=asset.asset.name,
@@ -914,6 +927,10 @@ class ProjectAssetDownloadEndpoint(BaseAPIView):
 
         if not native_asset_access(request.user, asset):
             return Response({"error": "You don't have access to this asset."}, status=status.HTTP_403_FORBIDDEN)
+
+        document_response = native_document_file_response(request.user, asset)
+        if document_response is not None:
+            return document_response
 
         storage = S3Storage(request=request)
         signed_url = storage.generate_presigned_url(
