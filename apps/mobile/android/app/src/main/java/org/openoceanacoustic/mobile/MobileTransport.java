@@ -10,6 +10,7 @@ import android.database.Cursor;
 import android.net.Uri;
 import android.provider.OpenableColumns;
 import android.util.Base64;
+import android.util.Log;
 import androidx.activity.result.ActivityResult;
 import androidx.core.content.FileProvider;
 import com.getcapacitor.JSObject;
@@ -66,8 +67,8 @@ public class MobileTransport extends Plugin {
                     };
                 }
                 NativeHttp.Result result;
-                try { result = NativeHttp.execute(server, path, method, headers, body, vault.get(server), false, null); }
-                finally { vault.save(server); }
+                try { result = NativeHttp.execute(server, path, method, headers, body, getSession(server), false, null); }
+                finally { saveSession(server); }
                 call.resolve(response(result, call.getString("responseType", "json")));
             } catch (Exception error) { reject(call, error); }
         });
@@ -76,7 +77,9 @@ public class MobileTransport extends Plugin {
     @PluginMethod public void clearSession(PluginCall call) {
         worker.execute(() -> {
             try {
-                vault.clear(call.getString("server"));
+                try { vault.clear(call.getString("server")); }
+                catch (IllegalArgumentException invalid) { throw invalid; }
+                catch (Exception storage) { throw new TransportFailure.SessionStorageFailure(storage); }
                 files.clear();
                 deleteContents(new File(getContext().getCacheDir(), "mobile-files"));
                 call.resolve();
@@ -172,8 +175,8 @@ public class MobileTransport extends Plugin {
                     };
                 }
                 NativeHttp.Result result;
-                try { result = NativeHttp.execute(server, path, method, headers, body, vault.get(server), signed, null); }
-                finally { if (!signed) vault.save(server); }
+                try { result = NativeHttp.execute(server, path, method, headers, body, signed ? new CookieSession() : getSession(server), signed, null); }
+                finally { if (!signed) saveSession(server); }
                 call.resolve(response(result, "json"));
             } catch (Exception error) { reject(call, error); }
         });
@@ -191,8 +194,8 @@ public class MobileTransport extends Plugin {
                 target = new File(directory, name);
                 NativeHttp.Result result;
                 try (OutputStream output = new FileOutputStream(target)) {
-                    try { result = NativeHttp.execute(server, path, "GET", headers(call), null, vault.get(server), false, output); }
-                    finally { vault.save(server); }
+                    try { result = NativeHttp.execute(server, path, "GET", headers(call), null, getSession(server), false, output); }
+                    finally { saveSession(server); }
                 }
                 if (result.status >= 400) {
                     target.delete();
@@ -288,9 +291,23 @@ public class MobileTransport extends Plugin {
         File[] children = directory.listFiles();
         if (children != null) for (File child : children) { if (child.isDirectory()) deleteContents(child); child.delete(); }
     }
+    private CookieSession getSession(String server) throws Exception {
+        try { return vault.get(server); }
+        catch (IllegalArgumentException invalid) { throw invalid; }
+        catch (Exception storage) { throw new TransportFailure.SessionStorageFailure(storage); }
+    }
+    private void saveSession(String server) throws Exception {
+        try { vault.save(server); }
+        catch (IllegalArgumentException invalid) { throw invalid; }
+        catch (Exception storage) { throw new TransportFailure.SessionStorageFailure(storage); }
+    }
     private static void reject(PluginCall call, Exception error) {
-        if (error instanceof IllegalArgumentException) call.reject(error.getMessage(), "INVALID_REQUEST");
-        else call.reject("网络或文件操作失败，请重试", "MOBILE_NETWORK");
+        String operation = call.getMethodName();
+        String code = TransportFailure.code(operation, error);
+        Log.w("OOA.MobileTransport", TransportFailure.diagnostic(operation, error));
+        if (error instanceof IllegalArgumentException) call.reject(error.getMessage(), code);
+        else if (error instanceof TransportFailure.SessionStorageFailure) call.reject("无法保存安全会话，请重新登录后重试", code);
+        else call.reject("网络或文件操作失败，请重试", code);
     }
     @Override protected void handleOnDestroy() { worker.shutdown(); }
 }

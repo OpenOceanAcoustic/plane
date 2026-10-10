@@ -25,7 +25,7 @@ export class SettingsApi {
     return this.client.request("/api/users/me/", "PATCH", values);
   }
   updateProjectFeature(base: string, feature: string, enabled: boolean) {
-    return this.client.request(base, "PATCH", { [feature === "intake_view" ? "inbox_view" : feature]: enabled });
+    return this.client.request(base, "PATCH", { [feature]: enabled });
   }
   invite(workspaceSlug: string, email: string, role: string) {
     return this.client.request(`/api/workspaces/${encodeURIComponent(workspaceSlug)}/invitations/`, "POST", {

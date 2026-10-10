@@ -149,6 +149,7 @@ const App = observer(function App() {
       NativeApp.addListener("appStateChange", ({ isActive }) => {
         if (isActive) {
           void mutate(() => true);
+          window.dispatchEvent(new Event("mobileResume"));
         }
       }),
       Keyboard.addListener("keyboardDidShow", () => document.documentElement.classList.add("keyboard-open")),
@@ -294,7 +295,7 @@ const App = observer(function App() {
       <WorkspaceFeature section={page} client={client} workspaceSlug={store.workspaceSlug} onNavigate={navigate} />
     );
   else if (page === "space") content = <Space client={client} />;
-  else
+  else if (["settings", "workspace-settings", "project-settings", "admin"].includes(page))
     content = (
       <SettingsFeature
         section={
@@ -323,6 +324,7 @@ const App = observer(function App() {
         }}
       />
     );
+  else content = <p className="empty">页面不存在</p>;
   return (
     <MobileClientContext.Provider value={client}>
       <div className="app-shell" key={epoch}>
@@ -395,12 +397,21 @@ const App = observer(function App() {
               ))}
             </nav>
           )}
-          {store.user && !store.workspaceSlug ? (
+          {store.user && !store.workspaceSlug && !["settings", "admin", "space"].includes(page) ? (
             <>
               <ErrorMessage error={workspaces.error} />
               <p className="empty">暂无工作区</p>
               <button className="button" onClick={() => setNewWorkspace(true)}>
                 创建工作区
+              </button>
+              <button className="button" onClick={() => navigate({ page: "settings" })}>
+                个人设置
+              </button>
+              <button className="button" onClick={() => navigate({ page: "admin" })}>
+                God Mode
+              </button>
+              <button className="button" onClick={() => navigate({ page: "space" })}>
+                共享页面
               </button>
             </>
           ) : (
@@ -408,12 +419,17 @@ const App = observer(function App() {
           )}
           {page === "settings" && (
             <div className="list">
-              <button className="button" onClick={() => navigate({ page: "workspace-settings" })}>
-                <Settings size={18} />
-                工作区设置
-              </button>
+              {store.workspaceSlug && (
+                <button className="button" onClick={() => navigate({ page: "workspace-settings" })}>
+                  <Settings size={18} />
+                  工作区设置
+                </button>
+              )}
               <button className="button" onClick={() => navigate({ page: "admin" })}>
                 God Mode
+              </button>
+              <button className="button" onClick={() => navigate({ page: "space" })}>
+                共享页面
               </button>
             </div>
           )}

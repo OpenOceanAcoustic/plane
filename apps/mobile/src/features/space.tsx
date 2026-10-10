@@ -1,5 +1,6 @@
 import { useState } from "react";
 import type { ApiClient } from "../lib/client";
+import { spaceIssueProperties } from "./space-issue";
 import {
   ActionButton,
   ErrorMessage,
@@ -42,6 +43,11 @@ export default function Space({ client }: { client: ApiClient }) {
   const prefix = `/api/public/anchor/${anchor}/`;
   const metadata = useData<Entity>(client, anchor ? `${prefix}meta/` : null);
   const settings = useData<Entity>(client, anchor ? `${prefix}settings/` : null);
+  const states = useData<Entity[]>(client, anchor ? `${prefix}states/` : null);
+  const members = useData<Entity[]>(client, anchor ? `${prefix}members/` : null);
+  const labels = useData<Entity[]>(client, anchor ? `${prefix}labels/` : null);
+  const referenceData = { states: records(states.data), members: records(members.data), labels: records(labels.data) };
+  const metadataLoading = metadata.loading || states.loading || members.loading || labels.loading;
   const issues = useData<Entity>(
     client,
     anchor && !issueId
@@ -84,7 +90,18 @@ export default function Space({ client }: { client: ApiClient }) {
           打开
         </button>
       </form>
-      <ErrorMessage error={error ?? metadata.error ?? settings.error ?? issues.error ?? issue.error} />
+      <ErrorMessage
+        error={
+          error ??
+          metadata.error ??
+          settings.error ??
+          states.error ??
+          members.error ??
+          labels.error ??
+          issues.error ??
+          issue.error
+        }
+      />
       {anchor && !issueId && (
         <>
           <label className="field">
@@ -102,12 +119,17 @@ export default function Space({ client }: { client: ApiClient }) {
               提交工作项
             </button>
           )}
-          {issues.loading ? (
+          {issues.loading || metadataLoading ? (
             <Loading />
           ) : (
             <RecordList
-              data={issues.data}
-              fields={["sequence_id", "state", "priority", "target_date"]}
+              data={records(issues.data).map((row) =>
+                Object.assign(
+                  { id: row.id, name: row.name, 编号: row.sequence_id },
+                  Object.fromEntries(spaceIssueProperties(row, referenceData))
+                )
+              )}
+              fields={["编号", "状态", "优先级", "负责人", "标签", "开始日期", "截止日期"]}
               onOpen={(item) => setIssueId(String(item.id))}
             />
           )}
@@ -126,7 +148,7 @@ export default function Space({ client }: { client: ApiClient }) {
         </>
       )}
       {issueId &&
-        (issue.loading ? (
+        (issue.loading || metadataLoading ? (
           <Loading />
         ) : (
           <>
@@ -136,10 +158,10 @@ export default function Space({ client }: { client: ApiClient }) {
             <h1>{textValue(issue.data?.name)}</h1>
             <Html html={issue.data?.description_html} />
             <dl className="record-fields">
-              {["state", "priority", "assignees", "labels", "start_date", "target_date"].map((key) => (
-                <div key={key}>
-                  <dt>{key}</dt>
-                  <dd>{textValue(issue.data?.[key])}</dd>
+              {spaceIssueProperties(issue.data ?? {}, referenceData).map(([label, value]) => (
+                <div key={label}>
+                  <dt>{label}</dt>
+                  <dd>{value}</dd>
                 </div>
               ))}
             </dl>

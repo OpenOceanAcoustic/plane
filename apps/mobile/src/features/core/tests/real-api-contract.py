@@ -46,9 +46,16 @@ capabilities = call('/api/lab/session/')
 assert capabilities['client_platform'] == 'android' and capabilities['capabilities']['data_export'] is False
 workspace = '/api/workspaces/' + fixture['workspace_slug']
 call(workspace + '/projects/')
-project = call(workspace + '/projects/', 'POST', {'name': 'Android core contract ' + uuid.uuid4().hex[:6], 'identifier': 'A' + uuid.uuid4().hex[:6].upper(), 'network': 0, 'cycle_view': True, 'module_view': True, 'issue_views_view': True, 'project_lead': account['user_id']})
+project = call(workspace + '/projects/', 'POST', {'name': 'Android core contract ' + uuid.uuid4().hex[:6], 'identifier': 'A' + uuid.uuid4().hex[:6].upper(), 'description': '项目说明必须保留', 'network': 0, 'cycle_view': True, 'module_view': True, 'issue_views_view': True, 'project_lead': account['user_id']})
 base = workspace + '/projects/' + project['id']
-assert call(base + '/')['member_role'] == 20
+full_project = call(base + '/')
+assert full_project['member_role'] == 20
+call(base + '/', 'PATCH', {'name': full_project['name'] + ' renamed', 'identifier': full_project['identifier'], 'description': full_project['description'], 'network': full_project['network'], 'project_lead': full_project['project_lead']})
+assert call(base + '/')['description'] == '项目说明必须保留'
+for enabled in (True, False):
+    call(base + '/', 'PATCH', {'intake_view': enabled})
+    saved_feature = call(base + '/')
+    assert saved_feature['intake_view'] is enabled and saved_feature['inbox_view'] is enabled
 states = call(base + '/states/')
 state_id = next(row['id'] for row in states if row['default'])
 call(base + '/members/')

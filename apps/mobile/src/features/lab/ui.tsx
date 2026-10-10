@@ -1,8 +1,8 @@
 /** Copyright (c) 2026 OpenOceanAcoustic and contributors. SPDX-License-Identifier: AGPL-3.0-only */
 import { useEffect, useId, useRef, useState, Children, cloneElement, isValidElement } from "react";
 import type { ButtonHTMLAttributes, ReactNode } from "react";
+import { isTopDialog } from "../../lib/dialog";
 export { LabAmountInput, labAmountError, labDecimalText, labDecimalUnits } from "./amount";
-const dialogStack: string[] = [];
 export const labInputClass = "lab-input";
 export function Button({
   size: _size,
@@ -56,7 +56,6 @@ export function LabDialog({
   callbacks.current = { onClose, busy, saving };
   useEffect(() => {
     const previous = document.activeElement as HTMLElement | null;
-    dialogStack.push(id);
     const targets = () =>
       form.current
         ?.closest(".lab-sheet")
@@ -65,13 +64,13 @@ export function LabDialog({
         );
     targets()?.[0]?.focus();
     const close = (event: Event) => {
-      if (dialogStack.at(-1) !== id || event.defaultPrevented) return;
+      if (!isTopDialog(form.current?.closest(".lab-sheet") ?? null) || event.defaultPrevented) return;
       event.preventDefault();
       event.stopImmediatePropagation();
       if (!callbacks.current.busy && !callbacks.current.saving) callbacks.current.onClose();
     };
     const key = (event: KeyboardEvent) => {
-      if (dialogStack.at(-1) !== id) return;
+      if (!isTopDialog(form.current?.closest(".lab-sheet") ?? null)) return;
       if (event.key === "Escape") close(event);
       if (event.key === "Tab") {
         const list = targets();
@@ -90,8 +89,6 @@ export function LabDialog({
     document.addEventListener("keydown", key, true);
     window.addEventListener("mobileBack", close, true);
     return () => {
-      const index = dialogStack.indexOf(id);
-      if (index >= 0) dialogStack.splice(index, 1);
       document.removeEventListener("keydown", key, true);
       window.removeEventListener("mobileBack", close, true);
       previous?.focus();

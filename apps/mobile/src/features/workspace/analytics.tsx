@@ -103,7 +103,7 @@ export default function WorkspaceAnalytics(props: WorkspaceProps) {
     return (
       <>
         <h1>工作区分析</h1>
-        <p className="lab-muted">工作区分析向管理员和成员开放。</p>
+        <p className="lab-muted">无权访问</p>
         <Status error={membership.error} />
       </>
     );

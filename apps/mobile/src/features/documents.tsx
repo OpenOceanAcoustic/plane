@@ -122,9 +122,11 @@ function DocumentDetail({
   const [provider, setProvider] = useState<HocuspocusProvider | null>(null);
   const [synced, setSynced] = useState(false);
   const [readOnly, setReadOnly] = useState(true);
+  const [connectionVersion, setConnectionVersion] = useState(0);
   const [status, setStatus] = useState("连接中");
   const [error, setError] = useState<unknown>();
   useEffect(() => {
+    let active = true;
     const document = new Y.Doc();
     const url = new URL("/live/collaboration", `${client.server}/`);
     url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
@@ -139,6 +141,7 @@ function DocumentDetail({
           "POST",
           { project_id: projectId, page_id: pageId }
         );
+        if (!active) throw new Error("文档连接已关闭");
         setReadOnly(ticket.read_only !== false);
         return JSON.stringify({ ticket: ticket.ticket });
       },
@@ -164,12 +167,13 @@ function DocumentDetail({
     };
     window.addEventListener("mobileBack", back);
     return () => {
+      active = false;
       window.removeEventListener("mobileBack", back);
       live.destroy();
       document.destroy();
       setProvider(null);
     };
-  }, [client, workspaceSlug, projectId, pageId]);
+  }, [client, workspaceSlug, projectId, pageId, connectionVersion]);
   return (
     <>
       <div className="section-heading">
@@ -222,6 +226,9 @@ function DocumentDetail({
               action={() => client.request(`${path}lock/`, page.data?.is_locked ? "DELETE" : "POST")}
               onDone={() => {
                 void page.refresh();
+                setReadOnly(true);
+                setSynced(false);
+                setConnectionVersion((version) => version + 1);
                 setMenu(false);
               }}
             >
@@ -291,6 +298,9 @@ function DocumentDetail({
           onSubmit={async (values) => {
             await client.request(`${path}access/`, "POST", { access: Number(values.access) });
             await page.refresh();
+            setReadOnly(true);
+            setSynced(false);
+            setConnectionVersion((version) => version + 1);
           }}
         />
       )}

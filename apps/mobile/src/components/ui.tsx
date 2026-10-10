@@ -3,6 +3,7 @@ import useSWR from "swr";
 import { ChevronLeft, X } from "lucide-react";
 import sanitizeHtml from "sanitize-html";
 import type { ApiClient } from "../lib/client";
+import { isTopDialog } from "../lib/dialog";
 import { MobileClientContext, RichHtmlEditor, resolveImage } from "./rich-editor";
 
 export type Entity = Record<string, unknown> & { id?: string; name?: string };
@@ -137,19 +138,33 @@ export function RecordList({
     </div>
   );
 }
-export function Sheet({ title, children, onClose }: { title: string; children: ReactNode; onClose: () => void }) {
+export function Sheet({
+  title,
+  children,
+  onClose,
+  busy = false,
+}: {
+  title: string;
+  children: ReactNode;
+  onClose: () => void;
+  busy?: boolean;
+}) {
   const ref = useRef<HTMLDivElement>(null);
+  const callbacks = useRef({ onClose, busy });
+  callbacks.current = { onClose, busy };
   useEffect(() => {
     const previous = document.activeElement as HTMLElement | null;
     ref.current?.focus();
     const close = (event: Event) => {
+      if (event.defaultPrevented || !isTopDialog(ref.current)) return;
       event.preventDefault();
-      onClose();
+      event.stopImmediatePropagation();
+      if (!callbacks.current.busy) callbacks.current.onClose();
     };
     const key = (event: KeyboardEvent) => {
+      if (!isTopDialog(ref.current)) return;
       if (event.key === "Escape") {
-        event.preventDefault();
-        onClose();
+        close(event);
       }
       if (event.key === "Tab") {
         const targets = ref.current?.querySelectorAll<HTMLElement>("button,input,select,textarea,a[href]");
@@ -165,22 +180,22 @@ export function Sheet({ title, children, onClose }: { title: string; children: R
         }
       }
     };
-    window.addEventListener("mobileBack", close);
-    window.addEventListener("keydown", key);
+    window.addEventListener("mobileBack", close, true);
+    window.addEventListener("keydown", key, true);
     return () => {
-      window.removeEventListener("mobileBack", close);
-      window.removeEventListener("keydown", key);
+      window.removeEventListener("mobileBack", close, true);
+      window.removeEventListener("keydown", key, true);
       previous?.focus();
     };
-  }, [onClose]);
+  }, []);
   return (
     <div className="overlay">
-      <button className="scrim" onClick={onClose} aria-label="关闭面板" />
+      <button className="scrim" onClick={onClose} disabled={busy} aria-label="关闭面板" />
       <div className="sheet" role="dialog" aria-modal="true" aria-label={title} ref={ref} tabIndex={-1}>
         <div className="handle" />
         <header>
           <h2>{title}</h2>
-          <button className="icon-button" aria-label="关闭" onClick={onClose}>
+          <button className="icon-button" aria-label="关闭" onClick={onClose} disabled={busy}>
             <X />
           </button>
         </header>
@@ -215,7 +230,7 @@ export function FormSheet({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<unknown>();
   return (
-    <Sheet title={title} onClose={onClose}>
+    <Sheet title={title} onClose={onClose} busy={busy}>
       <form
         onSubmit={async (e) => {
           e.preventDefault();

@@ -105,9 +105,6 @@ export function Documents({
             <input name="private" type="checkbox" />
             私人文档，仅本人可见
           </label>
-          <p className="lab-muted">
-            模板包含目标、方法、配置、结果、结论与后续事项。附件、协作编辑和历史版本在文档内维护。
-          </p>
         </LabDialog>
       )}
       {selected && (

@@ -61,6 +61,11 @@ export default function Projects(props: CoreProps) {
   const [query, setQuery] = useState("");
   const [modal, setModal] = useState<"create" | "edit" | "delete" | "details" | null>(null);
   const [selected, setSelected] = useState<Entity>();
+  const selectedDetail = useData<Entity>(
+    client,
+    selected && !selected.archived_at ? `${base}/projects/${selected.id}/` : null
+  );
+  const fullSelected = selectedDetail.data?.id === selected?.id ? selectedDetail.data : undefined;
   const [pendingProject, setPendingProject] = useState<Entity>();
   const [favoritesOnly, setFavoritesOnly] = useState(false);
   const [showArchived, setShowArchived] = useState(false);
@@ -75,9 +80,12 @@ export default function Projects(props: CoreProps) {
   const canAdmin = Number(selected?.member_role) >= 20 || Number(workspace.data?.role) >= 20;
   const close = () => {
     setModal(null);
+    setSelected(undefined);
     setPendingProject(undefined);
   };
   async function save(values: Record<string, string>) {
+    if (modal === "edit" && (!fullSelected || selectedDetail.loading || selectedDetail.error))
+      throw new Error("请先加载项目详情");
     const body: Record<string, unknown> = {
       name: values.name.trim(),
       identifier: values.identifier.trim().toUpperCase(),
@@ -100,6 +108,7 @@ export default function Projects(props: CoreProps) {
       modal === "edit" || pendingProject ? "PATCH" : "POST",
       body
     );
+    if (modal === "edit") await selectedDetail.refresh(result, { revalidate: false });
     if (modal === "create") setPendingProject(result);
     if (
       modal === "create" &&
@@ -194,24 +203,46 @@ export default function Projects(props: CoreProps) {
         </div>
       </ResultState>
       <ErrorMessage error={workspace.error} />
-      {(modal === "create" || modal === "edit") && (
+      {(modal === "create" ||
+        (modal === "edit" && fullSelected && !selectedDetail.loading && !selectedDetail.error)) && (
         <FormSheet
           key={`${modal}-${selected?.id ?? "new"}`}
           title={modal === "create" ? "创建项目" : "编辑项目"}
-          fields={projectFields(modal === "edit" ? selected : undefined, members.data)}
+          fields={projectFields(modal === "edit" ? fullSelected : undefined, members.data)}
           onSubmit={save}
           onClose={close}
         />
       )}
+      {modal === "edit" && (!fullSelected || selectedDetail.loading || selectedDetail.error) && (
+        <Sheet title="编辑项目" onClose={close}>
+          <ResultState loading={selectedDetail.loading} error={selectedDetail.error}>
+            {selectedDetail.error && <ActionButton action={() => selectedDetail.refresh()}>重试</ActionButton>}
+          </ResultState>
+        </Sheet>
+      )}
       {modal === "details" && selected && (
-        <Sheet title={String(selected.name)} onClose={close}>
-          <DetailFields
-            values={[
-              ["项目标识", String(selected.identifier)],
-              ["可见性", Number(selected.network) === 0 ? "私密" : "公开"],
-              ["描述", String(selected.description || "暂无描述")],
-            ]}
-          />
+        <Sheet title={String(fullSelected?.name ?? selected.name)} onClose={close}>
+          {selected.archived_at ? (
+            <DetailFields
+              values={[
+                ["项目标识", String(selected.identifier)],
+                ["状态", "已归档"],
+              ]}
+            />
+          ) : (
+            <ResultState loading={selectedDetail.loading} error={selectedDetail.error}>
+              {fullSelected && !selectedDetail.error && (
+                <DetailFields
+                  values={[
+                    ["项目标识", String(fullSelected.identifier)],
+                    ["可见性", Number(fullSelected.network) === 0 ? "私密" : "公开"],
+                    ["描述", String(fullSelected.description || "暂无描述")],
+                  ]}
+                />
+              )}
+              {selectedDetail.error && <ActionButton action={() => selectedDetail.refresh()}>重试</ActionButton>}
+            </ResultState>
+          )}
           <div className="list">
             <button
               className="button"
@@ -235,9 +266,15 @@ export default function Projects(props: CoreProps) {
             )}
             {canAdmin && (
               <>
-                <button className="button" onClick={() => setModal("edit")}>
-                  编辑项目
-                </button>
+                {!selected.archived_at && (
+                  <button
+                    className="button"
+                    disabled={!fullSelected || selectedDetail.loading || Boolean(selectedDetail.error)}
+                    onClick={() => setModal("edit")}
+                  >
+                    编辑项目
+                  </button>
+                )}
                 <ActionButton
                   action={() =>
                     client.request(`${base}/projects/${selected.id}/archive/`, selected.archived_at ? "DELETE" : "POST")

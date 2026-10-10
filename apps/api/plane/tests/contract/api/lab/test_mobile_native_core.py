@@ -4,6 +4,32 @@ from plane.db.models import DraftIssue, DraftIssueAssignee, DraftIssueLabel, Lab
 
 pytestmark=[pytest.mark.django_db(transaction=True),pytest.mark.contract]
 
+def test_project_feature_switch_writes_canonical_intake_view(laboratory, mocker):
+    lab = laboratory
+    mocker.patch('plane.app.views.project.base.model_activity.delay')
+    mocker.patch('plane.app.views.project.base.recent_visited_task.delay')
+    path = f"/api/workspaces/lab/projects/{lab['project'].id}/"
+    client = lab['client'](lab['lead'])
+    for enabled in (False, True, False):
+        response = client.patch(path, {'intake_view': enabled}, format='json')
+        assert response.status_code == 200
+        saved = client.get(path)
+        assert saved.status_code == 200
+        assert saved.json()['intake_view'] is enabled
+        assert saved.json()['inbox_view'] is enabled
+
+
+def test_project_feature_switch_keeps_browser_alias_and_canonical_precedence(laboratory, mocker):
+    lab = laboratory
+    mocker.patch('plane.app.views.project.base.model_activity.delay')
+    mocker.patch('plane.app.views.project.base.recent_visited_task.delay')
+    path = f"/api/workspaces/lab/projects/{lab['project'].id}/"
+    client = lab['client'](lab['lead'])
+    assert client.patch(path, {'inbox_view': True}, format='json').status_code == 200
+    assert client.get(path).json()['intake_view'] is True
+    assert client.patch(path, {'intake_view': False, 'inbox_view': True}, format='json').status_code == 200
+    assert client.get(path).json()['intake_view'] is False
+
 def test_native_intake_creation_checks_request_role_and_binds_project(laboratory):
     lab=laboratory
     path=f"/api/workspaces/lab/projects/{lab['project'].id}/intakes/"

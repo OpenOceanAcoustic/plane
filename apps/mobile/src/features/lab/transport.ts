@@ -74,6 +74,19 @@ export function useLabTransport(client: ApiClient, slug: string): LabStore {
       invalidate();
     };
   }, [loadPlanner, invalidate]);
+  useEffect(() => {
+    const refresh = () => {
+      void loadPlanner().catch((e) => setError(e instanceof Error ? e.message : "规划读取失败"));
+      if (marketSerial.current > 0)
+        void loadMarket().catch((e) => setError(e instanceof Error ? e.message : "悬赏读取失败"));
+    };
+    window.addEventListener("mobileResume", refresh);
+    window.addEventListener("online", refresh);
+    return () => {
+      window.removeEventListener("mobileResume", refresh);
+      window.removeEventListener("online", refresh);
+    };
+  }, [loadPlanner, loadMarket]);
   return {
     slug,
     scope: `${client.server}:${slug}`,
@@ -120,5 +133,14 @@ export function useResource<T>(store: LabStore, path: string | null) {
       invalidate();
     };
   }, [refresh, path, invalidate]);
+  useEffect(() => {
+    const resume = () => void refresh().catch(() => {});
+    window.addEventListener("mobileResume", resume);
+    window.addEventListener("online", resume);
+    return () => {
+      window.removeEventListener("mobileResume", resume);
+      window.removeEventListener("online", resume);
+    };
+  }, [refresh]);
   return { data, error, loading, refresh, setData };
 }

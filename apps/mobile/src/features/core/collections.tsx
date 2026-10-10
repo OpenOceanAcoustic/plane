@@ -141,16 +141,6 @@ function ProjectCollections(props: CoreProps & { projectId: string }) {
       const display = value?.display_filters as Entity | undefined;
       list.push(
         {
-          key: "access",
-          label: "可见性",
-          type: "select",
-          value: value?.access ?? 0,
-          options: [
-            { value: "0", label: "私人" },
-            { value: "1", label: "项目共享" },
-          ],
-        },
-        {
           key: "state",
           label: "状态",
           type: "select",
@@ -207,7 +197,6 @@ function ProjectCollections(props: CoreProps & { projectId: string }) {
       });
     if (isView)
       Object.assign(body, {
-        access: Number(values.access || 0),
         filters: {
           ...(edit ? filter : {}),
           state: values.state ? [values.state] : null,

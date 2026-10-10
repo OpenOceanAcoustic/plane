@@ -55,7 +55,7 @@ function ProjectOverview({ client, workspaceSlug, projectId, onNavigate }: CoreP
             ["模块", "modules"],
             ["视图", "views"],
             ["归档任务", "archived-tasks"],
-            ["项目设置", "settings"],
+            ["项目设置", "project-settings"],
           ].map(([name, page]) => (
             <button className="button" key={page} onClick={() => onNavigate({ page, projectId })}>
               {name}

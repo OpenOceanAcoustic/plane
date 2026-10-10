@@ -53,7 +53,7 @@ describe("mobile settings public HTTP contracts", () => {
     expect(canManage(5)).toBe(false);
     expect(canManage(undefined)).toBe(false);
   });
-  it("uses the backend inbox alias when changing intake availability", async () => {
+  it("writes intake_view because the inbox alias is read-only", async () => {
     const requests: RequestData[] = [];
     const transport: Transport = {
       async request(options) {
@@ -67,7 +67,7 @@ describe("mobile settings public HTTP contracts", () => {
       "intake_view",
       true
     );
-    expect(requests.at(-1)?.data).toEqual({ inbox_view: true });
+    expect(requests.at(-1)?.data).toEqual({ intake_view: true });
   });
   it("confirms a profile image only after its credential-free signed upload succeeds", async () => {
     const events: string[] = [];

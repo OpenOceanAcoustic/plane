@@ -87,7 +87,6 @@ export function Gantt({
           <LabField label="截止日期">
             <input name="target_date" required type="date" defaultValue={editing.target_date ?? ""} />
           </LabField>
-          <p className="lab-muted">服务器会检查依赖关系并预览后续任务顺延。</p>
         </LabDialog>
       )}
       {preview && (

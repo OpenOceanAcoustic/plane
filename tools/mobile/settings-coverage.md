@@ -35,12 +35,12 @@ All 39 settings screens in the V4 design have functional counterparts. Sheets an
 | `settings-label-edit`         | Project settings → Labels: real CRUD, color, description and nullable parent label.                                                                         |
 | `settings-estimates`          | Project settings → Estimates: backend scheme and point CRUD; assign or disable project estimate.                                                            |
 | `settings-estimate-edit`      | Project settings → Estimates: backend scheme and point CRUD; assign or disable project estimate.                                                            |
-| `settings-features`           | Project settings → Features: cycle_view/module_view/issue_views_view/page_view; intake uses the required inbox_view PATCH alias.                            |
-| `settings-feature-cycles`     | Project settings → Features: cycle_view/module_view/issue_views_view/page_view; intake uses the required inbox_view PATCH alias.                            |
-| `settings-feature-modules`    | Project settings → Features: cycle_view/module_view/issue_views_view/page_view; intake uses the required inbox_view PATCH alias.                            |
-| `settings-feature-views`      | Project settings → Features: cycle_view/module_view/issue_views_view/page_view; intake uses the required inbox_view PATCH alias.                            |
-| `settings-feature-pages`      | Project settings → Features: cycle_view/module_view/issue_views_view/page_view; intake uses the required inbox_view PATCH alias.                            |
-| `settings-feature-intake`     | Project settings → Features: cycle_view/module_view/issue_views_view/page_view; intake uses the required inbox_view PATCH alias.                            |
+| `settings-features`           | Project settings → Features: cycle_view/module_view/issue_views_view/page_view; intake writes intake_view; inbox_view is a read-only response alias.        |
+| `settings-feature-cycles`     | Project settings → Features: cycle_view/module_view/issue_views_view/page_view; intake writes intake_view; inbox_view is a read-only response alias.        |
+| `settings-feature-modules`    | Project settings → Features: cycle_view/module_view/issue_views_view/page_view; intake writes intake_view; inbox_view is a read-only response alias.        |
+| `settings-feature-views`      | Project settings → Features: cycle_view/module_view/issue_views_view/page_view; intake writes intake_view; inbox_view is a read-only response alias.        |
+| `settings-feature-pages`      | Project settings → Features: cycle_view/module_view/issue_views_view/page_view; intake writes intake_view; inbox_view is a read-only response alias.        |
+| `settings-feature-intake`     | Project settings → Features: cycle_view/module_view/issue_views_view/page_view; intake writes intake_view; inbox_view is a read-only response alias.        |
 | `settings-automations`        | Project settings → Automations: archive_in/close_in, integer month counts 0–12, matching backend automation.                                                |
 | `settings-token-created`      | Personal settings → API tokens: GET/POST /api/users/api-tokens/; DELETE detail; creation-only secret display and copy.                                      |
 
