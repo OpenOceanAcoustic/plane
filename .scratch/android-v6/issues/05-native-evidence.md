@@ -6,4 +6,4 @@ Spec: docs/lab/android-v6-alignment.md
 
 Acceptance: real existing APIs/actions and exact V6 final cascade. No demo data in APK; user requested no new business/unit suites. Preserve live50010 and current published assets. Record installed evidence and outstanding differences honestly.
 
-Status: in progress; isolated backend seeded, dedicated AVD booted; native captures pending
+Status: in progress; isolated real backend seeded; final candidate R3 installed on MuMu isolated profile, native capture collection in progress. Software-only AVD failed to provide usable APP evidence.

@@ -1,5 +1,7 @@
 # OpenOceanAcoustic 安卓版安装与构建
 
+当前 V6 / 1.0.4 的构建身份、安装说明和设备验收状态见 [V6 交付记录](android-v6-delivery.md)。以下保留 1.0.2 的历史交付记录；其浏览器对照不代表新版安装验收。
+
 应用：OpenOceanAcoustic 1.0.2（`org.openoceanacoustic.mobile`）。源码位于同一仓库的 `apps/mobile`，已合入 `ooa/main`；主应用和 Space 使用独立移动界面及真实后端接口，按 [V4 设计](android-v4-alignment.md) 对齐。God Mode 仅供电脑网页使用。
 
 本次交付文件位于 `/mnt/repo/ly/android-delivery/OpenOceanAcoustic-1.0.2/`，APK 为 4,390,684 字节，Android versionCode 为 3。源码提交、实际签名和构建文件指纹记录在交付目录 `release-info.json`，可用于核对构建来源。
