@@ -1,6 +1,13 @@
 .git
 *.pyc
 .env
+**/.env
+**/.env.*
+.env.*
+.secrets/
+backups/
+backup-keys/
+security/
 venv
 .venv
 node_modules/

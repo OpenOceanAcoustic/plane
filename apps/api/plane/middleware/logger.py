@@ -63,7 +63,7 @@ class RequestLoggerMiddleware:
 
         # Log the request information
         api_logger.info(
-            f"{request.method} {request.get_full_path()} {response.status_code}",
+            f"{request.method} {request.path} {response.status_code}",
             extra={
                 "path": request.path,
                 "method": request.method,
@@ -90,7 +90,7 @@ class APITokenLogMiddleware:
     def __call__(self, request):
         if request.path.startswith("/auth/lab/"):
             return self.get_response(request)
-        request_body = request.body
+        request_body = None if settings.PUBLIC_DEPLOYMENT else request.body
         response = self.get_response(request)
         self.process_request(request, response, request_body)
         return response
@@ -118,7 +118,7 @@ class APITokenLogMiddleware:
             return "[Could not decode content]"
 
     # Headers whose values must never be persisted in plaintext logs
-    SENSITIVE_HEADERS = frozenset({"x-api-key", "authorization", "cookie"})
+    SENSITIVE_HEADERS = frozenset({"x-api-key", "authorization", "cookie", "x-csrftoken"})
 
     def _redacted_headers(self, request):
         """
@@ -150,10 +150,10 @@ class APITokenLogMiddleware:
                 ).hexdigest(),
                 "path": request.path,
                 "method": request.method,
-                "query_params": request.META.get("QUERY_STRING", ""),
+                "query_params": None if settings.PUBLIC_DEPLOYMENT else request.META.get("QUERY_STRING", ""),
                 "headers": self._redacted_headers(request),
-                "body": self._safe_decode_body(request_body) if request_body else None,
-                "response_body": self._safe_decode_body(response.content) if response.content else None,
+                "body": None if settings.PUBLIC_DEPLOYMENT else self._safe_decode_body(request_body),
+                "response_body": None if settings.PUBLIC_DEPLOYMENT else self._safe_decode_body(response.content),
                 "response_code": response.status_code,
                 "ip_address": get_client_ip(request=request),
                 "user_agent": request.META.get("HTTP_USER_AGENT", None),

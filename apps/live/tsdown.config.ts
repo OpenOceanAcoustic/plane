@@ -1,7 +1,7 @@
 import { defineConfig } from "tsdown";
 
 export default defineConfig({
-  entry: ["src/start.ts"],
+  entry: { start: "src/start.ts", "document-conversion-worker": "src/document-conversion-worker.ts" },
   outDir: "dist",
   format: ["esm"],
   dts: false,

@@ -1,97 +1,105 @@
-/**
- * Copyright (c) 2023-present Plane Software, Inc. and contributors
- * SPDX-License-Identifier: AGPL-3.0-only
- * See the LICENSE file for details.
- */
-
-// plane imports
-import type { IncomingHttpHeaders } from "http";
-import type { TUserDetails } from "@plane/editor";
-import { logger } from "@plane/logger";
+/** Copyright (c) 2026 OpenOceanAcoustic and contributors. SPDX-License-Identifier: AGPL-3.0-only */
+import type { onAuthenticatePayload } from "@hocuspocus/server";
+import { env } from "@/env";
+import { collaborationLimits } from "./collaboration-limits";
 import { AppError } from "@/lib/errors";
-// services
+import { CollaborationService } from "@/services/collaboration.service";
+import type { CollaborationAccess } from "@/services/collaboration.service";
 import { UserService } from "@/services/user.service";
-// types
-import type { HocusPocusServerContext, TDocumentTypes } from "@/types";
+import type { HocusPocusServerContext } from "@/types";
 
-/**
- * Authenticate the user
- * @param requestHeaders - The request headers
- * @param context - The context
- * @param token - The token
- * @returns The authenticated user
- */
+const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+export const allowedOrigin = () => env.PUBLIC_ORIGIN || env.WEB_BASE_URL;
+export const validOrigin = (origin: unknown): boolean =>
+  typeof origin === "string" && !!allowedOrigin() && origin === allowedOrigin();
+
+export async function authorizeDocument(
+  session: HocusPocusServerContext,
+  documentName: string
+): Promise<CollaborationAccess> {
+  const access = await new CollaborationService().access(
+    session.cookie,
+    session.workspaceSlug!,
+    session.projectId!,
+    documentName
+  );
+  if (
+    !access.can_read ||
+    access.user.id !== session.userId ||
+    access.document.id !== documentName ||
+    access.document.type !== session.documentType ||
+    access.document.project_id !== session.projectId ||
+    access.document.workspace_slug !== session.workspaceSlug ||
+    !Number.isFinite(Date.parse(access.session_expires_at)) ||
+    Date.parse(access.session_expires_at) <= Date.now() ||
+    (session.credentialGeneration !== undefined && session.credentialGeneration !== access.credential_generation)
+  ) {
+    throw new AppError("Document access denied", { code: "DOCUMENT_ACCESS_DENIED" });
+  }
+  return access;
+}
+
 export const onAuthenticate = async ({
   requestHeaders,
   requestParameters,
   context,
   token,
-}: {
-  requestHeaders: IncomingHttpHeaders;
-  context: HocusPocusServerContext;
-  requestParameters: URLSearchParams;
-  token: string;
-}) => {
-  let cookie: string | undefined = undefined;
-  let userId: string | undefined = undefined;
-
-  // Extract cookie (fallback to request headers) and userId from token (for scenarios where
-  // the cookies are not passed in the request headers)
+  documentName,
+  connection,
+  instance,
+  socketId,
+}: onAuthenticatePayload) => {
+  if (!validOrigin(requestHeaders.origin)) throw new AppError("Origin denied");
+  if (token.length > 2048) throw new AppError("Invalid authentication request");
+  let identity: { id?: string; cookie?: string };
   try {
-    const parsedToken = JSON.parse(token) as TUserDetails;
-    userId = parsedToken.id;
-    cookie = parsedToken.cookie;
-  } catch (error) {
-    const appError = new AppError(error, {
-      context: { operation: "onAuthenticate" },
-    });
-    logger.error("Token parsing failed, using request headers", appError);
-  } finally {
-    // If cookie is still not found, fallback to request headers
-    if (!cookie) {
-      cookie = requestHeaders.cookie?.toString();
-    }
+    identity = JSON.parse(token) as typeof identity;
+  } catch {
+    throw new AppError("Invalid authentication request");
   }
-
-  if (!cookie || !userId) {
-    const appError = new AppError("Credentials not provided", { code: "AUTH_MISSING_CREDENTIALS" });
-    logger.error("Credentials not provided", appError);
-    throw appError;
-  }
-
-  // set cookie in context, so it can be used throughout the ws connection
-  context.cookie = cookie ?? requestParameters.get("cookie") ?? "";
-  context.documentType = requestParameters.get("documentType")?.toString() as TDocumentTypes;
-  context.projectId = requestParameters.get("projectId");
-  context.userId = userId;
-  context.workspaceSlug = requestParameters.get("workspaceSlug");
-
-  return await handleAuthentication({
-    cookie: context.cookie,
-    userId: context.userId,
+  const cookie = requestHeaders.cookie?.toString() || identity.cookie;
+  const projectId = requestParameters.get("projectId");
+  const workspaceSlug = requestParameters.get("workspaceSlug");
+  if (
+    !cookie ||
+    !identity.id ||
+    requestParameters.get("documentType") !== "project_page" ||
+    !uuid.test(documentName) ||
+    !projectId ||
+    !uuid.test(projectId) ||
+    !workspaceSlug ||
+    !/^[a-zA-Z0-9_-]{1,100}$/.test(workspaceSlug)
+  )
+    throw new AppError("Invalid document credentials");
+  const session = context as HocusPocusServerContext;
+  Object.assign(session, {
+    cookie,
+    userId: identity.id,
+    projectId,
+    workspaceSlug,
+    documentType: "project_page",
+    documentName,
+    origin: requestHeaders.origin,
   });
+  const limits = collaborationLimits(instance);
+  if (!limits.available(session.userId)) throw new AppError("Connection limit reached");
+  const access = await authorizeDocument(session, documentName);
+  limits.reserve(session.userId, `${socketId}:${documentName}`);
+  Object.assign(session, {
+    access,
+    accessCheckedAt: Date.now(),
+    credentialGeneration: access.credential_generation,
+    expiresAt: Date.parse(access.session_expires_at),
+  });
+  connection.readOnly = !access.can_write;
+  // Hocuspocus replaces the context object while running onConnect hooks.
+  // Return the full context so concurrent hook merges retain authorization.
+  return { ...session, user: { id: access.user.id, name: access.user.display_name } };
 };
 
-export const handleAuthentication = async ({ cookie, userId }: { cookie: string; userId: string }) => {
-  // fetch current user info
-  try {
-    const userService = new UserService();
-    const user = await userService.currentUser(cookie);
-    if (user.id !== userId) {
-      throw new AppError("Authentication unsuccessful: User ID mismatch", { code: "AUTH_USER_MISMATCH" });
-    }
-
-    return {
-      user: {
-        id: user.id,
-        name: user.display_name,
-      },
-    };
-  } catch (error) {
-    const appError = new AppError(error, {
-      context: { operation: "handleAuthentication" },
-    });
-    logger.error("Authentication failed", appError);
-    throw new AppError("Authentication unsuccessful", { code: appError.code });
-  }
+/** Current-user checks remain available to authenticated HTTP endpoints. */
+export const handleAuthentication = async ({ cookie, userId }: { cookie: string; userId?: string }) => {
+  const user = await new UserService().currentUser(cookie);
+  if (userId && user.id !== userId) throw new AppError("Authentication unsuccessful");
+  return { user: { id: user.id, name: user.display_name } };
 };

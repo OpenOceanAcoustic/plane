@@ -40,6 +40,7 @@ class APIKeyAuthentication(authentication.BaseAuthentication):
 
         if settings.LAB_AUTH_ENABLED and not api_token.user.is_bot:
             from plane.lab.models import Credential
+
             if not Credential.objects.filter(user=api_token.user, enabled=True).exists():
                 raise AuthenticationFailed("Given API token is not valid")
 
@@ -55,4 +56,7 @@ class APIKeyAuthentication(authentication.BaseAuthentication):
 
         # Validate the API token
         user, token = self.validate_api_token(token)
+        from plane.lab.security import enforce_user_limits
+
+        enforce_user_limits(request, user=user)
         return user, token

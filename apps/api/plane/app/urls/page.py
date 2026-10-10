@@ -3,6 +3,7 @@
 # See the LICENSE file for details.
 
 from django.urls import path
+from plane.app.views.page.base import PageCollaborationAccessEndpoint
 
 
 from plane.app.views import (
@@ -14,6 +15,11 @@ from plane.app.views import (
 )
 
 urlpatterns = [
+    path(
+        "workspaces/<str:slug>/projects/<uuid:project_id>/pages/<uuid:page_id>/collaboration-access/",
+        PageCollaborationAccessEndpoint.as_view(),
+        name="page-collaboration-access",
+    ),
     path(
         "workspaces/<str:slug>/projects/<uuid:project_id>/pages-summary/",
         PageViewSet.as_view({"get": "summary"}),

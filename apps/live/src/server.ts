@@ -14,7 +14,7 @@ import expressWs from "express-ws";
 import helmet from "helmet";
 // plane imports
 import { registerController } from "@plane/decorators";
-import { logger, loggerMiddleware } from "@plane/logger";
+import { logger } from "@plane/logger";
 // controllers
 import { CONTROLLERS } from "@/controllers";
 // env
@@ -22,6 +22,10 @@ import { env } from "@/env";
 // hocuspocus server
 import { HocusPocusServerManager } from "@/hocuspocus";
 // redis
+import { allowedOrigin } from "@/lib/auth";
+import { verifySocketHandshake } from "@/lib/socket-admission";
+import { conversionPool } from "@/lib/conversion-pool";
+import { requestLogger } from "@/lib/request-logger";
 import { redisManager } from "@/redis";
 
 export class Server {
@@ -32,7 +36,13 @@ export class Server {
 
   constructor() {
     this.app = express();
-    expressWs(this.app);
+    expressWs(this.app, undefined, {
+      wsOptions: {
+        maxPayload: 8 * 1024 * 1024,
+        perMessageDeflate: false,
+        verifyClient: verifySocketHandshake,
+      },
+    });
     this.setupMiddleware();
     this.router = express.Router();
     this.app.set("port", env.PORT || 3000);
@@ -60,22 +70,22 @@ export class Server {
     // Middleware for response compression
     this.app.use(compression({ level: env.COMPRESSION_LEVEL, threshold: env.COMPRESSION_THRESHOLD }));
     // Logging middleware
-    this.app.use(loggerMiddleware);
+    this.app.use(requestLogger);
     // Body parsing middleware
-    this.app.use(express.json());
-    this.app.use(express.urlencoded({ extended: true }));
+    this.app.use(express.json({ limit: "128kb" }));
+    this.app.use(express.urlencoded({ extended: false, limit: "128kb" }));
     // cors middleware
     this.setupCors();
   }
 
   private setupCors() {
-    const allowedOrigins = env.CORS_ALLOWED_ORIGINS.split(",").map((s) => s.trim());
+    const allowedOrigins = [allowedOrigin()];
     this.app.use(
       cors({
         origin: allowedOrigins.length > 0 ? allowedOrigins : false,
         credentials: true,
         methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-        allowedHeaders: ["Content-Type", "Authorization", "x-api-key"],
+        allowedHeaders: ["Content-Type", "Authorization", "x-api-key", "X-CSRFToken"],
       })
     );
   }
@@ -109,6 +119,7 @@ export class Server {
       logger.info("SERVER: HocusPocus connections closed gracefully.");
     }
 
+    await conversionPool.destroy();
     await redisManager.disconnect();
     logger.info("SERVER: Redis connection closed gracefully.");
 

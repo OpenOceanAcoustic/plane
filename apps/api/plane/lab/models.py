@@ -48,12 +48,28 @@ class Credential(Record):
 
 
 class LoginAccount(Record):
-    # Durable lock row; hashed canonical username also covers unknown accounts.
+    # One durable quota identity per existing user; unknown usernames never create rows.
     identity_hash = models.CharField(max_length=64, unique=True)
+
+
+class TrustedBrowser(Record):
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
+    token_hash = models.CharField(max_length=64, unique=True)
+    purpose = models.CharField(max_length=8, choices=[("user", "user"), ("admin", "admin")])
+    generation = models.UUIDField()
+    name = models.CharField(max_length=120, default="浏览器")
+    expires_at = models.DateTimeField()
+    revoked_at = models.DateTimeField(null=True)
+    last_used_at = models.DateTimeField()
+
+    class Meta:
+        indexes = [models.Index(fields=["user", "purpose", "expires_at"], name="lab_browser_user_expiry_idx")]
 
 
 class LoginAttempt(Record):
     account = models.ForeignKey(LoginAccount, on_delete=models.CASCADE)
+    browser = models.ForeignKey(TrustedBrowser, on_delete=models.CASCADE, null=True)
+    session_hash = models.CharField(max_length=64, blank=True, default="")
     submitted_at = models.DateTimeField(db_index=True)
 
     class Meta:

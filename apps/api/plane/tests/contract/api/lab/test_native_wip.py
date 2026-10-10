@@ -35,6 +35,10 @@ def native_workspace(laboratory, settings, monkeypatch):
     client.force_login(user)
     session = client.session
     session["lab_generation"] = str(credential.generation)
+    from django.utils import timezone
+
+    session["lab_purpose"] = "user"
+    session["lab_expires_at"] = int(timezone.now().timestamp()) + 43200
     session.save()
     response = client.post(
         "/api/workspaces/", {"name": "Native workspace", "slug": "native-only"}, content_type="application/json"

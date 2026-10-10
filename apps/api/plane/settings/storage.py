@@ -24,6 +24,7 @@ class S3Storage(S3Boto3Storage):
 
     def __init__(self, request=None):
         super().__init__()
+        self.request = request
         # Get the AWS credentials and bucket name from the environment
         self.aws_access_key_id = os.environ.get("AWS_ACCESS_KEY_ID")
         # Use the AWS_SECRET_ACCESS_KEY environment variable for the secret key
@@ -65,6 +66,10 @@ class S3Storage(S3Boto3Storage):
 
     def generate_presigned_post(self, object_name, file_type, file_size, expiration=None):
         """Generate a presigned URL to upload an S3 object"""
+        if self.request is not None:
+            from plane.lab.security import enforce_user_limits
+
+            enforce_user_limits(self.request, category="upload")
         if expiration is None:
             expiration = self.signed_url_expiration
         fields = {"Content-Type": file_type}

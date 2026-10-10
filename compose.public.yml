@@ -1,0 +1,172 @@
+name: ooa-plane-public
+
+x-hardened: &hardened
+  init: true
+  restart: unless-stopped
+  read_only: true
+  cap_drop: [ALL]
+  security_opt: [no-new-privileges:true]
+  pids_limit: ${PUBLIC_PIDS_LIMIT:-256}
+  cpus: ${PUBLIC_APP_CPUS:-1.0}
+  mem_limit: ${PUBLIC_APP_MEMORY:-768m}
+  tmpfs: [/tmp:rw,noexec,nosuid,size=128m]
+  networks: [backend]
+
+x-api: &api
+  <<: *hardened
+  image: ooa-plane-api:${PUBLIC_IMAGE_TAG:-security}
+  build:
+    context: ./apps/api
+    dockerfile: Dockerfile.public
+  user: "${PUBLIC_API_UID:-1000}:${PUBLIC_API_UID:-1000}"
+  env_file: ./apps/api/.env.public
+  secrets: [lab_totp_key]
+  tmpfs:
+    - /tmp:rw,noexec,nosuid,size=128m
+    - /code/plane/logs:rw,noexec,nosuid,mode=0750,size=32m,uid=${PUBLIC_API_UID:-1000},gid=${PUBLIC_API_UID:-1000}
+
+x-client-build: &client-build
+  context: .
+  dockerfile: tools/lab/Dockerfile.public
+  args:
+    PUBLIC_ORIGIN: ${PUBLIC_ORIGIN:?Set PUBLIC_ORIGIN using public setup}
+
+services:
+  plane-db:
+    <<: *hardened
+    image: postgres:15.7-alpine
+    user: "70:70"
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:?}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?}
+      POSTGRES_DB: ${POSTGRES_DB:?}
+    volumes: [pgdata:/var/lib/postgresql/data]
+    tmpfs: [/tmp:rw,noexec,nosuid,size=64m, /var/run/postgresql:rw,nosuid,uid=70,gid=70]
+    healthcheck:
+      test: [CMD-SHELL, 'pg_isready -U "$$POSTGRES_USER" -d "$$POSTGRES_DB"']
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  plane-redis:
+    <<: *hardened
+    image: valkey/valkey:7.2.11-alpine
+    user: "999:1000"
+    command: [valkey-server, --appendonly, "yes"]
+    volumes: [redisdata:/data]
+
+  plane-mq:
+    <<: *hardened
+    image: rabbitmq:3.13.6-management-alpine
+    user: "100:101"
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:?}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:?}
+      RABBITMQ_DEFAULT_VHOST: ${RABBITMQ_VHOST:?}
+    volumes: [rabbitmq_data:/var/lib/rabbitmq]
+
+  plane-minio:
+    <<: *hardened
+    image: ooa-plane-minio:source
+    build:
+      context: .
+      dockerfile: tools/lab/Dockerfile.minio
+    user: "10001:10001"
+    command: [server, /export, --console-address, ":9090"]
+    environment:
+      MINIO_ROOT_USER: ${AWS_ACCESS_KEY_ID:?}
+      MINIO_ROOT_PASSWORD: ${AWS_SECRET_ACCESS_KEY:?}
+      HOME: /tmp
+    volumes: [uploads:/export]
+
+  api:
+    <<: *api
+    command: [uvicorn, plane.asgi:application, --host, "0.0.0.0", --port, "8000", --no-proxy-headers, --limit-concurrency, "100", --timeout-keep-alive, "5"]
+    depends_on:
+      plane-db: {condition: service_healthy}
+      plane-redis: {condition: service_started}
+      plane-mq: {condition: service_started}
+    healthcheck:
+      # The local probe has the allowed Host. A correct HTTPS redirect is healthy;
+      # it does not forge a proxy header or depend on the proxy's own health.
+      test: [CMD, python, -c, "import http.client,os; from urllib.parse import urlsplit; origin=os.environ['PUBLIC_ORIGIN']; c=http.client.HTTPConnection('127.0.0.1',8000,timeout=3); c.request('GET','/',headers={'Host':urlsplit(origin).netloc}); r=c.getresponse(); assert r.status==200 or (r.status in (301,302) and r.getheader('Location')==origin+'/')"]
+      interval: 10s
+      timeout: 5s
+      start_period: 30s
+      retries: 5
+
+  worker:
+    <<: *api
+    command: [celery, -A, plane, worker, -l, warning, --concurrency=1]
+    depends_on: [api]
+
+  beat-worker:
+    <<: *api
+    command: [celery, -A, plane, beat, -l, warning]
+    depends_on: [api]
+
+  live:
+    <<: *hardened
+    image: ooa-plane-live:${PUBLIC_IMAGE_TAG:-security}
+    build:
+      <<: *client-build
+      target: live
+    user: "1000:1000"
+    env_file: ./apps/live/.env.public
+    depends_on: [api, proxy]
+    healthcheck:
+      test: [CMD, node, -e, "fetch(process.env.PUBLIC_ORIGIN+'/live/health/').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+      interval: 15s
+      timeout: 5s
+      start_period: 120s
+      retries: 10
+
+  space:
+    <<: *hardened
+    image: ooa-plane-space:${PUBLIC_IMAGE_TAG:-security}
+    build:
+      <<: *client-build
+      target: space
+    user: "1000:1000"
+    environment: {NODE_ENV: production, HOST: 0.0.0.0, PORT: "3000"}
+    depends_on: [api]
+
+  proxy:
+    <<: *hardened
+    image: ooa-plane-proxy:${PUBLIC_IMAGE_TAG:-security}
+    build:
+      <<: *client-build
+      target: proxy
+    user: "10001:10001"
+    environment:
+      PUBLIC_HOST: ${PUBLIC_HOST:?Set the exact public hostname}
+      PUBLIC_ORIGIN: ${PUBLIC_ORIGIN:?}
+      PUBLIC_HSTS_SECONDS: ${SECURE_HSTS_SECONDS:-300}
+    ports: ["80:80", "443:443"]
+    sysctls: {net.ipv4.ip_unprivileged_port_start: "0"}
+    volumes: [caddy_data:/data, caddy_config:/config]
+    networks:
+      edge: {}
+      backend:
+        ipv4_address: ${PUBLIC_PROXY_IP:-172.29.240.2}
+        aliases: ["${PUBLIC_HOST:?}"]
+    depends_on: [api, plane-minio, space]
+
+networks:
+  edge: {}
+  backend:
+    internal: true
+    ipam:
+      config: [{subnet: "${PUBLIC_BACKEND_SUBNET:-172.29.240.0/24}"}]
+
+volumes:
+  pgdata: {external: true, name: "${PUBLIC_DATA_PROJECT:-ooa-plane-lab}_pgdata"}
+  uploads: {external: true, name: "${PUBLIC_DATA_PROJECT:-ooa-plane-lab}_uploads"}
+  redisdata: {external: true, name: "${PUBLIC_DATA_PROJECT:-ooa-plane-lab}_redisdata"}
+  rabbitmq_data: {external: true, name: "${PUBLIC_DATA_PROJECT:-ooa-plane-lab}_rabbitmq_data"}
+  caddy_data: {}
+  caddy_config: {}
+
+secrets:
+  lab_totp_key:
+    file: ./.secrets/public-totp.key

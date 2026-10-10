@@ -7,6 +7,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import type { AxiosInstance, AxiosRequestConfig } from "axios";
 import { create } from "axios";
+import { installSessionProtection } from "@plane/services";
 
 export abstract class APIService {
   protected baseURL: string;
@@ -19,6 +20,7 @@ export abstract class APIService {
       withCredentials: true,
     });
 
+    installSessionProtection(this.axiosInstance, baseURL);
     this.setupInterceptors();
   }
 
@@ -26,7 +28,7 @@ export abstract class APIService {
     this.axiosInstance.interceptors.response.use(
       (response) => response,
       (error) => {
-        if (error.response && error.response.status === 401) {
+        if (typeof window !== "undefined" && error.response && error.response.status === 401) {
           const currentPath = window.location.pathname;
           window.location.replace(`/${currentPath ? `?next_path=${currentPath}` : ``}`);
         }

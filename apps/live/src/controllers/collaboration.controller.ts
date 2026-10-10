@@ -6,10 +6,11 @@
 
 import type { Hocuspocus } from "@hocuspocus/server";
 import type { Request } from "express";
-import type WebSocket from "ws";
+import type { WebSocket } from "ws";
 // plane imports
 import { Controller, WebSocket as WSDecorator } from "@plane/decorators";
 import { logger } from "@plane/logger";
+import { protectSocketTransport, SocketTransport } from "@/lib/socket-transport";
 
 @Controller("/collaboration")
 export class CollaborationController {
@@ -24,7 +25,9 @@ export class CollaborationController {
   handleConnection(ws: WebSocket, req: Request) {
     try {
       // Initialize the connection with Hocuspocus
-      this.hocusPocusServer.handleConnection(ws, req);
+      const transport = new SocketTransport();
+      this.hocusPocusServer.handleConnection(ws, req, { transport });
+      protectSocketTransport(ws, transport);
 
       // Set up error handling for the connection
       ws.on("error", (error: Error) => {

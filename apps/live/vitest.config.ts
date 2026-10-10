@@ -16,6 +16,7 @@ export default defineConfig({
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "./src"),
+      "@plane/logger": path.resolve(__dirname, "../../packages/logger/src/index.ts"),
     },
   },
 });

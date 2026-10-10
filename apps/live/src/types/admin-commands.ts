@@ -64,6 +64,7 @@ export enum CloseCode {
 export enum AdminCommand {
   FORCE_CLOSE = "force_close",
   REVOKE_USER = "revoke_user",
+  INVALIDATE_ACCESS = "invalidate_access",
   HEALTH_CHECK = "health_check",
   RESTART_DOCUMENT = "restart_document",
 }
@@ -99,7 +100,18 @@ export interface RevokeUserCommandData {
   timestamp: string;
 }
 
-export type AdminCommandData = ForceCloseCommandData | HealthCheckCommandData | RevokeUserCommandData;
+export interface InvalidateAccessCommandData {
+  command: AdminCommand.INVALIDATE_ACCESS;
+  userId?: string;
+  pageId?: string;
+  projectId?: string;
+  workspaceId?: string;
+}
+export type AdminCommandData =
+  | ForceCloseCommandData
+  | HealthCheckCommandData
+  | RevokeUserCommandData
+  | InvalidateAccessCommandData;
 
 /**
  * Client force close message structure (sent to clients via sendStateless)
