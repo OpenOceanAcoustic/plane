@@ -580,7 +580,7 @@ export function Bounties({
               public_summary: form.get("public_summary"),
               public_deliverable: form.get("public_deliverable"),
               public_criteria: form.get("public_criteria"),
-              enabled: form.get("enabled") === "on",
+              enabled: true,
               reason: form.get("reason"),
             });
             await refresh();
@@ -596,10 +596,7 @@ export function Bounties({
           <LabField label="公开验收标准">
             <textarea name="public_criteria" required defaultValue={bounty.criteria} />
           </LabField>
-          <label>
-            <input type="checkbox" name="enabled" defaultChecked />
-            在全实验室悬赏大厅公开
-          </label>
+          <LabField label="可见范围">组织内可见</LabField>
           <LabField label="更新原因">
             <textarea name="reason" required />
           </LabField>

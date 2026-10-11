@@ -16,11 +16,11 @@ from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from django.utils.dateparse import parse_datetime
 from rest_framework.negotiation import DefaultContentNegotiation
-from rest_framework.exceptions import PermissionDenied, ValidationError
+from rest_framework.exceptions import ValidationError
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from plane.db.models import Project, ProjectMember, State
+from plane.db.models import Project, ProjectMember, State, WorkspaceMember
 from .auth import audit, lock
 from .models import Folder, PersonalCategory, PersonalItem, ProjectFlow, TimeBlock, WorkspacePolicy
 from .categories import category_data, category_name, default_categories, hex_color, item_category
@@ -42,6 +42,7 @@ from .planning import (
 )
 from .bounty_access import planning_issue_access
 from .bounties import publishable_issues
+from .planning_access import set_item_visibility, visible_personal_items
 
 
 class LabContentNegotiation(DefaultContentNegotiation):
@@ -89,9 +90,9 @@ class PlannerView(LabView):
         categories = list(default_categories(request.user, self.workspace))
         defaults = {row.legacy_key: str(row.id) for row in categories if row.legacy_key}
         rows = list(
-            PersonalItem.objects.filter(user=request.user, workspace=self.workspace).select_related(
-                "issue__project", "issue__state", "category"
-            )
+            PersonalItem.objects.filter(user=request.user, workspace=self.workspace)
+            .select_related("issue__project", "issue__state", "category", "user")
+            .prefetch_related("shared_users")
         )
         readable_issue_ids = set(
             readable_issues(request.user, self.workspace)
@@ -105,6 +106,18 @@ class PlannerView(LabView):
         schedules = item_schedules([item["id"] for item in items])
         for item in items:
             item["schedule"] = schedules[item["id"]]
+        shared_rows = list(
+            visible_personal_items(request.user, self.workspace)
+            .exclude(user=request.user)
+            .select_related("user", "category")
+        )
+        shared_context = planning_projection_context(request.user, self.workspace, shared_rows)
+        shared_items = [
+            data for row in shared_rows if (data := item_data(row, request.user, allowed, **shared_context))
+        ]
+        shared_schedules = item_schedules([item["id"] for item in shared_items])
+        for item in shared_items:
+            item["schedule"] = shared_schedules[item["id"]]
         members = {}
         for member in ProjectMember.objects.filter(
             project_id__in=allowed, is_active=True, role__gte=15, member__is_active=True
@@ -137,6 +150,17 @@ class PlannerView(LabView):
             {
                 "user_id": str(request.user.id),
                 "team_access": can_view_team(request.user, self.membership),
+                "team_calendar_access": True,
+                "shared_items": shared_items,
+                "sharing_members": [
+                    {"id": str(row.member_id), "name": row.member.display_name or row.member.username}
+                    for row in WorkspaceMember.objects.filter(
+                        workspace=self.workspace, is_active=True, member__is_active=True
+                    )
+                    .exclude(member=request.user)
+                    .select_related("member")
+                    .order_by("member__display_name", "member_id")
+                ],
                 "folders": [{"id": str(f.id), "name": f.name, "position": f.position} for f in folders],
                 "categories": [category_data(row) for row in categories],
                 "default_category_id": defaults.get("research") or (str(categories[0].id) if categories else None),
@@ -326,10 +350,22 @@ class ItemView(LabView):
                 category=item_category(request.user, self.workspace, data, "project" if issue else kind),
                 public=data.get("public") is True,
             )
+            set_item_visibility(item, data)
         return Response({"id": str(item.id)}, status=201)
 
 
 class ItemDetailView(LabView):
+    def get(self, request, slug, pk):
+        row = get_object_or_404(
+            visible_personal_items(request.user, self.workspace)
+            .select_related("user", "category")
+            .prefetch_related("shared_users"),
+            id=pk,
+        )
+        data = item_data(row, request.user, set(project_ids(request.user, self.workspace)))
+        data["schedule"] = item_schedules([str(row.id)])[str(row.id)]
+        return Response(data)
+
     @transaction.atomic
     def patch(self, request, slug, pk):
         lock(f"lab-categories:{self.workspace.id}:{request.user.id}")
@@ -359,9 +395,8 @@ class ItemDetailView(LabView):
                 item.title = title
             if "description" in data:
                 item.description = str(data["description"])
-            if "public" in data:
-                item.public = data["public"] is True
         item.save()
+        set_item_visibility(item, data)
         if "status" in data:
             set_status(item, request.user, data["status"])
         return Response({"ok": True})
@@ -382,8 +417,6 @@ class FlowView(LabView):
 class CalendarView(LabView):
     def get(self, request, slug):
         team = request.query_params.get("team") == "1"
-        if team and not can_view_team(request.user, self.membership):
-            raise PermissionDenied("仅负责人可以查看团队排期")
         try:
             start = parse_datetime(request.query_params.get("start", ""))
             end = parse_datetime(request.query_params.get("end", ""))

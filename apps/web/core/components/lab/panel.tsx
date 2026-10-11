@@ -108,7 +108,7 @@ export const LabPanel = observer(function LabPanel({
         )}
         {store.planner &&
           section === "team" &&
-          (store.planner.team_access ? (
+          ((store.planner.team_calendar_access ?? store.planner.team_access) ? (
             <LabCalendar
               key="team"
               store={store}

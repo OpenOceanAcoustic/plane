@@ -13,3 +13,7 @@ export {
 } from "../../../packages/ui/src/lab-amount-input";
 export { LabColorPicker } from "../../../packages/ui/src/lab-color-picker";
 export { LabBountyBadge, labBountyOutline } from "../../../packages/ui/src/lab-bounty-badge";
+export {
+  LabPlanningVisibilityFields,
+  labPlanningVisibilityLabel,
+} from "../../../packages/ui/src/lab-planning-visibility";

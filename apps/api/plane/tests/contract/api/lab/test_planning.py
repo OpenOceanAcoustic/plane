@@ -105,7 +105,7 @@ def test_private_calendar_is_redacted_on_server_and_split_does_not_change_task_d
     assert event["title"] == "忙碌" and "item_id" not in event and "issue_id" not in event
     assert "敏感" not in response.content.decode() and "不可泄露" not in response.content.decode()
     assert lead.patch(base + f"calendar/{block}/", body, format="json").status_code == 404
-    assert member.get(base + query).status_code == 403
+    assert member.get(base + query).status_code == 200
     assert (
         member.patch(
             base + f"calendar/{block}/",

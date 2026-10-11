@@ -14,7 +14,7 @@ class BountyPublication(Record):
     summary = models.TextField(blank=True)
     deliverable = models.TextField(blank=True)
     criteria = models.TextField(blank=True)
-    # Old tasks without this record retain their original project visibility.
+    # Deletion disables the publication; live published bounties are organization-visible.
     enabled = models.BooleanField(default=True)
 
 

@@ -236,9 +236,11 @@ def update_public_summary(user, bounty_id, data):
     summary = str(data.get("public_summary", existing.summary if existing else "")).strip()
     deliverable = str(data.get("public_deliverable", existing.deliverable if existing else "")).strip()
     criteria = str(data.get("public_criteria", existing.criteria if existing else "")).strip()
-    enabled = data.get("enabled", existing.enabled if existing else True)
+    enabled = data.get("enabled", True)
     if not isinstance(enabled, bool) or max(len(summary), len(deliverable), len(criteria)) > 4000:
         raise ValidationError("公开摘要每项最多 4000 字，公开开关须为布尔值")
+    if not enabled:
+        raise ValidationError("悬赏必须对组织可见")
     if enabled and (not deliverable or not criteria):
         raise ValidationError("公开到全员大厅须显式填写公开交付物和验收条件")
     publication, _ = BountyPublication.objects.update_or_create(

@@ -5,7 +5,7 @@ from django.db.models import Q
 from django.shortcuts import get_object_or_404
 from rest_framework.exceptions import APIException, NotFound, PermissionDenied
 
-from .bounty_models import BountyPublication, BountyTaskAccess
+from .bounty_models import BountyTaskAccess
 from .models import Bounty
 from .permissions import collaboration_projects, issue_access, workspace_member
 
@@ -42,7 +42,6 @@ def publicly_visible(bounty):
         and bounty.issue_id
         and not bounty.issue.deleted_at
         and not bounty.issue.is_draft
-        and BountyPublication.objects.filter(bounty=bounty, enabled=True).exists()
     )
 
 
@@ -72,12 +71,11 @@ def accessible_bounties(user, workspace):
             Q(stage__project_id__in=projects)
             | Q(id__in=grants)
             | Q(
-                publication__enabled=True,
                 published_at__isnull=False,
                 issue__isnull=False,
                 issue__deleted_at__isnull=True,
                 issue__is_draft=False,
-            )
+            ) & ~Q(status__in=("draft", "publication_review", "deleted"))
         )
         .distinct()
     )

@@ -52,7 +52,7 @@ export const LabPlanningWorkbench = observer(function LabPlanningWorkbench({
         </nav>
         <div className="flex items-center gap-3">
           <LabCategoryManager store={store} />
-          {planner.team_access && (
+          {(planner.team_calendar_access ?? planner.team_access) && (
             <a href={`/${store.slug}/lab/team`} className="flex items-center gap-1 text-13 text-accent-primary">
               查看团队排期 <ArrowUpRight size={14} />
             </a>

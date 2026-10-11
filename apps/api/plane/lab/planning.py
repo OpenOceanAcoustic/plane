@@ -8,7 +8,7 @@ from django.db import connection, transaction
 from django.db.models import Q
 from django.utils import timezone
 from django.utils.dateparse import parse_datetime
-from rest_framework.exceptions import APIException, PermissionDenied, ValidationError
+from rest_framework.exceptions import APIException, ValidationError
 
 from plane.db.models import Issue, IssueActivity, ProjectMember, State
 from .auth import audit, lock
@@ -49,6 +49,7 @@ def item_data(
     granted_issue_ids=None,
     editable_issue_ids=None,
     deletable_issue_ids=None,
+    visible_personal_ids=None,
 ):
     if item.kind == "project" and not item.issue_id:
         return None
@@ -62,7 +63,7 @@ def item_data(
             if readable_issue_ids is not None
             else can_read_issue(user, issue, allowed_projects)
         )
-        from .bounty_access import issue_capabilities, task_granted
+        from .bounty_access import issue_capabilities, publicly_visible, task_granted
         from .models import Bounty
 
         bounty = (
@@ -79,7 +80,36 @@ def item_data(
             else bool(bounty and task_granted(user, bounty))
         )
         if not readable and not granted:
-            return None
+            if item.user_id == user.id or not bounty or not publicly_visible(bounty):
+                return None
+            return {
+                "id": str(item.id),
+                "title": bounty.title,
+                "description": "",
+                "kind": "project",
+                "status": "done"
+                if bounty.status in ("done", "cancelled", "rejected")
+                else "active"
+                if bounty.status != "open"
+                else "todo",
+                "public": True,
+                "visibility": "organization",
+                "visibility_locked": True,
+                "shared_user_ids": [],
+                "folder_id": None,
+                "issue_id": None,
+                "project_name": bounty.stage.project_name,
+                "issue_key": None,
+                "priority": None,
+                "target_date": None,
+                "category_id": None,
+                "category_name": None,
+                "category_color": None,
+                "can_edit_issue": False,
+                "can_open_issue": False,
+                "can_delete_issue": False,
+                **issue_capabilities(user, bounty, editable=False),
+            }
         flow = (
             flows.get(issue.project_id)
             if flows is not None
@@ -121,23 +151,40 @@ def item_data(
             "folder_id": str(item.folder_id) if item.folder_id else None,
             "kind": "project",
             "public": True,
+            "visibility": "organization" if bounty else "project",
+            "visibility_locked": True,
+            "shared_user_ids": [],
             "archived": bool(issue.archived_at),
         }
+    from .planning_access import visible_personal_items
+
+    own = item.user_id == user.id
+    if not own and not (
+        item.id in visible_personal_ids
+        if visible_personal_ids is not None
+        else visible_personal_items(user, item.workspace).filter(id=item.id).exists()
+    ):
+        return None
     return {
         **item_category_data(item),
         "id": str(item.id),
         "title": item.title,
         "description": item.description,
         "status": item.status,
-        "folder_id": str(item.folder_id) if item.folder_id else None,
+        "folder_id": str(item.folder_id) if own and item.folder_id else None,
         "kind": item.kind,
         "public": item.public,
+        "visibility": "leads" if item.visibility == "private" and item.public else item.visibility,
+        "shared_user_ids": [str(row.id) for row in item.shared_users.all()] if own else [],
+        "owner_id": str(item.user_id),
+        "owner_name": item.user.display_name or item.user.username,
+        "editable": own,
         "issue_id": None,
         "project_name": None,
         "issue_key": None,
         "priority": None,
         "target_date": None,
-        "can_edit_issue": True,
+        "can_edit_issue": own,
         "can_open_issue": False,
     }
 
@@ -156,6 +203,7 @@ def planning_projection_context(user, workspace, items, *, readable_issue_ids=No
     from .models import Bounty
     from .permissions import readable_issues
     from .issue_deletion import deletable_issue_ids
+    from .planning_access import visible_personal_items
 
     issues = {item.issue_id: item.issue for item in items if item.issue_id}
     if readable_issue_ids is None:
@@ -213,6 +261,11 @@ def planning_projection_context(user, workspace, items, *, readable_issue_ids=No
         )
     }
     return {
+        "visible_personal_ids": set(
+            visible_personal_items(user, workspace)
+            .filter(id__in=[item.id for item in items if not item.issue_id and item.user_id != user.id])
+            .values_list("id", flat=True)
+        ),
         "readable_issue_ids": readable_issue_ids,
         "editable_issue_ids": editable_ids,
         "deletable_issue_ids": deletable_issue_ids(user, workspace, issues.values()),
@@ -422,8 +475,7 @@ def calendar_events(user, workspace, start, end, *, team=False, user_id=None, pr
     from .permissions import can_view_team, project_ids, workspace_member
 
     membership = workspace_member(user, workspace.slug)
-    if team and not can_view_team(user, membership):
-        raise PermissionDenied("仅负责人可以查看团队排期")
+    privileged = can_view_team(user, membership)
     allowed = set(project_ids(user, workspace))
     try:
         if user_id:
@@ -458,7 +510,9 @@ def calendar_events(user, workspace, start, end, *, team=False, user_id=None, pr
         if (item.kind == "project" and not item.issue_id) or (item.issue_id and item.issue.deleted_at):
             continue
         own = item.user_id == user.id
-        details = item_data(item, user, allowed, **context) if own or item.public or item.issue_id else None
+        details = item_data(item, user, allowed, **context)
+        if not details and not privileged:
+            continue
         if project_id and details and details.get("project_id") != str(project_id):
             continue
         event = {
@@ -476,7 +530,7 @@ def calendar_events(user, workspace, start, end, *, team=False, user_id=None, pr
                     "kind": details["kind"],
                     "status": details["status"],
                     "color": block.color,
-                    **item_category_data(item),
+                    **{key: details.get(key) for key in ("category_id", "category_name", "category_color")},
                 }
             )
             if details.get("issue_id"):

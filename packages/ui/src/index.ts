@@ -45,3 +45,4 @@ export * from "./lab-bounty-badge";
 export * from "./lab-amount-input";
 
 export * from "./lab-session-security";
+export * from "./lab-planning-visibility";
