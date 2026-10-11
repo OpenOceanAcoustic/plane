@@ -1010,13 +1010,13 @@
     color: var(--secondary);
   }
   .lab-kanban {
-    display: flex;
-    overflow: auto;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
     gap: 12px;
+    margin-top: 12px;
   }
   .lab-kanban-column {
-    min-width: 290px;
-    max-width: 290px;
+    min-width: 0;
     padding: 14px;
     border-radius: 10px;
     background: var(--layer);

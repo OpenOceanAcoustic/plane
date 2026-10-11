@@ -26,11 +26,17 @@
   gap: 8px;
   min-height: 48px;
   padding: 8px 0;
+}
+
+.v6-app[data-page="planner"] .pm-folder-strip {
+  flex-wrap: wrap;
+}
+
+.v6-app[data-page="planner"] .lab-calendar-chips {
   overflow-x: auto;
   scrollbar-width: none;
 }
 
-.v6-app[data-page="planner"] .pm-folder-strip::-webkit-scrollbar,
 .v6-app[data-page="planner"] .lab-calendar-chips::-webkit-scrollbar {
   display: none;
 }
@@ -59,8 +65,16 @@
   white-space: nowrap;
 }
 
+.v6-app[data-page="planner"] .pm-folder-strip > button {
+  max-width: 100%;
+  min-height: 48px;
+  height: auto;
+  padding: 8px 10px;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
 /* The 32px chip stays inside a 48px touch row. */
-.v6-app[data-page="planner"] .pm-folder-strip > button::before,
 .v6-app[data-page="planner"] .lab-calendar-chips > .lab-chip::before {
   content: "";
   position: absolute;
