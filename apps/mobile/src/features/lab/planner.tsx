@@ -39,6 +39,7 @@ export function Planner({
   const [timelineScale, setTimelineScale] = useState("week");
   const [toolsOpen, setToolsOpen] = useState(false);
   const [filterOpen, setFilterOpen] = useState(false);
+  const [sharedOpen, setSharedOpen] = useState(false);
   const [onlyUnscheduled, setOnlyUnscheduled] = useState(false);
   const [month, setMonth] = useState(today().slice(0, 7));
   const [day, setDay] = useState(today());
@@ -224,6 +225,17 @@ export function Planner({
       {!detailOpen && (
         <>
           <PageHeading title={title}>
+            {!team && (
+              <button
+                type="button"
+                className="icon-button"
+                aria-label="共享规划"
+                title="共享规划"
+                onClick={() => setSharedOpen(true)}
+              >
+                <CanonicalIcon name="users" />
+              </button>
+            )}
             <button
               type="button"
               className="icon-button"
@@ -235,7 +247,9 @@ export function Planner({
             </button>
           </PageHeading>
           <main className="pm-body pm-planner">
-            {!team && <SharedPlanning items={planner.shared_items ?? []} />}
+            {!team && sharedOpen && (
+              <SharedPlanning items={planner.shared_items ?? []} onClose={() => setSharedOpen(false)} />
+            )}
             <ErrorMessage error={store.error || calendar.error} />
             {notice && (
               <p role="status" className="lab-muted">
