@@ -691,13 +691,22 @@ class RewardForecastView(LabView):
 
 
 class FinancePermissionView(LabView):
+    def project(self, identifier):
+        import uuid
+
+        try:
+            identifier = uuid.UUID(str(identifier))
+        except (ValueError, TypeError, AttributeError):
+            raise ValidationError("项目ID无效")
+        return get_object_or_404(Project, id=identifier, workspace=self.workspace)
+
     def get(self, request, slug):
-        project = get_object_or_404(Project, id=request.query_params.get("project_id"), workspace=self.workspace)
+        project = self.project(request.query_params.get("project_id"))
         require_project_finance(request.user, project, "manage")
         return Response({"project_id": str(project.id), "members": permission_members(project)})
 
     def post(self, request, slug):
-        project = get_object_or_404(Project, id=request.data.get("project_id"), workspace=self.workspace)
+        project = self.project(request.data.get("project_id"))
         return Response(
             {
                 "project_id": str(project.id),

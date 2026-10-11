@@ -50,6 +50,9 @@ def test_delegated_operations_are_independent_and_revocable(laboratory, permissi
     assert ("receipt" in workflow_actions) == (permission == "record")
     assert ("settlement" in workflow_actions) == (permission == "approve")
     assert ("payment" in workflow_actions) == (permission == "pay")
+    assert ("receipt" in data["allowed_actions"]) == (permission == "record")
+    assert ("settlement" in data["allowed_actions"]) == (permission == "approve")
+    assert ("payment" in data["allowed_actions"]) == (permission == "pay")
     cases = {
         "record": (
             "receipt",
@@ -145,3 +148,16 @@ def test_grant_is_project_scoped_and_requires_live_membership(laboratory):
     ProjectMember.objects.filter(project=lab["project"], member=member).update(role=15)
     WorkspaceMember.objects.filter(workspace=lab["workspace"], member=member).update(is_active=False)
     assert act(lab, "receipt", {"stage_id": stage}, user=member).status_code == 403
+
+
+@pytest.mark.parametrize("identifier", [None, "invalid", ""])
+def test_finance_grants_reject_invalid_project_ids(laboratory, identifier):
+    lab = laboratory
+    client = lab["client"](lab["lead"])
+    response = client.post(
+        lab["base"] + "finance/permissions/",
+        {"project_id": identifier, "user_id": str(lab["member"].id), "permissions": ["view"]},
+        format="json",
+    )
+    assert response.status_code == 400
+    assert client.get(lab["base"] + "finance/permissions/", {"project_id": identifier or ""}).status_code == 400
