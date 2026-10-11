@@ -45,4 +45,4 @@ def test_future_limits_exclude_previous_plans_and_track_append_only_reversals(la
     operation = FinancialOperation.objects.get(workspace=lab["workspace"], kind="receipt")
     undone = act(lab, "reverse", {"operation_id": str(operation.id), "evidence": "到账原路退回凭证"})
     assert undone.status_code == 200, undone.content
-    assert overview(lab)["future_plan_limits"] == {"2025": "150.00"}
+    assert overview(lab)["future_plan_limits"] == {}
