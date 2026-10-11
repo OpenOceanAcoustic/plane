@@ -64,8 +64,8 @@ class Command(BaseCommand):
                 user = User.objects.get(username__iexact=options["username"])
                 invitation, token = issue_invitation("rebind", user=user)
             self.stdout.write(f"ID: {invitation.id}\nExpires: {invitation.expires_at.isoformat()}")
-            # Fragment avoids access logs, referrers and link-preview consumption.
-            self.stdout.write(f"{settings.WEB_URL.rstrip('/')}/lab/register#{token}")
+            # The proxy validates this capability before serving the registration page.
+            self.stdout.write(f"{settings.WEB_URL.rstrip('/')}/lab/register/{token}")
         except (
             AccessError,
             ValidationError,

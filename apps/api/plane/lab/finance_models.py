@@ -30,6 +30,20 @@ class FinancePolicy(Record):
     manager = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT)
 
 
+class ProjectFinancePermission(Record):
+    project = models.ForeignKey("db.Project", on_delete=models.CASCADE)
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
+    permissions = models.JSONField(default=list)
+    granted_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, related_name="lab_finance_grants"
+    )
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=["project", "user"], name="lab_project_finance_permission_unique")
+        ]
+
+
 class RewardFormula(FinancialRecord):
     workspace = models.ForeignKey("db.Workspace", on_delete=models.PROTECT)
     project = models.ForeignKey("db.Project", on_delete=models.SET_NULL, null=True)

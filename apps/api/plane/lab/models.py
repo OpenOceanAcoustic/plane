@@ -280,6 +280,7 @@ from .finance_models import (  # noqa: E402,F401
     FinancialEntry,
     FinancialOperation,
     FinancePolicy,
+    ProjectFinancePermission,
     OfflinePayment,
     PaymentCommitment,
     PublicDutyAward,

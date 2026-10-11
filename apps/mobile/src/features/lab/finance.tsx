@@ -8,6 +8,7 @@ import { useResource } from "./transport";
 import { LabFinanceActionDialog, financeActionLabels, accountKindLabels } from "./finance-form";
 import type { LabFinanceChosenAction } from "./finance-form";
 import { LabFormulaEditor, LabForecastDialog } from "./finance-formula";
+import { FinancePermissionDialog } from "./finance-permissions";
 import { LabFinanceDeleteDialog } from "./finance-delete";
 import type { LabFinanceDeletion } from "./finance-delete";
 import {
@@ -138,6 +139,7 @@ export function Finance({
   const [tab, setTab] = useState(legacyTabs[initialTab] ?? initialTab);
   const [workflowScope, setWorkflowScope] = useState("finance");
   const [chosen, setChosen] = useState<LabFinanceChosenAction>();
+  const [permissionsOpen, setPermissionsOpen] = useState(false);
   const [formula, setFormula] = useState(false);
   const [forecast, setForecast] = useState<"task" | "member">();
   const [deletion, setDeletion] = useState<LabFinanceDeletion>();
@@ -191,37 +193,10 @@ export function Finance({
   const lead = project
     ? !!data.projects.find((row) => row.id === project && row.is_lead && !row.deleted)
     : data.projects.some((row) => row.is_lead && !row.deleted);
-  const manageable = lead || data.is_manager;
-  const actions = new Set([
-    "stage",
-    "receipt",
-    "opening",
-    "transfer",
-    "expense",
-    "settlement",
-    "history-settlement",
-    "commit",
-    "cancel-commit",
-    "payment",
-    "tax-remit",
-    "risk-release",
-    "risk-use",
-    "dispute",
-    "resolve-dispute",
-    "carryover",
-    "stage-allocation",
-    "reverse",
-    ...(data.is_manager
-      ? [
-          "future-plan",
-          "exploration-allocation",
-          "public-duty",
-          "public-commit",
-          "public-cancel-commit",
-          "public-payment",
-        ]
-      : []),
-  ]);
+  const selectedProject = data.projects.find((row) => row.id === project);
+  const canApprove = !!selectedProject?.permissions?.includes("approve");
+  const manageable = !!data.allowed_actions?.length;
+  const actions = new Set(data.allowed_actions ?? []);
   function recordValues(row: object) {
     return Object.fromEntries(
       Object.entries(row)
@@ -273,7 +248,7 @@ export function Finance({
   ];
   function recordSection(collection: keyof LabFinanceOverview, title: string) {
     const group = overview[collection];
-    const records = Array.isArray(group) ? group : [];
+    const records = Array.isArray(group) ? group.filter((row) => typeof row === "object" && row !== null) : [];
     return (
       <section className="lab-record-section">
         <div className="lab-section-heading">
@@ -290,6 +265,7 @@ export function Finance({
             source?: string;
             gross?: string;
             can_manage?: boolean;
+            can_pay?: boolean;
             can_delete?: boolean;
             can_restore?: boolean;
             delete_reason?: string;
@@ -312,7 +288,7 @@ export function Finance({
               <KeyValues values={recordValues(row)} />
               {((collection === "batches" && record.can_delete) ||
                 (collection === "stages" && (record.can_delete || record.can_restore)) ||
-                (["settlements", "public_awards"].includes(collection) && record.can_manage) ||
+                (["settlements", "public_awards"].includes(collection) && (record.can_manage || record.can_pay)) ||
                 (["commitments", "public_commitments"].includes(collection) &&
                   record.can_manage &&
                   !record.cancelled) ||
@@ -352,7 +328,7 @@ export function Finance({
                     {collection === "stages" && record.can_restore && (
                       <Button onClick={() => open("stage-restore", { stage_id: record.stage_id! })}>恢复预算</Button>
                     )}
-                    {collection === "settlements" && record.can_manage && (
+                    {collection === "settlements" && record.can_pay && (
                       <Button onClick={() => open("commit", { settlement_id: record.id! })}>安排支付</Button>
                     )}
                     {collection === "public_awards" && record.can_manage && (
@@ -438,6 +414,16 @@ export function Finance({
             ))}
         </select>
       </LabField>
+      {selectedProject?.can_manage_permissions && <Button onClick={() => setPermissionsOpen(true)}>财务权限</Button>}
+      {permissionsOpen && selectedProject?.can_manage_permissions && (
+        <FinancePermissionDialog
+          key={project}
+          store={store}
+          projectId={project}
+          onClose={() => setPermissionsOpen(false)}
+          onSaved={refresh}
+        />
+      )}
       <Tabs items={tabs} value={tab} onChange={setTab} />
       {tab === "accounts" && (
         <>
@@ -735,11 +721,12 @@ export function Finance({
               (action) =>
                 (manageable && actions.has(action)) ||
                 (action === "vc-stage" && lead) ||
-                (action === "formula" && !!project && lead) ||
-                (["forecast-task", "forecast-member"].includes(action) && manageable) ||
+                (action === "formula" && canApprove) ||
+                (action === "forecast-task" && canApprove) ||
+                (action === "forecast-member" && data.stages.some((row) => !row.deleted)) ||
                 (action === "delete" && deletable.length > 0) ||
                 (action === "manager" && data.can_designate_manager) ||
-                (["stage-restore", "project-restore"].includes(action) && manageable)
+                (["stage-restore", "project-restore"].includes(action) && !!selectedProject?.can_manage_permissions)
             );
             if (!available.length) return null;
             return (

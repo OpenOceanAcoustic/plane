@@ -12,7 +12,14 @@ export default defineConfig({
   retries: 0,
   reporter: "list",
   timeout: 30000,
-  use: { baseURL, browserName: "chromium", trace: "off", screenshot: "off", video: "off" },
+  use: {
+    baseURL,
+    browserName: "chromium",
+    launchOptions: { executablePath: process.env.LAB_BROWSER_EXECUTABLE },
+    trace: "off",
+    screenshot: "off",
+    video: "off",
+  },
   webServer: {
     command: "node serve.mjs",
     url: baseURL,

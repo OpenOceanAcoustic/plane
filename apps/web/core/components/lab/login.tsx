@@ -7,7 +7,7 @@ import { useEffect } from "react";
 import { API_BASE_URL } from "@plane/constants";
 import { LabAuth } from "@plane/ui";
 
-export function LabLogin({ register = false }: { register?: boolean }) {
+export function LabLogin({ register = false, invitationToken = "" }: { register?: boolean; invitationToken?: string }) {
   useEffect(() => {
     if (register) return;
     let disposed = false;
@@ -25,7 +25,12 @@ export function LabLogin({ register = false }: { register?: boolean }) {
   }, [register]);
   return (
     <div className="flex min-h-screen items-center justify-center bg-surface-1 p-6">
-      <LabAuth apiBase={API_BASE_URL} register={register} onSuccess={() => window.location.assign("/")} />
+      <LabAuth
+        apiBase={API_BASE_URL}
+        register={register}
+        invitationToken={invitationToken}
+        onSuccess={() => window.location.replace("/")}
+      />
     </div>
   );
 }

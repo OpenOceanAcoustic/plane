@@ -1,6 +1,36 @@
+{
+  log default {
+    format filter {
+      wrap json
+      fields {
+        request>uri delete
+        request>headers delete
+        resp_headers delete
+      }
+    }
+  }
+}
+
 :80 {
   encode gzip
   header Referrer-Policy "no-referrer"
+  @registration path /lab/register /lab/register/*
+  handle @registration {
+    header Cache-Control "no-store"
+    @token path_regexp invitation ^/lab/register/([A-Za-z0-9_-]{43})/?$
+    handle @token {
+      forward_auth api:8000 {
+        uri /auth/lab/invitation/
+        header_up X-Lab-Invitation-Token {re.invitation.1}
+      }
+      root * /srv/web
+      rewrite * /index.html
+      file_server
+    }
+    handle {
+      respond "Not found" 404
+    }
+  }
   @api path /api/* /auth/* /static/*
   handle @api {
     reverse_proxy api:8000

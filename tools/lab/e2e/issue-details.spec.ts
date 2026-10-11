@@ -73,7 +73,9 @@ test("personal planning native work item details match the project page includin
   const uri = (await page.locator("details p").textContent())!;
   await page.getByLabel("六位动态码", { exact: true }).fill(code(uri));
   await page.getByRole("button", { name: "确认绑定", exact: true }).click();
-  await expect(page.getByRole("status")).toContainText("绑定成功");
+  await page.waitForURL((url) => url.pathname === "/");
+  await expect(page.getByLabel("用户名", { exact: true })).toBeVisible();
+  expect((await page.request.get(invitation)).status()).toBe(404);
   const seeded = compose(
     ["exec", "-T", "api", "python", "manage.py", "shell"],
     readFileSync("tools/lab/e2e/seed-peek-details.py", "utf8")
