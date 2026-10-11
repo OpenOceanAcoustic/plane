@@ -552,7 +552,7 @@ def test_finance_permissions_private_export_and_public_summary(laboratory):
             {"kind": "public", "amount": "10", "source": "期初", "evidence": "proof"},
             user=lab["reviewer"],
         ).status_code
-        == 403
+        == 200
     )
     assert act(lab, "manager", {"user_id": str(lab["reviewer"].id)}).status_code == 200
     assert (

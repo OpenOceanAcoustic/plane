@@ -5,7 +5,7 @@
 
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useState } from "react";
 import type { FormEvent } from "react";
 import { Button } from "./button";
 
@@ -16,11 +16,13 @@ export function LabAuth({
   apiBase = "",
   admin = false,
   register = false,
+  invitationToken = "",
   onSuccess,
 }: {
   apiBase?: string;
   admin?: boolean;
   register?: boolean;
+  invitationToken?: string;
   onSuccess: () => void;
 }) {
   const [username, setUsername] = useState("");
@@ -31,19 +33,7 @@ export function LabAuth({
   const [enrollment, setEnrollment] = useState<Enrollment>();
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState(false);
-  const invitationCaptured = useRef(false);
-  const [invitation, setInvitation] = useState("");
-
-  useEffect(() => {
-    if (register && !invitationCaptured.current) {
-      invitationCaptured.current = true;
-      setInvitation(window.location.hash.slice(1));
-      window.history.replaceState(null, "", window.location.pathname);
-    }
-    return () => {
-      setEnrollment(undefined);
-    };
-  }, [register]);
+  const [invitation, setInvitation] = useState(invitationToken);
 
   async function post(path: string, data: Record<string, string | boolean>) {
     const csrfResponse = await fetch(`${apiBase}/auth/get-csrf-token/`, { credentials: "include" });
@@ -78,6 +68,7 @@ export function LabAuth({
         setInvitation("");
         setCode("");
         setMessage("绑定成功。请等待下一动态码，然后返回登录。");
+        onSuccess();
       } else {
         await post(admin ? "admin/sign-in" : "sign-in", { username, code, remember_browser: rememberBrowser });
         window.dispatchEvent(new Event("lab-session-changed"));

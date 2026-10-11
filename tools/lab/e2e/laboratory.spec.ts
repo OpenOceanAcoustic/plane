@@ -16,7 +16,7 @@ import { verifyPlannerNativePeek } from "./planner-peek";
 
 const project = process.env.LAB_E2E_PROJECT;
 function milestone(label: string): void {
-  // Static labels only: invitation fragments and Authenticator URIs never enter output.
+  // Static labels only: invitation tokens and Authenticator URIs never enter output.
   process.stdout.write(`[lab-e2e] ${label}\n`);
 }
 function compose(args: string[], input?: string): string {
@@ -81,7 +81,9 @@ test("SSH bootstrap, TOTP login, project cover upload, original layouts and pers
   const uri = (await page.locator("details p").textContent())!;
   await page.getByLabel("六位动态码").fill(dynamicCode(uri));
   await page.getByRole("button", { name: "确认绑定", exact: true }).click();
-  await expect(page.getByRole("status")).toContainText("绑定成功");
+  await page.waitForURL((url) => url.pathname === "/");
+  await expect(page.getByLabel("用户名", { exact: true })).toBeVisible();
+  expect((await page.request.get(invitation)).status()).toBe(404);
   milestone("invitation binding confirmed");
   const seededOutput = ssh(["shell"], readFileSync("tools/lab/e2e/seed.py", "utf8"));
   const fixture = JSON.parse(

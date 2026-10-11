@@ -2,8 +2,9 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 
 import json
+import re
 
-from django.http import JsonResponse
+from django.http import HttpResponse, JsonResponse
 from django.contrib.auth import logout
 from django.utils.decorators import method_decorator
 from django.views import View
@@ -17,12 +18,38 @@ from .auth import (
     begin_enrollment,
     browser_cookie_response,
     confirm_enrollment,
+    digest,
     forget_browser,
     list_browsers,
     reauthenticate_admin,
     revoke_browser,
+    usable,
 )
 from .mobile import session_capabilities
+from .models import Invitation
+
+
+@method_decorator(never_cache, name="dispatch")
+class LabInvitationView(View):
+    """Read-only proxy check; the raw capability never enters an API URL."""
+
+    @sensitive_variables()
+    def get(self, request):
+        token = request.headers.get("X-Lab-Invitation-Token", "")
+        invitation = None
+        if re.fullmatch(r"[A-Za-z0-9_-]{43}", token):
+            invitation = Invitation.objects.filter(token_hash=digest(token)).first()
+        try:
+            if not invitation:
+                raise AccessError()
+            usable(invitation)
+            if invitation.kind == "rebind" and (not invitation.user or not invitation.user.is_active):
+                raise AccessError()
+            response = HttpResponse(status=200)
+        except AccessError:
+            response = HttpResponse("Not found", status=404, content_type="text/plain")
+        response["Referrer-Policy"] = "no-referrer"
+        return response
 
 
 @method_decorator([csrf_protect, never_cache, sensitive_post_parameters()], name="dispatch")

@@ -417,7 +417,7 @@ export function LabForecastDialog({
           <MobileSelect name="user_id" className={labInputClass} required defaultValue={store.planner?.user_id}>
             <option value="">请选择</option>
             {data.members
-              .filter((row) => stage?.can_manage || row.id === store.planner?.user_id)
+              .filter((row) => stage?.can_approve || row.id === store.planner?.user_id)
               .map((row) => (
                 <option key={row.id} value={row.id}>
                   {row.name}

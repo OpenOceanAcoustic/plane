@@ -31,7 +31,7 @@ def lab_settings(settings):
 def bootstrap(client):
     output = io.StringIO()
     call_command("lab_access", "bootstrap", workspace="laboratory", stdout=output)
-    token = urlparse(output.getvalue().strip().splitlines()[-1]).fragment
+    token = urlparse(output.getvalue().strip().splitlines()[-1]).path.rsplit("/", 1)[-1]
     start = client.post(
         "/auth/lab/enroll/",
         {"token": token, "username": "Alice", "display_name": "Alice", "email": "alice@example.org"},
@@ -324,7 +324,7 @@ def test_browser_management_is_bound_to_owner_and_purpose_and_remember_defaults_
         assert post("confirm", {"token": enrollment["token"], "code": totp.now()}).status_code == 201
         output = io.StringIO()
         call_command("lab_access", "invite", workspace="laboratory", stdout=output)
-        invitation = urlparse(output.getvalue().strip().splitlines()[-1]).fragment
+        invitation = urlparse(output.getvalue().strip().splitlines()[-1]).path.rsplit("/", 1)[-1]
         other = post(
             "enroll", {"token": invitation, "username": "bob", "display_name": "Bob", "email": "bob@example.org"}
         ).json()
@@ -538,7 +538,7 @@ def test_reset_invalidates_sessions_tokens_and_old_authenticator_preserves_user(
         assert app.get("/api/users/me/").status_code == 401
         assert admin.get("/api/instances/admins/me/").status_code == 401
         assert post("sign-in", {"username": "alice", "code": old.now()}).status_code == 401
-        token = urlparse(output.getvalue().strip().splitlines()[-1]).fragment
+        token = urlparse(output.getvalue().strip().splitlines()[-1]).path.rsplit("/", 1)[-1]
         start = post("enroll", {"token": token})
         assert start.status_code == 200
         new = start.json()

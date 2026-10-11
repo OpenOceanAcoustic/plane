@@ -10,7 +10,7 @@ from django.shortcuts import get_object_or_404
 from rest_framework.exceptions import PermissionDenied, ValidationError
 from rest_framework.response import Response
 
-from plane.db.models import Project, ProjectMember, WorkspaceMember
+from plane.db.models import Project, WorkspaceMember
 from .export import csv_cell
 from .finance_formulas import TEMPLATES
 from .finance_models import (
@@ -61,6 +61,14 @@ from .finance_services import (
     stage_deletion_reason,
     project_deletion_reason,
     receipt_deletion_reason,
+)
+from .finance_permissions import (
+    ACTION_PERMISSIONS,
+    action_permission,
+    project_finance_access,
+    require_project_finance,
+    permission_members,
+    set_project_finance_permissions,
 )
 from .permissions import collaboration_projects as project_ids
 from .planning_views import LabView
@@ -140,16 +148,11 @@ def future_plan_limits(workspace, source):
 
 def financial_scope(workspace, user, project_id=None):
     joined = set(project_ids(user, workspace))
-    leads = set(
-        Project.objects.filter(
-            workspace=workspace,
-            project_lead=user,
-            id__in=ProjectMember.objects.filter(workspace=workspace, member=user, is_active=True, role__gte=15).values(
-                "project_id"
-            ),
-            deleted_at__isnull=True,
-        ).values_list("id", flat=True)
-    )
+    leads = {
+        row.id
+        for row in Project.objects.filter(workspace=workspace, id__in=joined)
+        if "view" in project_finance_access(user, row)[0]
+    }
     participants = {row.bounty.stage_id for row in authorized_participations(user, workspace)}
     participated_projects = set(
         StageBudget.objects.filter(stage_id__in=participants).values_list("stage__project_id_snapshot", flat=True)
@@ -197,6 +200,13 @@ def settlement_data(row, can_manage):
 def overview_data(workspace, user, project_id=None):
     visible, leads, participants = financial_scope(workspace, user, project_id)
     removal = finance_removal_state(workspace)
+    access = {
+        row.id: project_finance_access(user, row) for row in Project.objects.filter(workspace=workspace, id__in=visible)
+    }
+
+    def can(identifier, permission):
+        values, owner = access.get(identifier, ((), False))
+        return owner if permission == "manage" else permission in values
 
     def scope_open(project_id, stage_id=None):
         return project_id not in removal["projects"] and stage_id not in removal["stages"]
@@ -218,7 +228,7 @@ def overview_data(workspace, user, project_id=None):
                 "committed": str(committed(row)),
                 "available": str(available(row)),
                 "can_manage": (
-                    row.project_id_snapshot in leads
+                    (can(row.project_id_snapshot, "record") or can(row.project_id_snapshot, "pay"))
                     and scope_open(row.project_id_snapshot, row.stage_id)
                     or (row.kind in PUBLIC_KINDS or row.kind == "withholding" and row.project_id_snapshot is None)
                     and is_manager
@@ -252,7 +262,11 @@ def overview_data(workspace, user, project_id=None):
     for row in budgets:
         manage = row.stage.project_id_snapshot in leads
         deleted = row.stage_id in removal["stages"] or row.stage.project_id_snapshot in removal["projects"]
-        blocked = stage_deletion_reason(workspace, row.stage, removal) if manage else "仅项目负责人可以执行"
+        blocked = (
+            stage_deletion_reason(workspace, row.stage, removal)
+            if can(row.stage.project_id_snapshot, "manage")
+            else "仅项目负责人可以执行"
+        )
         formula = (
             RewardFormula.objects.filter(project_id_snapshot=row.stage.project_id_snapshot).order_by("-version").first()
         )
@@ -271,19 +285,24 @@ def overview_data(workspace, user, project_id=None):
                 "execution_funded": str(funded(row)) if manage else None,
                 "history_funded": str(funded(row, "history")) if manage else None,
                 "formula_version": formula.version if formula else None,
-                "can_manage": manage,
+                "can_manage": any(can(row.stage.project_id_snapshot, key) for key in ("record", "approve", "pay")),
+                "can_record": can(row.stage.project_id_snapshot, "record"),
+                "can_approve": can(row.stage.project_id_snapshot, "approve"),
+                "can_pay": can(row.stage.project_id_snapshot, "pay"),
                 "deleted": deleted,
-                "can_restore": manage
+                "can_restore": can(row.stage.project_id_snapshot, "manage")
                 and row.stage_id in removal["stages"]
                 and row.stage.project_id_snapshot not in removal["projects"],
-                "can_delete": manage and blocked is None,
+                "can_delete": can(row.stage.project_id_snapshot, "manage") and blocked is None,
                 "delete_reason": blocked,
             }
         )
         for kind in ("execution", "history"):
             for settlement in settlement_latest(row, kind).values():
                 if manage or settlement.user_id_snapshot == user.id:
-                    settlements.append(settlement_data(settlement, manage and not deleted))
+                    item = settlement_data(settlement, can(row.stage.project_id_snapshot, "approve") and not deleted)
+                    item["can_pay"] = can(row.stage.project_id_snapshot, "pay") and not deleted
+                    settlements.append(item)
     budget_ids = [row.id for row in budgets]
     forecast_scope = Q(budget__stage__project_id_snapshot__in=leads) | Q(user_id_snapshot=user.id)
     task_ids = [row.bounty_id for row in authorized_participations(user, workspace)]
@@ -312,7 +331,7 @@ def overview_data(workspace, user, project_id=None):
                 "paid": str(commitment_paid(row)),
                 "remaining": str(commitment_remaining(row)),
                 "cancelled": commitment_cancelled(row),
-                "can_manage": row.settlement.budget.stage.project_id_snapshot in leads
+                "can_manage": can(row.settlement.budget.stage.project_id_snapshot, "pay")
                 and scope_open(row.settlement.budget.stage.project_id_snapshot, row.settlement.budget.stage_id),
             }
         )
@@ -378,9 +397,12 @@ def overview_data(workspace, user, project_id=None):
                 "created_at": row.created_at.isoformat(),
                 "occurred_at": row.operation.occurred_at.isoformat(),
                 "reversed": hasattr(row.operation, "reversal"),
-                "can_manage": not hasattr(row.operation, "reversal")
+                "can_manage": can(row.budget.stage.project_id_snapshot, "record")
+                and not hasattr(row.operation, "reversal")
                 and scope_open(row.budget.stage.project_id_snapshot, row.budget.stage_id),
-                "can_delete": blocked is None,
+                "can_pay": can(row.budget.stage.project_id_snapshot, "pay")
+                and scope_open(row.budget.stage.project_id_snapshot, row.budget.stage_id),
+                "can_delete": can(row.budget.stage.project_id_snapshot, "record") and blocked is None,
                 "delete_reason": blocked,
             }
         )
@@ -412,7 +434,9 @@ def overview_data(workspace, user, project_id=None):
                 "can_manage": (
                     is_manager
                     if row.kind == "exploration-allocation"
-                    else row.project_id_snapshot in leads or row.project_id_snapshot is None and is_manager
+                    else can(row.project_id_snapshot, action_permission("reverse", row))
+                    or row.project_id_snapshot is None
+                    and is_manager
                 )
                 and scope_open(row.project_id_snapshot, row.stage_id)
                 and row.id not in closed_operations
@@ -435,18 +459,23 @@ def overview_data(workspace, user, project_id=None):
     ]
     projects = []
     for row in Project.objects.filter(workspace=workspace, id__in=visible):
-        manage = row.id in leads
+        manage = can(row.id, "manage")
         deleted = row.id in removal["projects"]
         blocked = project_deletion_reason(workspace, row, removal) if manage else "仅项目负责人可以执行"
         projects.append(
             {
                 "id": str(row.id),
                 "name": row.name,
-                "is_lead": manage,
+                "is_lead": row.project_lead_id == user.id and manage,
+                "permissions": list(access.get(row.id, ((), False))[0]),
+                "can_manage_permissions": manage,
+                "allowed_actions": [kind for kind, permission in ACTION_PERMISSIONS.items() if can(row.id, permission)]
+                + (["reverse"] if any(can(row.id, key) for key in ("record", "pay")) else [])
+                + (["stage-delete", "stage-restore", "project-delete", "project-restore"] if manage else []),
                 "archived": bool(row.archived_at),
                 "finance_deleted": deleted,
                 "deleted": deleted,
-                "can_manage": manage,
+                "can_manage": any(can(row.id, key) for key in ("record", "approve", "pay")),
                 "can_restore": manage and deleted,
                 "can_delete": manage and blocked is None,
                 "delete_reason": blocked,
@@ -542,6 +571,28 @@ def overview_data(workspace, user, project_id=None):
     return {
         "manager_id": str(policy(workspace).manager_id),
         "is_manager": is_manager,
+        "can_designate_manager": is_manager,
+        "allowed_actions": sorted(
+            {kind for row in projects if not row["deleted"] for kind in row["allowed_actions"]}
+            | (
+                {
+                    "manager",
+                    "opening",
+                    "transfer",
+                    "expense",
+                    "tax-remit",
+                    "future-plan",
+                    "exploration-allocation",
+                    "public-duty",
+                    "public-commit",
+                    "public-cancel-commit",
+                    "public-payment",
+                    "reverse",
+                }
+                if is_manager and not project_id
+                else set()
+            )
+        ),
         "projects": projects,
         "members": members,
         "accounts": accounts,
@@ -637,3 +688,28 @@ class RewardPreviewView(LabView):
 class RewardForecastView(LabView):
     def post(self, request, slug):
         return Response(forecast_data(create_forecast(request.user, self.workspace, request.data)), status=201)
+
+
+class FinancePermissionView(LabView):
+    def project(self, identifier):
+        import uuid
+
+        try:
+            identifier = uuid.UUID(str(identifier))
+        except (ValueError, TypeError, AttributeError):
+            raise ValidationError("项目ID无效")
+        return get_object_or_404(Project, id=identifier, workspace=self.workspace)
+
+    def get(self, request, slug):
+        project = self.project(request.query_params.get("project_id"))
+        require_project_finance(request.user, project, "manage")
+        return Response({"project_id": str(project.id), "members": permission_members(project)})
+
+    def post(self, request, slug):
+        project = self.project(request.data.get("project_id"))
+        return Response(
+            {
+                "project_id": str(project.id),
+                "members": set_project_finance_permissions(request.user, project, request.data),
+            }
+        )

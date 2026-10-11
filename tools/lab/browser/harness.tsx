@@ -15,6 +15,9 @@ import { LabCategoryManager } from "../../../apps/web/core/components/lab/catego
 import { LabPanel } from "../../../apps/web/core/components/lab/panel";
 import { LabAnalyticsPanel } from "../../../apps/web/core/components/lab/analytics";
 import { LabContributions } from "../../../apps/web/core/components/lab/contributions";
+import { FinancePermissionDialog as WebFinancePermissionDialog } from "../../../apps/web/core/components/lab/finance-permissions";
+import { FinancePermissionDialog as MobileFinancePermissionDialog } from "../../../apps/mobile/src/features/lab/finance-permissions";
+import type { LabStore as MobileLabStore } from "../../../apps/mobile/src/features/lab/transport";
 import type { LabItem } from "@plane/types";
 
 const Planning = observer(function Planning() {
@@ -33,6 +36,36 @@ const Planning = observer(function Planning() {
     </>
   );
 });
+function FinancePermissions({ mobile = false }: { mobile?: boolean }) {
+  const store = useMemo(() => new LabStore("", "lab"), []);
+  const [closed, setClosed] = useState(false);
+  const mobileStore: MobileLabStore = {
+    slug: "lab",
+    scope: "lab",
+    stages: [],
+    bounties: [],
+    busy: false,
+    error: "",
+    request: store.request,
+    execute: store.execute,
+    loadPlanner: store.loadPlanner,
+    loadMarket: store.loadMarket,
+  };
+  if (closed) return <p>授权已保存</p>;
+  const onSaved = async () => {
+    await store.request("finance/overview/");
+  };
+  return mobile ? (
+    <MobileFinancePermissionDialog
+      store={mobileStore}
+      projectId="project-1"
+      onClose={() => setClosed(true)}
+      onSaved={onSaved}
+    />
+  ) : (
+    <WebFinancePermissionDialog store={store} projectId="project-1" onClose={() => setClosed(true)} onSaved={onSaved} />
+  );
+}
 const path = window.location.pathname;
 function Workbench({ section = "planner" }: { section?: "planner" | "team" }) {
   return (
@@ -88,7 +121,9 @@ function Contributions() {
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <Toast theme="light" />
-    {path === "/contributions" ? (
+    {path === "/finance-permissions" || path === "/mobile-finance-permissions" ? (
+      <FinancePermissions mobile={path.startsWith("/mobile")} />
+    ) : path === "/contributions" ? (
       <Contributions />
     ) : path === "/analytics" ? (
       <Analytics />
@@ -100,9 +135,10 @@ createRoot(document.getElementById("root")!).render(
       <Workbench section="team" />
     ) : (
       <LabAuth
-        register={path === "/register"}
+        register={path === "/register" || path.startsWith("/register/")}
+        invitationToken={/^\/register\/([A-Za-z0-9_-]{43})$/.exec(path)?.[1]}
         admin={path === "/admin"}
-        onSuccess={() => window.location.assign("/planner")}
+        onSuccess={() => window.location.replace(path.startsWith("/register/") ? "/" : "/planner")}
       />
     )}
   </StrictMode>

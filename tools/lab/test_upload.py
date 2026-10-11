@@ -28,10 +28,13 @@ def proxy_url(signed_url):
 
 def main():
     django.setup()
+    from django.contrib.auth.models import AnonymousUser
+
     origin = urlsplit(settings.WEB_URL)
     request = RequestFactory().post(
         "/", HTTP_HOST=origin.netloc, secure=origin.scheme == "https"
     )
+    request.user = AnonymousUser()
     public_storage = S3Storage(request=request)
     internal_storage = S3Storage()
     key = f"upload-contract/{uuid.uuid4().hex}.png"

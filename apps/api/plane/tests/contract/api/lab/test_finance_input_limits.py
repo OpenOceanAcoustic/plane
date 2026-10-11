@@ -3,7 +3,7 @@
 
 import pytest
 
-from plane.db.models import WorkspaceMember
+from plane.db.models import ProjectMember, WorkspaceMember
 from plane.lab.finance_models import FinancialOperation
 from .test_finance import act, overview, plan, receipt
 
@@ -19,12 +19,13 @@ def test_future_limits_use_workspace_year_and_include_funds_outside_managers_pro
     WorkspaceMember.objects.filter(workspace=lab["workspace"], member=lab["reviewer"]).update(role=20)
     changed = act(lab, "manager", {"user_id": str(lab["reviewer"].id)})
     assert changed.status_code == 200, changed.content
+    ProjectMember.objects.filter(project=lab["project"], member=lab["reviewer"]).update(is_active=False)
     data = overview(lab, lab["reviewer"])
     assert not any(row["kind"] == "receipt" for row in data["operations"])
     assert data["future_plan_limits"] == {"2025": "150.00"}
-    assert overview(lab)["future_plan_limits"] == {}
+    assert overview(lab)["future_plan_limits"] == {"2025": "150.00"}
     scoped = lab["client"](lab["reviewer"]).get(lab["base"] + f"finance/overview/?project_id={lab['project'].id}")
-    assert scoped.status_code == 200 and scoped.json()["future_plan_limits"] == {"2025": "150.00"}
+    assert scoped.status_code == 403
 
 
 def test_future_limits_exclude_previous_plans_and_track_append_only_reversals(laboratory):

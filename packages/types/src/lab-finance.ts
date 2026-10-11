@@ -1,3 +1,8 @@
+export type LabFinancePermission = "view" | "record" | "approve" | "pay";
+export type LabFinancePermissionMembers = {
+  project_id: string;
+  members: { id: string; name: string; permissions: LabFinancePermission[]; owner: boolean }[];
+};
 /** Copyright (c) 2026 OpenOceanAcoustic and contributors. SPDX-License-Identifier: AGPL-3.0-only */
 export type LabFormulaParameter = {
   name: string;
@@ -43,6 +48,9 @@ export type LabFinanceAccount = {
   committed: string;
   available: string;
   can_manage: boolean;
+  can_pay?: boolean;
+  can_approve?: boolean;
+  can_record?: boolean;
 };
 export type LabFinanceMemberShare = { user_id: string; b: string; r: string; planned_vc: string };
 export type LabFinanceHistoryShare = { user_id: string; share: string; qualified_at: string; basis: string };
@@ -61,6 +69,9 @@ export type LabFinanceStage = {
   history_funded: string | null;
   formula_version: number | null;
   can_manage: boolean;
+  can_pay?: boolean;
+  can_approve?: boolean;
+  can_record?: boolean;
   deleted?: boolean;
   can_delete?: boolean;
   can_restore?: boolean;
@@ -84,6 +95,9 @@ export type LabFinanceSettlement = {
   outstanding: string;
   committed: string;
   can_manage: boolean;
+  can_pay?: boolean;
+  can_approve?: boolean;
+  can_record?: boolean;
 };
 export type LabFinanceCommitment = {
   id: string;
@@ -95,6 +109,9 @@ export type LabFinanceCommitment = {
   remaining: string;
   cancelled: boolean;
   can_manage: boolean;
+  can_pay?: boolean;
+  can_approve?: boolean;
+  can_record?: boolean;
 };
 export type LabFinancePayment = {
   id: string;
@@ -131,6 +148,9 @@ export type LabFinanceBatch = {
   occurred_at?: string;
   reversed?: boolean;
   can_manage: boolean;
+  can_pay?: boolean;
+  can_approve?: boolean;
+  can_record?: boolean;
   can_delete?: boolean;
   delete_reason?: string | null;
 };
@@ -161,17 +181,24 @@ export type LabFinanceOperation = {
   reverses_id: string | null;
   reversed: boolean;
   can_manage: boolean;
+  can_pay?: boolean;
+  can_approve?: boolean;
+  can_record?: boolean;
 };
 export type LabFinanceOverview = {
   future_plan_limits?: Record<string, string>;
   manager_id: string | null;
   is_manager: boolean;
+  allowed_actions?: string[];
   can_designate_manager?: boolean;
   public_summary?: { kind: string; label: string; balance: string; committed: string; available: string }[];
   projects: {
     id: string;
     name: string;
     is_lead: boolean;
+    permissions?: LabFinancePermission[];
+    allowed_actions?: string[];
+    can_manage_permissions?: boolean;
     archived?: boolean;
     finance_deleted?: boolean;
     deleted?: boolean;
@@ -242,6 +269,9 @@ export type LabPublicDutyAward = {
   withheld: string;
   net_paid: string;
   can_manage: boolean;
+  can_pay?: boolean;
+  can_approve?: boolean;
+  can_record?: boolean;
 };
 export type LabPublicDutyCommitment = {
   id: string;
@@ -254,6 +284,9 @@ export type LabPublicDutyCommitment = {
   remaining: string;
   cancelled: boolean;
   can_manage: boolean;
+  can_pay?: boolean;
+  can_approve?: boolean;
+  can_record?: boolean;
 };
 export type LabPublicDutyPayment = {
   id: string;

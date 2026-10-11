@@ -85,7 +85,7 @@ def test_rebinding_shows_previous_api_tokens_as_inactive(token_client):
     assert created.status_code == 201
     output = io.StringIO()
     call_command("lab_access", "reset", username="alice", stdout=output)
-    invitation = urlparse(output.getvalue().strip().splitlines()[-1]).fragment
+    invitation = urlparse(output.getvalue().strip().splitlines()[-1]).path.rsplit("/", 1)[-1]
     enrollment = post("enroll", {"token": invitation}).json()
     totp = pyotp.parse_uri(enrollment["otpauth"])
     assert post("confirm", {"token": enrollment["token"], "code": totp.now()}).status_code == 201

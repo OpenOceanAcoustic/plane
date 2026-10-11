@@ -23,8 +23,9 @@ class PublicDeploymentTests(unittest.TestCase):
         ], text=True, capture_output=True, check=True)
         logs = json.loads(result.stdout)["logging"]["logs"]
         encoders = [log["encoder"] for log in logs.values() if "encoder" in log]
-        self.assertEqual(len(encoders), 1)
-        self.assertEqual(encoders[0]["fields"], {
+        self.assertEqual(len(encoders), 2)
+        for encoder in encoders:
+            self.assertEqual(encoder["fields"], {
             "request>uri": {"filter": "delete"},
             "request>headers": {"filter": "delete"},
             "resp_headers": {"filter": "delete"},
