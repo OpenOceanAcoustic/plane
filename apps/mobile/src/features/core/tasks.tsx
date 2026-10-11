@@ -1,13 +1,16 @@
 import { useContext, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { CanonicalIcon, MobileHeaderContext } from "../../components/navigation";
+// oxlint-disable-next-line import/no-unassigned-import -- live V6 component adapters
+import "./v6.css";
+import { useProjectMembers } from "./members";
 import { DescriptionVersions } from "./versions";
 import { CommentReactions } from "./reactions";
 import { RichHtmlEditor } from "../../components/rich-editor";
 import { TaskDocuments } from "../lab/documents";
 import { useLabTransport } from "../lab/transport";
 import { Gantt } from "../lab/gantt";
-import { ArrowLeft, ArrowRight, Bell, Link2, MoreHorizontal, Paperclip, Plus } from "lucide-react";
+import { ArrowLeft, ArrowRight, Bell, Link2, Paperclip, Plus } from "lucide-react";
 import {
   ActionButton,
   ErrorMessage,
@@ -20,17 +23,7 @@ import {
   type Entity,
   type FormField,
 } from "../../components/ui";
-import {
-  AddButton,
-  DetailFields,
-  Empty,
-  MultiSelectSheet,
-  ProjectPicker,
-  ResultState,
-  TaskSearchSheet,
-  StatusGlyph,
-  PriorityGlyph,
-} from "./shared";
+import { DetailFields, Empty, MultiSelectSheet, ProjectPicker, ResultState, TaskSearchSheet } from "./shared";
 import {
   CoreService,
   dateLabel,
@@ -65,6 +58,7 @@ export function TaskCard({
   estimates = [],
   display,
   variant = "row",
+  showStateLabel = true,
   onOpen,
 }: {
   task: Task;
@@ -77,6 +71,7 @@ export function TaskCard({
   estimates?: Entity[];
   display?: Entity;
   variant?: "row" | "card";
+  showStateLabel?: boolean;
   onOpen: () => void;
 }) {
   const state = states.find((row) => row.id === task.state_id);
@@ -84,28 +79,31 @@ export function TaskCard({
     ?.map((id) => userName(members.find((row) => row.member.id === id)?.member))
     .join("、");
   return (
-    <article className={`core-issue-row ${variant === "card" ? "core-issue-card" : ""}`}>
-      {display?.state !== false && <StatusGlyph state={state} />}
-      <div className="core-issue-body">
-        <button className="core-task-name" onClick={onOpen}>
-          {task.name}
-        </button>
-        <div className="core-issue-secondary">
+    <button className={`px-task-row v6-task-card ${variant === "card" ? "v6-task-board-card" : ""}`} onClick={onOpen}>
+      {display?.state !== false && (
+        <span className="px-task-leading">
+          <V6StateMark state={state} />
+        </span>
+      )}
+      <div className="px-task-copy">
+        <h2>{task.name}</h2>
+        <div className="px-task-support">
+          {showStateLabel && display?.state !== false && state && <span>{String(state.name)}</span>}
           {display?.key !== false && (
             <span>
               {String(project?.identifier ?? "")}
               {task.sequence_id ? `-${task.sequence_id}` : ""}
             </span>
           )}
-          {display?.state !== false && state && <span>{String(state.name)}</span>}
-          {display?.due_date !== false && task.target_date && (
-            <span className="core-inline-due">
-              <CanonicalIcon name="plan" size={14} />
-              {dateLabel(task.target_date)}
+          {display?.priority !== false && task.priority && task.priority !== "none" && (
+            <span className={`px-high v6-priority-${task.priority}`}>
+              <CanonicalIcon name={task.priority === "low" ? "down" : "priorityUp"} size={14} />
+              {priorityName(task.priority)}
             </span>
           )}
+          {display?.due_date !== false && task.target_date && <span>{dateLabel(task.target_date)}</span>}
         </div>
-        <div className="core-task-meta">
+        <div className="core-task-meta v6-task-extra">
           {display?.labels !== false &&
             labels
               .filter((row) => task.label_ids?.includes(String(row.id)))
@@ -137,15 +135,35 @@ export function TaskCard({
           {Boolean(display?.updated_on) && <span>更新 · {dateLabel(task.updated_at)}</span>}
         </div>
       </div>
-      <div className="core-issue-trailing">
-        {display?.priority !== false && <PriorityGlyph value={task.priority} />}
-        {display?.assignee !== false && names && (
-          <span className="assignee-avatar" title={names}>
-            {names.slice(0, 1)}
-          </span>
-        )}
-      </div>
-    </article>
+      {display?.assignee !== false && names && (
+        <span className="px-task-owner">
+          <span className="px-avatar">{names.slice(0, 1)}</span>
+          <span>{names}</span>
+        </span>
+      )}
+    </button>
+  );
+}
+
+function V6StateMark({ state }: { state?: Entity }) {
+  const kind =
+    (
+      {
+        backlog: "planned",
+        unstarted: "pending",
+        started: "progress",
+        completed: "done",
+        cancelled: "cancelled",
+      } as Record<string, string>
+    )[String(state?.group)] ?? "pending";
+  return (
+    <i className={`px-state-mark px-state-${kind}`} aria-label={String(state?.name ?? "状态")}>
+      {kind === "done" ? (
+        <CanonicalIcon name="check" size={12} />
+      ) : kind === "cancelled" ? (
+        <CanonicalIcon name="close" size={12} />
+      ) : null}
+    </i>
   );
 }
 
@@ -393,7 +411,7 @@ export function ProjectTasks(
   const service = useMemo(() => new CoreService(client, workspaceSlug, projectId), [client, workspaceSlug, projectId]);
   const project = useData<Entity>(client, `${service.projectPath}/`);
   const states = useData<Entity[]>(client, `${service.projectPath}/states/`);
-  const members = useData<Member[]>(client, `${service.projectPath}/members/`);
+  const members = useProjectMembers(client, workspaceSlug, projectId);
   const labels = useData<Entity[]>(client, `${service.projectPath}/issue-labels/`);
   const [query, setQuery] = useState("");
   const [layout, setLayout] = useState<TaskLayout>(initialLayout);
@@ -401,7 +419,7 @@ export function ProjectTasks(
   const [orderBy, setOrderBy] = useState("-created_at");
   const [groupBy, setGroupBy] = useState("state");
   const [secondaryGroup, setSecondaryGroup] = useState("");
-  const [showEmpty, setShowEmpty] = useState(true);
+  const [showEmpty, setShowEmpty] = useState(false);
   const [subIssues, setSubIssues] = useState(true);
   const [advanced, setAdvanced] = useState<Entity>({});
   const availableCycles = useData<Entity[]>(client, `${service.projectPath}/cycles/`),
@@ -415,6 +433,8 @@ export function ProjectTasks(
   const defaultFields = ["key", "state", "priority", "assignee", "due_date"];
   const [fields, setFields] = useState(defaultFields);
   const [settings, setSettings] = useState(false);
+  const [viewsOpen, setViewsOpen] = useState(false);
+  const header = useContext(MobileHeaderContext);
   const [savingView, setSavingView] = useState(false);
   const [properties, setProperties] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -434,7 +454,7 @@ export function ProjectTasks(
     setOrderBy(String(displaySettings.order_by ?? "-created_at"));
     setGroupBy(String(displaySettings.group_by ?? "state"));
     setSecondaryGroup(String(displaySettings.sub_group_by ?? ""));
-    setShowEmpty(displaySettings.show_empty_groups !== false);
+    setShowEmpty(displaySettings.show_empty_groups === true);
     setSubIssues(displaySettings.sub_issue !== false);
     setAdvanced(
       Object.fromEntries(
@@ -515,6 +535,7 @@ export function ProjectTasks(
       estimates={records(availableEstimates.data)}
       display={display}
       variant={layout === "board" ? "card" : "row"}
+      showStateLabel={groupBy !== "state" || !["list", "board"].includes(layout)}
       onOpen={() => onNavigate({ page: "issue", projectId: task.project_id ?? projectId, issueId: task.id })}
     />
   );
@@ -522,171 +543,332 @@ export function ProjectTasks(
     <>
       <PageHeading
         title={collectionTitle ?? String(project.data?.name ?? "任务")}
-        subtitle={collectionTitle ? undefined : String(project.data?.identifier ?? "")}
+        onBack={() => onNavigate({ page: "project-overview", projectId })}
       >
-        {canEdit && <AddButton onClick={() => setCreating(true)}>新任务</AddButton>}
+        <button className="m3-icon-button px-icon-button" aria-label="筛选与显示" onClick={() => setSettings(true)}>
+          <CanonicalIcon name="filter" size={20} />
+        </button>
       </PageHeading>
-      <div className="core-view-navigation">
-        {(
-          [
-            ["list", "列表", "list"],
-            ["board", "看板", "kanban"],
-            ["timeline", "时间线", "gantt"],
-            ["calendar", "日历", "plan"],
-            ["records", "表格", "table"],
-          ] as const
-        ).map(([key, label, icon]) => (
+      <main className="px-body px-list-body">
+        <div className="px-list-id">{String(project.data?.identifier ?? "")}</div>
+        <div className="px-view-control" role="tablist" aria-label="任务视图">
+          {(
+            [
+              ["list", "列表", "list"],
+              ["board", "看板", "board"],
+            ] as const
+          ).map(([key, label, icon]) => (
+            <button
+              key={key}
+              className={layout === key ? "px-view-selected" : ""}
+              role="tab"
+              aria-selected={layout === key}
+              onClick={() => setLayout(key)}
+            >
+              <CanonicalIcon name={icon} size={key === "list" ? 20 : 19} />
+              {label}
+            </button>
+          ))}
           <button
-            key={key}
-            className={`core-view-tab ${layout === key ? "active" : ""}`}
-            aria-label={label}
-            aria-pressed={layout === key}
-            onClick={() => setLayout(key)}
+            role="tab"
+            aria-selected={["timeline", "calendar", "records"].includes(layout)}
+            aria-expanded={viewsOpen}
+            className={["timeline", "calendar", "records"].includes(layout) ? "px-view-selected" : ""}
+            aria-label="更多任务视图"
+            onClick={() => setViewsOpen(!viewsOpen)}
           >
-            <CanonicalIcon name={icon} size={20} />
-            <span className="tab-label">{label}</span>
-          </button>
-        ))}
-      </div>
-      <div className="core-tabs">
-        <button
-          className={`chip ${!stateId && !priority ? "active" : ""}`}
-          onClick={() => {
-            setStateId("");
-            setPriority("");
-          }}
-        >
-          全部任务 {countLabel(issueTotal)}
-        </button>
-        <button
-          className={`chip ${stateId && stateRows.find((row) => row.id === stateId)?.group === "started" ? "active" : ""}`}
-          onClick={() => {
-            const started = stateRows.find((row) => row.group === "started");
-            if (started) setStateId(String(started.id));
-            setPriority("");
-          }}
-        >
-          进行中 {countLabel(startedTotal)}
-        </button>
-        <button
-          className={`chip ${priority === "high" ? "active" : ""}`}
-          onClick={() => {
-            setStateId("");
-            setPriority("high");
-          }}
-        >
-          高优先级 {countLabel(highTotal)}
-        </button>
-      </div>
-      <div className="core-rows core-task-filter-row">
-        <button className="row" onClick={() => setSettings(true)}>
-          <span className="row-main">
-            {groupBy === "state"
-              ? "按状态分组"
-              : groupBy === "priority"
-                ? "按优先级分组"
-                : groupBy === "assignees"
-                  ? "按负责人分组"
-                  : "全部任务"}
-          </span>
-          <span className="row-value">筛选 · 显示</span>
-          <CanonicalIcon name="arrow" size={16} />
-        </button>
-      </div>
-      {layout === "timeline" && <ProjectTimeline {...props} />}
-      {layout === "calendar" && (
-        <MonthCalendar
-          tasks={tasks}
-          selectedDate={selectedDate}
-          onSelect={setSelectedDate}
-          month={month}
-          onMonth={setMonth}
-        />
-      )}
-      {layout !== "timeline" && (
-        <ResultState loading={items.loading} error={items.error}>
-          {layout === "board" || (groupBy && layout === "list") ? (
-            <div className={layout === "board" ? "core-kanban" : "core-grouped-issues"}>
-              {taskGroups(tasks, groupBy || "state", stateRows, members.data ?? [])
-                .filter(([, grouped]) => showEmpty || grouped.length)
-                .map(([name, grouped]) => (
-                  <section className={layout === "board" ? "core-kanban-column" : "core-state-section"} key={name}>
-                    <div className="core-section-heading">
-                      <h2>
-                        {(groupBy || "state") === "state" && (
-                          <StatusGlyph state={stateRows.find((row) => row.name === name)} />
-                        )}
-                        {name} · {grouped.length}
-                      </h2>
-                    </div>
-                    <div className="list">
-                      {secondaryGroup && secondaryGroup !== groupBy
-                        ? taskGroups(grouped, secondaryGroup, stateRows, members.data ?? [])
-                            .filter(([, rows]) => showEmpty || rows.length)
-                            .map(([title, rows]) => (
-                              <div key={title}>
-                                <h3 className="muted">{title}</h3>
-                                {rows.map(card)}
-                              </div>
-                            ))
-                        : grouped.map(card)}
-                      {!grouped.length && <Empty>暂无任务</Empty>}
-                    </div>
-                  </section>
-                ))}
-            </div>
-          ) : (
-            <div className="list core-issue-list">
-              {visible.map((task) =>
-                layout === "records" ? (
-                  <article key={task.id} className="card">
-                    <button
-                      className="core-task-name"
-                      onClick={() =>
-                        onNavigate({ page: "issue", projectId: task.project_id ?? projectId, issueId: task.id })
-                      }
-                    >
-                      {task.name}
-                    </button>
-                    <DetailFields
-                      values={recordFields(
-                        task,
-                        project.data,
-                        stateRows,
-                        members.data ?? [],
-                        records(labels.data),
-                        fields,
-                        records(availableCycles.data),
-                        records(availableModules.data),
-                        records(availableEstimates.data)
-                      )}
-                    />
-                  </article>
-                ) : (
-                  card(task)
-                )
-              )}
-              {!visible.length && <Empty>{layout === "calendar" ? "当天暂无任务" : "暂无任务"}</Empty>}
-            </div>
-          )}
-        </ResultState>
-      )}
-      {layout !== "timeline" && (cursors.length > 1 || Boolean(pageData?.next_page_results)) && (
-        <div className="core-pager">
-          <button className="button" disabled={cursors.length <= 1} onClick={() => setCursors(cursors.slice(0, -1))}>
-            上一页
-          </button>
-          <span className="muted">第 {cursors.length} 页</span>
-          <button
-            className="button"
-            disabled={!pageData?.next_page_results}
-            onClick={() => setCursors([...cursors, String(pageData?.next_cursor)])}
-          >
-            下一页
+            更多
+            <CanonicalIcon name="down" size={16} />
           </button>
         </div>
-      )}
-      <ErrorMessage error={project.error ?? states.error ?? members.error ?? labels.error ?? preferences.error} />
+        {viewsOpen && (
+          <div className="px-view-menu">
+            {(
+              [
+                ["timeline", "时间线", "gantt"],
+                ["calendar", "日历", "calendar"],
+                ["records", "表格", "table"],
+              ] as const
+            ).map(([key, label, icon]) => (
+              <button
+                key={key}
+                onClick={() => {
+                  setLayout(key);
+                  setViewsOpen(false);
+                }}
+              >
+                <CanonicalIcon name={icon} size={20} />
+                {label}
+              </button>
+            ))}
+          </div>
+        )}
+        <div className="px-chips">
+          <button
+            className={`m3-chip px-chip ${!stateId && !priority ? "px-chip-selected" : ""}`}
+            onClick={() => {
+              setStateId("");
+              setPriority("");
+            }}
+          >
+            <span>
+              {!stateId && !priority && <CanonicalIcon name="check" size={15} />}全部任务 {countLabel(issueTotal)}
+            </span>
+          </button>
+          <button
+            className={`m3-chip px-chip ${stateId && stateRows.find((row) => row.id === stateId)?.group === "started" ? "px-chip-selected" : ""}`}
+            onClick={() => {
+              const started = stateRows.find((row) => row.group === "started");
+              if (started) setStateId(String(started.id));
+              setPriority("");
+            }}
+          >
+            <span>进行中 {countLabel(startedTotal)}</span>
+          </button>
+          <button
+            className={`m3-chip px-chip ${priority === "high" ? "px-chip-selected" : ""}`}
+            onClick={() => {
+              setStateId("");
+              setPriority("high");
+            }}
+          >
+            <span>高优先级 {countLabel(highTotal)}</span>
+          </button>
+        </div>
+        {layout === "timeline" && <ProjectTimeline {...props} />}
+        {layout === "calendar" && (
+          <MonthCalendar
+            tasks={tasks}
+            selectedDate={selectedDate}
+            onSelect={setSelectedDate}
+            month={month}
+            onMonth={setMonth}
+          />
+        )}
+        {layout !== "timeline" && (
+          <ResultState loading={items.loading} error={items.error}>
+            {layout === "board" || (groupBy && layout === "list") ? (
+              <div className={layout === "board" ? "core-kanban" : "core-grouped-issues"}>
+                {taskGroups(tasks, groupBy || "state", stateRows, members.data ?? [])
+                  .filter(([, grouped]) => showEmpty || grouped.length)
+                  .map(([name, grouped]) => (
+                    <section className={layout === "board" ? "core-kanban-column" : "core-state-section"} key={name}>
+                      <div className="px-group-heading">
+                        <span>
+                          {(groupBy || "state") === "state" && (
+                            <V6StateMark state={stateRows.find((row) => row.name === name)} />
+                          )}
+                          {name}
+                          <small>{grouped.length}</small>
+                        </span>
+                        <button
+                          className="m3-icon-button px-icon-button"
+                          aria-label="按状态分组"
+                          onClick={() => setSettings(true)}
+                        >
+                          <CanonicalIcon name="more" size={20} />
+                        </button>
+                      </div>
+                      <div className="px-task-list">
+                        {secondaryGroup && secondaryGroup !== groupBy
+                          ? taskGroups(grouped, secondaryGroup, stateRows, members.data ?? [])
+                              .filter(([, rows]) => showEmpty || rows.length)
+                              .map(([title, rows]) => (
+                                <div key={title}>
+                                  <h3 className="muted">{title}</h3>
+                                  {rows.map(card)}
+                                </div>
+                              ))
+                          : grouped.map(card)}
+                        {!grouped.length && <Empty>暂无任务</Empty>}
+                      </div>
+                    </section>
+                  ))}
+              </div>
+            ) : (
+              <div className="list core-issue-list">
+                {visible.map((task) =>
+                  layout === "records" ? (
+                    <article key={task.id} className="card">
+                      <button
+                        className="core-task-name"
+                        onClick={() =>
+                          onNavigate({ page: "issue", projectId: task.project_id ?? projectId, issueId: task.id })
+                        }
+                      >
+                        {task.name}
+                      </button>
+                      <DetailFields
+                        values={recordFields(
+                          task,
+                          project.data,
+                          stateRows,
+                          members.data ?? [],
+                          records(labels.data),
+                          fields,
+                          records(availableCycles.data),
+                          records(availableModules.data),
+                          records(availableEstimates.data)
+                        )}
+                      />
+                    </article>
+                  ) : (
+                    card(task)
+                  )
+                )}
+                {!visible.length && <Empty>{layout === "calendar" ? "当天暂无任务" : "暂无任务"}</Empty>}
+              </div>
+            )}
+          </ResultState>
+        )}
+        {layout !== "timeline" && (cursors.length > 1 || Boolean(pageData?.next_page_results)) && (
+          <div className="core-pager">
+            <button className="button" disabled={cursors.length <= 1} onClick={() => setCursors(cursors.slice(0, -1))}>
+              上一页
+            </button>
+            <span className="muted">第 {cursors.length} 页</span>
+            <button
+              className="button"
+              disabled={!pageData?.next_page_results}
+              onClick={() => setCursors([...cursors, String(pageData?.next_cursor)])}
+            >
+              下一页
+            </button>
+          </div>
+        )}
+        <ErrorMessage error={project.error ?? states.error ?? members.error ?? labels.error ?? preferences.error} />
+        <details className="v6-secondary-details">
+          <summary>
+            视图与更多操作
+            <CanonicalIcon name="chevron" size={17} />
+          </summary>
+          <div className="core-tabs">
+            <ActionButton
+              className="chip"
+              action={async () => {
+                await client.request(
+                  `${service.projectPath}/user-properties/`,
+                  "PATCH",
+                  preferencePayload(preferences.data, {
+                    layout,
+                    state: stateId,
+                    priority,
+                    assignees: assigneeId,
+                    labels: labelId,
+                    orderBy,
+                    groupBy,
+                    fields,
+                  })
+                );
+                setSaved(true);
+              }}
+            >
+              保存视图
+            </ActionButton>
+            {saved && <span className="muted">已保存</span>}
+            <button className="chip" onClick={() => onNavigate({ page: "archived-tasks", projectId })}>
+              归档任务
+            </button>
+          </div>
+          <ActionButton
+            className="chip"
+            action={async () => {
+              setStateId("");
+              setPriority("");
+              setAssigneeId("");
+              setLabelId("");
+              setAdvanced({
+                ...Object.fromEntries(
+                  Object.keys({ ...objectValue(preferences.data?.filters), ...advanced }).map((key) => [key, null])
+                ),
+                state_group: null,
+                created_by: null,
+                cycle: null,
+                module: null,
+                start_date: null,
+                target_date: null,
+              });
+              setSaved(false);
+            }}
+          >
+            清除筛选
+          </ActionButton>
+          <button className="chip" onClick={() => setSavingView(true)}>
+            保存为视图
+          </button>
+          {savingView && (
+            <FormSheet
+              title="保存为视图"
+              fields={[
+                { key: "name", label: "视图名称", required: true },
+                {
+                  key: "access",
+                  label: "可见性",
+                  type: "select",
+                  value: "0",
+                  options: [
+                    { value: "0", label: "私人" },
+                    { value: "1", label: "项目共享" },
+                  ],
+                },
+              ]}
+              onClose={() => setSavingView(false)}
+              onSubmit={async (values) => {
+                const body = preferencePayload(preferences.data, {
+                  layout,
+                  state: stateId,
+                  priority,
+                  assignees: assigneeId,
+                  labels: labelId,
+                  orderBy,
+                  groupBy,
+                  fields,
+                  extraFilters: advanced,
+                  secondaryGroup,
+                  showEmpty,
+                  subIssues,
+                });
+                await client.request(`${service.projectPath}/views/`, "POST", {
+                  name: values.name.trim(),
+                  access: Number(values.access),
+                  ...body,
+                });
+                onNavigate({ page: "views", projectId });
+              }}
+            />
+          )}
+          <button className="chip" onClick={() => setProperties(true)}>
+            显示属性
+          </button>
+          {properties && (
+            <MultiSelectSheet
+              title="显示属性"
+              options={displayFields}
+              selected={fields}
+              onClose={() => setProperties(false)}
+              onSave={async (ids) => {
+                setFields(ids);
+                setSaved(false);
+              }}
+            />
+          )}
+        </details>
+      </main>
+      {canEdit &&
+        (header?.fab ? (
+          createPortal(
+            <button className="m3-fab px-fab" onClick={() => setCreating(true)}>
+              <CanonicalIcon name="plus" size={23} />
+              添加任务
+            </button>,
+            header.fab
+          )
+        ) : (
+          <button className="m3-fab px-fab" onClick={() => setCreating(true)}>
+            <CanonicalIcon name="plus" size={23} />
+            添加任务
+          </button>
+        ))}
       {settings && (
         <FormSheet
           title="筛选、排序与分组"
@@ -865,122 +1047,6 @@ export function ProjectTasks(
           }}
         />
       )}
-      <details className="core-secondary-details">
-        <summary>
-          视图与更多操作
-          <CanonicalIcon name="down" size={15} />
-        </summary>
-        <div className="core-tabs">
-          <ActionButton
-            className="chip"
-            action={async () => {
-              await client.request(
-                `${service.projectPath}/user-properties/`,
-                "PATCH",
-                preferencePayload(preferences.data, {
-                  layout,
-                  state: stateId,
-                  priority,
-                  assignees: assigneeId,
-                  labels: labelId,
-                  orderBy,
-                  groupBy,
-                  fields,
-                })
-              );
-              setSaved(true);
-            }}
-          >
-            保存视图
-          </ActionButton>
-          {saved && <span className="muted">已保存</span>}
-          <button className="chip" onClick={() => onNavigate({ page: "archived-tasks", projectId })}>
-            归档任务
-          </button>
-        </div>
-        <ActionButton
-          className="chip"
-          action={async () => {
-            setStateId("");
-            setPriority("");
-            setAssigneeId("");
-            setLabelId("");
-            setAdvanced({
-              ...Object.fromEntries(
-                Object.keys({ ...objectValue(preferences.data?.filters), ...advanced }).map((key) => [key, null])
-              ),
-              state_group: null,
-              created_by: null,
-              cycle: null,
-              module: null,
-              start_date: null,
-              target_date: null,
-            });
-            setSaved(false);
-          }}
-        >
-          清除筛选
-        </ActionButton>
-        <button className="chip" onClick={() => setSavingView(true)}>
-          保存为视图
-        </button>
-        {savingView && (
-          <FormSheet
-            title="保存为视图"
-            fields={[
-              { key: "name", label: "视图名称", required: true },
-              {
-                key: "access",
-                label: "可见性",
-                type: "select",
-                value: "0",
-                options: [
-                  { value: "0", label: "私人" },
-                  { value: "1", label: "项目共享" },
-                ],
-              },
-            ]}
-            onClose={() => setSavingView(false)}
-            onSubmit={async (values) => {
-              const body = preferencePayload(preferences.data, {
-                layout,
-                state: stateId,
-                priority,
-                assignees: assigneeId,
-                labels: labelId,
-                orderBy,
-                groupBy,
-                fields,
-                extraFilters: advanced,
-                secondaryGroup,
-                showEmpty,
-                subIssues,
-              });
-              await client.request(`${service.projectPath}/views/`, "POST", {
-                name: values.name.trim(),
-                access: Number(values.access),
-                ...body,
-              });
-              onNavigate({ page: "views", projectId });
-            }}
-          />
-        )}
-        <button className="chip" onClick={() => setProperties(true)}>
-          显示属性
-        </button>
-        {properties && (
-          <MultiSelectSheet
-            title="显示属性"
-            options={displayFields}
-            selected={fields}
-            onClose={() => setProperties(false)}
-            onSave={async (ids) => {
-              setFields(ids);
-              setSaved(false);
-            }}
-          />
-        )}
-      </details>
       {creating && (
         <TaskForm
           service={service}
@@ -1315,7 +1381,7 @@ function TaskDetail(props: CoreProps & { projectId: string; issueId: string }) {
   const project = useData<Entity>(client, `${service.projectPath}/`);
   const session = useData<Session>(client, "/api/lab/session/");
   const states = useData<Entity[]>(client, `${service.projectPath}/states/`);
-  const members = useData<Member[]>(client, `${service.projectPath}/members/`);
+  const members = useProjectMembers(client, workspaceSlug, projectId);
   const labels = useData<Entity[]>(client, `${service.projectPath}/issue-labels/`);
   const comments = useData<Entity[]>(client, `${path}comments/`);
   const activities = useData<Entity[]>(client, `${path}history/?activity_type=issue-property`);
@@ -1331,7 +1397,6 @@ function TaskDetail(props: CoreProps & { projectId: string; issueId: string }) {
   const [selected, setSelected] = useState<Entity>();
   const [commentText, setCommentText] = useState("");
   const [tab, setTab] = useState("activity");
-  const header = useContext(MobileHeaderContext);
   const [relationType, setRelationType] = useState("relates_to");
   const role = Number(project.data?.member_role);
   const myId = session.data?.user.id;
@@ -1393,422 +1458,420 @@ function TaskDetail(props: CoreProps & { projectId: string; issueId: string }) {
         onBack={() => onNavigate({ page: "tasks", projectId })}
       >
         <button className="icon-button" aria-label="任务操作" onClick={() => setModal("actions")}>
-          <MoreHorizontal size={21} />
+          <CanonicalIcon name="more" size={22} />
         </button>
       </PageHeading>
       <ResultState loading={detail.loading} error={detail.error}>
         {task && (
           <>
-            <h1 className="core-task-title">{task.name}</h1>
-            <IssueDescription html={task.description_html} />
-            <div className="core-direct-properties">
-              <button
-                className="core-property-chip core-priority-chip"
-                disabled={!canEdit}
-                onClick={() => setModal("edit")}
-                title={`优先级 · ${priorityName(task.priority)}`}
-              >
-                <CanonicalIcon name="up" size={18} />
-                <span>{priorityName(task.priority)}</span>
-              </button>
-              <button className="core-property-chip" disabled={!canEdit} onClick={() => setModal("state")} title="状态">
-                <StatusGlyph state={state} />
-                <span>{String(state?.name ?? "状态")}</span>
-              </button>
-              <button
-                className="core-property-chip"
-                disabled={!canEdit}
-                onClick={() => setModal("owners")}
-                title={`负责人 · ${assigned}`}
-              >
-                <span className="chip-avatar">{assigned.slice(0, 1)}</span>
-                <span>{assigned}</span>
-              </button>
-              <button
-                className="core-property-chip"
-                disabled={!canEdit}
-                onClick={() => setModal("edit")}
-                title={dateLabel(task.start_date)}
-              >
-                <CanonicalIcon name="plan" size={17} />
-                <span>开始日期</span>
-              </button>
-              <button
-                className="core-property-chip"
-                disabled={!canEdit}
-                onClick={() => setModal("edit")}
-                title={dateLabel(task.target_date)}
-              >
-                <CanonicalIcon name="plan" size={17} />
-                <span>截止日期</span>
-              </button>
-              <button
-                className="core-property-chip"
-                disabled={!canEdit}
-                onClick={() => setModal("labels")}
-                title={taskLabels}
-              >
-                <CanonicalIcon name="tag" size={17} />
-                <span>标签</span>
-              </button>
-            </div>
-            <section className="core-detail-activity">
-              <header className="core-activity-heading">
-                <button className="core-text-button" onClick={() => setModal("activity-filter")}>
-                  {tab === "comments" ? "评论" : "活动"}
-                  <CanonicalIcon name="down" size={13} />
+            <main className="px-body px-detail-body">
+              <h1 className="px-issue-title">{task.name}</h1>
+              <IssueDescription html={task.description_html} />
+              <div className="px-detail-controls">
+                <button className="px-status-button" disabled={!canEdit} onClick={() => setModal("state")} title="状态">
+                  <V6StateMark state={state} />
+                  {String(state?.name ?? "状态")}
+                  <CanonicalIcon name="down" size={15} />
                 </button>
-                <button className="icon-button" aria-label="筛选活动" onClick={() => setModal("activity-filter")}>
-                  <CanonicalIcon name="filter" size={21} />
+                <button
+                  className={`px-priority-button v6-priority-${task.priority ?? "none"}`}
+                  disabled={!canEdit}
+                  onClick={() => setModal("edit")}
+                  title={`优先级 · ${priorityName(task.priority)}`}
+                >
+                  <CanonicalIcon name={task.priority === "low" ? "down" : "priorityUp"} size={16} />
+                  {priorityName(task.priority)}
                 </button>
-              </header>
-              {tab === "comments" ? (
-                <>
-                  <ResultState loading={comments.loading} error={comments.error}>
-                    <div className="list">
-                      {records(comments.data).map((comment) => {
-                        const actor = comment.actor_detail as Session["user"] | undefined;
-                        return (
-                          <article className="card" key={comment.id}>
-                            <div className="core-comment-meta">
-                              <strong>{userName(actor)}</strong>
-                              <span>
-                                {dateLabel(comment.created_at)}
-                                {comment.edited_at ? " · 已编辑" : ""}
-                              </span>
-                            </div>
-                            <Html html={comment.comment_html} />
-                            <CommentReactions
-                              service={service}
-                              comment={comment}
-                              userId={myId}
-                              onDone={() => {
-                                void comments.refresh();
-                              }}
-                            />
-                            {(canAdmin || comment.actor === myId) && (
-                              <div className="core-comment-actions">
-                                <button
-                                  className="chip"
-                                  onClick={() => {
-                                    setSelected(comment);
-                                    setModal("comment");
-                                  }}
-                                >
-                                  编辑
-                                </button>
-                                <ActionButton
-                                  className="chip"
-                                  action={() => client.request(`${path}comments/${comment.id}/`, "DELETE")}
-                                  onDone={() => {
-                                    void comments.refresh();
-                                  }}
-                                >
-                                  删除
-                                </ActionButton>
+                <button
+                  className="px-assignee-button"
+                  disabled={!canEdit}
+                  onClick={() => setModal("owners")}
+                  title={`负责人 · ${assigned}`}
+                >
+                  <span className="px-avatar">{assigned.slice(0, 1)}</span>
+                  {assigned}
+                </button>
+              </div>
+              <div className="px-attributes">
+                {(
+                  [
+                    ["开始日期", task.start_date, "edit"],
+                    ["截止日期", task.target_date, "edit"],
+                    ["标签", taskLabels === "无标签" ? null : taskLabels, "labels"],
+                  ] as const
+                ).map(([label, value, target]) => (
+                  <button className="px-attribute-row" key={label} disabled={!canEdit} onClick={() => setModal(target)}>
+                    <span className="px-attribute-label">
+                      <CanonicalIcon name={target === "labels" ? "tag" : "calendar"} size={19} />
+                      {label}
+                    </span>
+                    <span className="px-attribute-value">
+                      {value
+                        ? target === "labels"
+                          ? value
+                          : dateLabel(value)
+                        : target === "labels"
+                          ? "添加标签"
+                          : "选择日期"}
+                      <CanonicalIcon name="chevron" size={17} />
+                    </span>
+                  </button>
+                ))}
+              </div>
+              <section className="px-activity">
+                <header className="px-section-heading">
+                  <h2>{tab === "comments" ? "评论" : "活动"}</h2>
+                  <button
+                    className="m3-icon-button px-icon-button"
+                    aria-label="筛选活动"
+                    onClick={() => setModal("activity-filter")}
+                  >
+                    <CanonicalIcon name="filter" size={19} />
+                  </button>
+                </header>
+                {tab === "comments" ? (
+                  <>
+                    <ResultState loading={comments.loading} error={comments.error}>
+                      <div className="list">
+                        {records(comments.data).map((comment) => {
+                          const actor = comment.actor_detail as Session["user"] | undefined;
+                          return (
+                            <article className="card" key={comment.id}>
+                              <div className="core-comment-meta">
+                                <strong>{userName(actor)}</strong>
+                                <span>
+                                  {dateLabel(comment.created_at)}
+                                  {comment.edited_at ? " · 已编辑" : ""}
+                                </span>
                               </div>
-                            )}
+                              <Html html={comment.comment_html} />
+                              <CommentReactions
+                                service={service}
+                                comment={comment}
+                                userId={myId}
+                                onDone={() => {
+                                  void comments.refresh();
+                                }}
+                              />
+                              {(canAdmin || comment.actor === myId) && (
+                                <div className="core-comment-actions">
+                                  <button
+                                    className="chip"
+                                    onClick={() => {
+                                      setSelected(comment);
+                                      setModal("comment");
+                                    }}
+                                  >
+                                    编辑
+                                  </button>
+                                  <ActionButton
+                                    className="chip"
+                                    action={() => client.request(`${path}comments/${comment.id}/`, "DELETE")}
+                                    onDone={() => {
+                                      void comments.refresh();
+                                    }}
+                                  >
+                                    删除
+                                  </ActionButton>
+                                </div>
+                              )}
+                            </article>
+                          );
+                        })}
+                        {!records(comments.data).length && <Empty>暂无评论</Empty>}
+                      </div>
+                    </ResultState>
+                  </>
+                ) : (
+                  <ResultState loading={activities.loading} error={activities.error}>
+                    <div className="v6-activity-list">
+                      {records(activities.data)
+                        .slice()
+                        // oxlint-disable-next-line unicorn/no-array-sort -- ES2022-compatible immutable ordering
+                        .sort((left, right) => String(right.created_at).localeCompare(String(left.created_at)))
+                        .map((activity) => (
+                          <article className="px-activity-row" key={activity.id}>
+                            <span className="px-avatar">
+                              {userName(activity.actor_detail as Session["user"] | undefined).slice(0, 1)}
+                            </span>
+                            <div>
+                              <p>
+                                <strong>{userName(activity.actor_detail as Session["user"] | undefined)}</strong>{" "}
+                                {fieldNames[String(activity.field)]
+                                  ? `更新${fieldNames[String(activity.field)]}`
+                                  : activity.verb === "created"
+                                    ? "创建任务"
+                                    : "更新任务"}
+                                {activity.new_value && !/^[a-f0-9-]{36}$/.test(String(activity.new_value))
+                                  ? ` · ${String(activity.new_value)}`
+                                  : ""}
+                              </p>
+                              <time>{dateLabel(activity.created_at)}</time>
+                            </div>
                           </article>
-                        );
-                      })}
-                      {!records(comments.data).length && <Empty>暂无评论</Empty>}
+                        ))}
+                      {!records(activities.data).length && <Empty>暂无动态</Empty>}
                     </div>
                   </ResultState>
-                </>
-              ) : (
-                <ResultState loading={activities.loading} error={activities.error}>
-                  <div className="core-activity-timeline">
-                    {records(activities.data)
-                      .slice()
-                      // oxlint-disable-next-line unicorn/no-array-sort -- ES2022-compatible immutable ordering
-                      .sort((left, right) => String(right.created_at).localeCompare(String(left.created_at)))
-                      .map((activity) => (
-                        <article className="core-activity-entry" key={activity.id}>
-                          <span className="core-activity-symbol">
-                            <CanonicalIcon name={activity.field === "assignees" ? "users" : "workItems"} size={18} />
-                          </span>
-                          <div>
-                            <p>
-                              <strong>{userName(activity.actor_detail as Session["user"] | undefined)}</strong>{" "}
-                              {fieldNames[String(activity.field)]
-                                ? `更新${fieldNames[String(activity.field)]}`
-                                : activity.verb === "created"
-                                  ? "创建任务"
-                                  : "更新任务"}
-                              {activity.new_value && !/^[a-f0-9-]{36}$/.test(String(activity.new_value))
-                                ? ` · ${String(activity.new_value)}`
-                                : ""}
-                            </p>
-                            <small>{dateLabel(activity.created_at)}</small>
-                          </div>
-                        </article>
-                      ))}
-                    {!records(activities.data).length && <Empty>暂无动态</Empty>}
-                  </div>
-                </ResultState>
-              )}
-            </section>
-            <details className="core-secondary-details">
-              <summary>
-                任务属性与更多操作
-                <CanonicalIcon name="down" size={15} />
-              </summary>
-              <DetailFields
-                values={[
-                  ["开始日期", dateLabel(task.start_date)],
-                  ["截止日期", dateLabel(task.target_date)],
-                  [
-                    "周期",
-                    <button key="cycle" className="chip" disabled={!canEdit} onClick={() => setModal("cycle")}>
-                      {String(taskCycle?.name ?? "未设置")}
-                    </button>,
-                  ],
-                  [
-                    "模块",
-                    <button key="modules" className="chip" disabled={!canEdit} onClick={() => setModal("modules")}>
-                      {taskModules}
-                    </button>,
-                  ],
-                  [
-                    "父任务",
-                    task.parent_id ? (
-                      <button
-                        key="parent"
-                        className="chip"
-                        onClick={() => onNavigate({ page: "issue", projectId, issueId: String(task.parent_id) })}
-                      >
-                        查看父任务
-                      </button>
-                    ) : (
-                      "无"
-                    ),
-                  ],
-                ]}
-              />
-              <div className="core-section-heading">
-                <h2>描述</h2>
-                <button className="chip" onClick={() => setModal("versions")}>
-                  历史版本
-                </button>
-                {canEdit && (
-                  <button className="chip" onClick={() => setModal("description")}>
-                    编辑
-                  </button>
                 )}
-              </div>
-              <TaskDocuments
-                store={lab}
-                projectId={projectId}
-                issueId={issueId}
-                onOpenDocument={(targetProject, page) =>
-                  onNavigate({ page: "document", projectId: targetProject, pageId: page })
-                }
-              />
-              <div className="core-section-heading">
-                <h2>
-                  子任务 <span className="muted">{childRows.length}</span>
-                </h2>
-                {canEdit && (
-                  <button className="chip" onClick={() => setModal("child")}>
-                    <Plus size={15} />
-                    新建
-                  </button>
-                )}
-              </div>
-              <div className="list">
-                {childRows.map((child) => (
-                  <div key={child.id}>
-                    <TaskCard
-                      task={child}
-                      project={project.data}
-                      states={stateRows}
-                      members={members.data}
-                      onOpen={() => openTask(child)}
-                    />
-                    {canEdit && (
-                      <ActionButton
-                        className="chip"
-                        action={() => client.request(service.taskPath(child.id), "PATCH", { parent_id: null })}
-                        onDone={() => {
-                          void children.refresh();
-                        }}
-                      >
-                        解除关联
-                      </ActionButton>
-                    )}
-                  </div>
-                ))}
-                {!childRows.length && <Empty>暂无子任务</Empty>}
-              </div>
-              {canEdit && (
-                <button className="chip" onClick={() => setModal("search-child")}>
-                  关联已有任务
-                </button>
-              )}
-              <div className="core-section-heading">
-                <h2>相关任务</h2>
-                {canEdit && (
-                  <button className="chip" onClick={() => setModal("relation-kind")}>
-                    <Link2 size={15} />
-                    添加
-                  </button>
-                )}
-              </div>
-              <ErrorMessage error={relations.error} />
-              <div className="list">
-                {relationRows.map((row) => (
-                  <article className="card" key={`${row.relationKey}-${row.id}`}>
-                    <span className="chip">{relationNames[row.relationKey] ?? "相关"}</span>
-                    <button className="core-task-name" onClick={() => openTask(row)}>
-                      {row.name}
-                    </button>
-                    {canEdit && (
-                      <ActionButton
-                        className="chip"
-                        action={() => service.unrelate(issueId, row.id)}
-                        onDone={() => {
-                          void relations.refresh();
-                        }}
-                      >
-                        解除关联
-                      </ActionButton>
-                    )}
-                  </article>
-                ))}
-                {!relationRows.length && <Empty>暂无相关任务</Empty>}
-              </div>
-              <div className="core-section-heading">
-                <h2>链接</h2>
-                {canEdit && (
-                  <button className="chip" onClick={() => setModal("link")}>
-                    <Plus size={15} />
-                    添加
-                  </button>
-                )}
-              </div>
-              <ErrorMessage error={links.error} />
-              <div className="list">
-                {records(links.data).map((link) => (
-                  <article className="card" key={link.id}>
-                    <a
-                      href={/^https?:\/\//.test(String(link.url)) ? String(link.url) : undefined}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                    >
-                      {String(link.title || link.url)}
-                    </a>
-                    {canEdit && (
-                      <div className="core-card-actions">
+              </section>
+              <details className="v6-secondary-details px-detail-more">
+                <summary>
+                  任务属性与更多操作
+                  <CanonicalIcon name="chevron" size={17} />
+                </summary>
+                <DetailFields
+                  values={[
+                    ["开始日期", dateLabel(task.start_date)],
+                    ["截止日期", dateLabel(task.target_date)],
+                    [
+                      "周期",
+                      <button key="cycle" className="chip" disabled={!canEdit} onClick={() => setModal("cycle")}>
+                        {String(taskCycle?.name ?? "未设置")}
+                      </button>,
+                    ],
+                    [
+                      "模块",
+                      <button key="modules" className="chip" disabled={!canEdit} onClick={() => setModal("modules")}>
+                        {taskModules}
+                      </button>,
+                    ],
+                    [
+                      "父任务",
+                      task.parent_id ? (
                         <button
+                          key="parent"
                           className="chip"
-                          onClick={() => {
-                            setSelected(link);
-                            setModal("link");
-                          }}
+                          onClick={() => onNavigate({ page: "issue", projectId, issueId: String(task.parent_id) })}
                         >
-                          编辑
+                          查看父任务
                         </button>
+                      ) : (
+                        "无"
+                      ),
+                    ],
+                  ]}
+                />
+                <div className="core-section-heading">
+                  <h2>描述</h2>
+                  <button className="chip" onClick={() => setModal("versions")}>
+                    历史版本
+                  </button>
+                  {canEdit && (
+                    <button className="chip" onClick={() => setModal("description")}>
+                      编辑
+                    </button>
+                  )}
+                </div>
+                <TaskDocuments
+                  store={lab}
+                  projectId={projectId}
+                  issueId={issueId}
+                  onOpenDocument={(targetProject, page) =>
+                    onNavigate({ page: "document", projectId: targetProject, pageId: page })
+                  }
+                />
+                <div className="core-section-heading">
+                  <h2>
+                    子任务 <span className="muted">{childRows.length}</span>
+                  </h2>
+                  {canEdit && (
+                    <button className="chip" onClick={() => setModal("child")}>
+                      <Plus size={15} />
+                      新建
+                    </button>
+                  )}
+                </div>
+                <div className="list">
+                  {childRows.map((child) => (
+                    <div key={child.id}>
+                      <TaskCard
+                        task={child}
+                        project={project.data}
+                        states={stateRows}
+                        members={members.data}
+                        onOpen={() => openTask(child)}
+                      />
+                      {canEdit && (
                         <ActionButton
                           className="chip"
-                          action={() => client.request(`${path}issue-links/${link.id}/`, "DELETE")}
+                          action={() => client.request(service.taskPath(child.id), "PATCH", { parent_id: null })}
                           onDone={() => {
-                            void links.refresh();
+                            void children.refresh();
                           }}
                         >
-                          删除
+                          解除关联
                         </ActionButton>
-                      </div>
-                    )}
-                  </article>
-                ))}
-                {!records(links.data).length && <Empty>暂无链接</Empty>}
-              </div>
-              <div className="core-section-heading">
-                <h2>附件</h2>
+                      )}
+                    </div>
+                  ))}
+                  {!childRows.length && <Empty>暂无子任务</Empty>}
+                </div>
+                {canEdit && (
+                  <button className="chip" onClick={() => setModal("search-child")}>
+                    关联已有任务
+                  </button>
+                )}
+                <div className="core-section-heading">
+                  <h2>相关任务</h2>
+                  {canEdit && (
+                    <button className="chip" onClick={() => setModal("relation-kind")}>
+                      <Link2 size={15} />
+                      添加
+                    </button>
+                  )}
+                </div>
+                <ErrorMessage error={relations.error} />
+                <div className="list">
+                  {relationRows.map((row) => (
+                    <article className="card" key={`${row.relationKey}-${row.id}`}>
+                      <span className="chip">{relationNames[row.relationKey] ?? "相关"}</span>
+                      <button className="core-task-name" onClick={() => openTask(row)}>
+                        {row.name}
+                      </button>
+                      {canEdit && (
+                        <ActionButton
+                          className="chip"
+                          action={() => service.unrelate(issueId, row.id)}
+                          onDone={() => {
+                            void relations.refresh();
+                          }}
+                        >
+                          解除关联
+                        </ActionButton>
+                      )}
+                    </article>
+                  ))}
+                  {!relationRows.length && <Empty>暂无相关任务</Empty>}
+                </div>
+                <div className="core-section-heading">
+                  <h2>链接</h2>
+                  {canEdit && (
+                    <button className="chip" onClick={() => setModal("link")}>
+                      <Plus size={15} />
+                      添加
+                    </button>
+                  )}
+                </div>
+                <ErrorMessage error={links.error} />
+                <div className="list">
+                  {records(links.data).map((link) => (
+                    <article className="card" key={link.id}>
+                      <a
+                        href={/^https?:\/\//.test(String(link.url)) ? String(link.url) : undefined}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                      >
+                        {String(link.title || link.url)}
+                      </a>
+                      {canEdit && (
+                        <div className="core-card-actions">
+                          <button
+                            className="chip"
+                            onClick={() => {
+                              setSelected(link);
+                              setModal("link");
+                            }}
+                          >
+                            编辑
+                          </button>
+                          <ActionButton
+                            className="chip"
+                            action={() => client.request(`${path}issue-links/${link.id}/`, "DELETE")}
+                            onDone={() => {
+                              void links.refresh();
+                            }}
+                          >
+                            删除
+                          </ActionButton>
+                        </div>
+                      )}
+                    </article>
+                  ))}
+                  {!records(links.data).length && <Empty>暂无链接</Empty>}
+                </div>
+                <div className="core-section-heading">
+                  <h2>附件</h2>
+                  {canEdit && (
+                    <ActionButton
+                      className="chip"
+                      action={() => client.uploadAttachment(workspaceSlug, projectId, issueId)}
+                      onDone={() => {
+                        void attachments.refresh();
+                      }}
+                    >
+                      <Paperclip size={15} />
+                      上传
+                    </ActionButton>
+                  )}
+                </div>
+                <ErrorMessage error={attachments.error} />
+                <div className="list">
+                  {records(attachments.data).map((file) => {
+                    const attributes = file.attributes as Entity | undefined;
+                    return (
+                      <article className="card" key={file.id}>
+                        <div className="core-file-row">
+                          <Paperclip size={20} />
+                          <span>
+                            {String(attributes?.name || "附件")}
+                            <small className="muted">
+                              {attributes?.size ? ` · ${Math.ceil(Number(attributes.size) / 1024)} KB` : ""}
+                            </small>
+                          </span>
+                          <ActionButton
+                            className="chip"
+                            action={() =>
+                              client.download(`${attachmentPath}${file.id}/`, String(attributes?.name ?? "附件"))
+                            }
+                          >
+                            下载
+                          </ActionButton>
+                        </div>
+                        {(canAdmin || file.created_by === myId) && (
+                          <ActionButton
+                            className="chip"
+                            action={() => client.request(`${attachmentPath}${file.id}/`, "DELETE")}
+                            onDone={() => {
+                              void attachments.refresh();
+                            }}
+                          >
+                            删除
+                          </ActionButton>
+                        )}
+                      </article>
+                    );
+                  })}
+                  {!records(attachments.data).length && <Empty>暂无附件</Empty>}
+                </div>
+              </details>
+              <div className="px-comment-row">
+                <button
+                  className="px-comment"
+                  disabled={Boolean(task.archived_at)}
+                  onClick={() => setModal("new-comment")}
+                >
+                  <CanonicalIcon name="comment" size={20} />
+                  添加评论
+                </button>
                 {canEdit && (
                   <ActionButton
-                    className="chip"
+                    className="px-attachment"
                     action={() => client.uploadAttachment(workspaceSlug, projectId, issueId)}
                     onDone={() => {
                       void attachments.refresh();
                     }}
                   >
-                    <Paperclip size={15} />
-                    上传
+                    <CanonicalIcon name="plus" size={24} />
+                    <span className="sr-only">添加任务附件</span>
                   </ActionButton>
                 )}
               </div>
-              <ErrorMessage error={attachments.error} />
-              <div className="list">
-                {records(attachments.data).map((file) => {
-                  const attributes = file.attributes as Entity | undefined;
-                  return (
-                    <article className="card" key={file.id}>
-                      <div className="core-file-row">
-                        <Paperclip size={20} />
-                        <span>
-                          {String(attributes?.name || "附件")}
-                          <small className="muted">
-                            {attributes?.size ? ` · ${Math.ceil(Number(attributes.size) / 1024)} KB` : ""}
-                          </small>
-                        </span>
-                        <ActionButton
-                          className="chip"
-                          action={() =>
-                            client.download(`${attachmentPath}${file.id}/`, String(attributes?.name ?? "附件"))
-                          }
-                        >
-                          下载
-                        </ActionButton>
-                      </div>
-                      {(canAdmin || file.created_by === myId) && (
-                        <ActionButton
-                          className="chip"
-                          action={() => client.request(`${attachmentPath}${file.id}/`, "DELETE")}
-                          onDone={() => {
-                            void attachments.refresh();
-                          }}
-                        >
-                          删除
-                        </ActionButton>
-                      )}
-                    </article>
-                  );
-                })}
-                {!records(attachments.data).length && <Empty>暂无附件</Empty>}
-              </div>
-            </details>
+            </main>
             <ErrorMessage error={project.error ?? states.error ?? labels.error ?? members.error ?? children.error} />
           </>
         )}
       </ResultState>
-      {task &&
-        header?.composer &&
-        createPortal(
-          <div className="core-comment-composer">
-            <button
-              className="core-composer-input"
-              disabled={Boolean(task.archived_at)}
-              onClick={() => setModal("new-comment")}
-            >
-              <CanonicalIcon name="comment" size={21} />
-              <span>添加评论</span>
-            </button>
-            {canEdit && (
-              <ActionButton
-                className="core-composer-plus"
-                action={() => client.uploadAttachment(workspaceSlug, projectId, issueId)}
-                onDone={() => {
-                  void attachments.refresh();
-                }}
-              >
-                <CanonicalIcon name="plus" size={25} />
-                <span className="sr-only">添加附件</span>
-              </ActionButton>
-            )}
-          </div>,
-          header.composer
-        )}
       {modal === "new-comment" && task && (
         <Sheet title="添加评论" onClose={close}>
           {" "}
@@ -1858,6 +1921,7 @@ function TaskDetail(props: CoreProps & { projectId: string; issueId: string }) {
         <StateSelector
           states={stateRows}
           selected={task.state_id}
+          issueKey={task.sequence_id ? `${String(project.data?.identifier ?? "任务")}-${task.sequence_id}` : "任务详情"}
           onClose={close}
           onSelect={async (stateId) => {
             await client.request(path, "PATCH", { state_id: stateId });
@@ -2160,7 +2224,7 @@ function IssueDescription({ html }: { html?: string }) {
     return { first: nodes[0] ? markup(nodes[0]) : html, rest: nodes.slice(1).map(markup).join("") };
   }, [html]);
   return (
-    <div className="core-native-description">
+    <div className="px-issue-description v6-issue-description">
       {parts.first ? <Html html={parts.first} /> : <p>暂无描述</p>}
       {parts.rest && (
         <details className="core-description-more">
@@ -2177,11 +2241,13 @@ function IssueDescription({ html }: { html?: string }) {
 function StateSelector({
   states,
   selected,
+  issueKey,
   onSelect,
   onClose,
 }: {
   states: Entity[];
   selected?: string;
+  issueKey: string;
   onSelect: (id: string) => Promise<unknown>;
   onClose: () => void;
 }) {
@@ -2189,32 +2255,32 @@ function StateSelector({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<unknown>();
   return (
-    <Sheet title="状态" className="core-state-sheet" onClose={onClose} busy={busy}>
-      <header className="core-state-title">
-        <button className="icon-button" aria-label="返回" disabled={busy} onClick={onClose}>
-          <CanonicalIcon name="back" size={23} />
-        </button>
-        <h2>状态</h2>
-      </header>
-      <label className="core-state-search">
-        <CanonicalIcon name="search" size={19} />
+    <Sheet title="任务状态" subtitle={issueKey} className="px-state-sheet v6-state-sheet" onClose={onClose} busy={busy}>
+      <label className="px-state-search">
+        <CanonicalIcon name="search" size={21} />
         <input
+          type="search"
           aria-label="搜索状态"
-          placeholder="搜索"
+          placeholder="搜索状态"
           value={query}
           onChange={(event) => setQuery(event.target.value)}
         />
       </label>
-      <div className="core-state-list">
+      <div className="px-state-options" role="radiogroup" aria-label="选择任务状态">
         {states
           .filter((state) => String(state.name).toLocaleLowerCase().includes(query.toLocaleLowerCase()))
           .map((state) => (
             <button
-              className="core-state-row"
+              className={`px-state-option ${state.id === selected ? "px-state-selected" : ""}`}
               key={state.id}
-              aria-pressed={state.id === selected}
+              role="radio"
+              aria-checked={state.id === selected}
               disabled={busy}
               onClick={async () => {
+                if (state.id === selected) {
+                  onClose();
+                  return;
+                }
                 setBusy(true);
                 setError(undefined);
                 try {
@@ -2226,9 +2292,11 @@ function StateSelector({
                 }
               }}
             >
-              <StatusGlyph state={state} />
-              <span>{String(state.name)}</span>
-              {state.id === selected && <CanonicalIcon name="check" size={19} />}
+              <span>
+                <V6StateMark state={state} />
+                {String(state.name)}
+              </span>
+              <i className={`px-radio ${state.id === selected ? "px-radio-checked" : ""}`} />
             </button>
           ))}
       </div>

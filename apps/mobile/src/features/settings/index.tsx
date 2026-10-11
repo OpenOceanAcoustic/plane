@@ -1,6 +1,8 @@
+import { MobileSelect } from "../../components/select";
 // oxlint-disable-next-line import/no-unassigned-import -- mobile settings presentation
 import "./settings.css";
 import { useEffect, useMemo, useState } from "react";
+import { CanonicalIcon } from "../../components/navigation";
 import {
   ActionButton,
   ErrorMessage,
@@ -81,155 +83,182 @@ function PersonalSettings({
   const name = textValue(profile.data?.display_name ?? profile.data?.username);
   return (
     <>
-      <PageHeading title={tab === "profile" ? "个人资料" : "个人设置"} />
-      <div className="settings-tabs" role="tablist">
-        {[
-          { id: "profile", name: "个人资料" },
-          { id: "preferences", name: "偏好与主题" },
-          { id: "notifications", name: "通知" },
-          { id: "tokens", name: "API 令牌" },
-          { id: "connection", name: "连接" },
-        ].map((row) => (
-          <button
-            type="button"
-            role="tab"
-            aria-selected={row.id === tab}
-            className={row.id === tab ? "active" : ""}
-            key={row.id}
-            onClick={() => setTab(row.id)}
-          >
-            {row.name}
-          </button>
-        ))}
-      </div>
-      <ErrorMessage error={profile.error} />
-      {tab === "profile" &&
-        (profile.loading ? (
-          <Loading />
-        ) : (
-          profile.data && (
-            <>
-              <button className="person-card card settings-person" onClick={() => setAssets(true)}>
-                <span className="profile-avatar">{name.slice(0, 1)}</span>
-                <div className="card-body">
-                  <h3>{name}</h3>
-                  <p className="secondary">{textValue(profile.data.email)}</p>
-                  <div className="card-meta">
-                    <span>头像 · 封面</span>
+      <PageHeading title="个人资料" />
+      <main className="pm-body pm-profile">
+        <div className="pm-profile-tabs" role="tablist" aria-label="个人设置页面">
+          {[
+            { id: "profile", name: "个人资料" },
+            { id: "preferences", name: "偏好主题" },
+            { id: "notifications", name: "通知" },
+            { id: "tokens", name: "API令牌" },
+            { id: "connection", name: "连接" },
+          ].map((row) => (
+            <button
+              type="button"
+              role="tab"
+              aria-selected={row.id === tab}
+              className={row.id === tab ? "pm-selected" : ""}
+              key={row.id}
+              onClick={() => setTab(row.id)}
+            >
+              {row.name}
+            </button>
+          ))}
+        </div>
+        <ErrorMessage error={profile.error} />
+        {tab === "profile" &&
+          (profile.loading ? (
+            <Loading />
+          ) : (
+            profile.data && (
+              <>
+                <section className="pm-profile-identity">
+                  <span className="pm-avatar">{name.slice(0, 1)}</span>
+                  <div>
+                    <h2>{name}</h2>
+                    <p>{textValue(profile.data.email)}</p>
                   </div>
-                </div>
-              </button>
-              <form
-                className="settings-profile-form"
-                onSubmit={async (event) => {
-                  event.preventDefault();
-                  if (saving) return;
-                  setSaving(true);
-                  setSaveError(undefined);
-                  setSaved(false);
-                  const data = new FormData(event.currentTarget);
-                  try {
-                    await api.updatePersonal(
-                      Object.fromEntries(
-                        ["first_name", "last_name", "display_name"].map((key) => [
-                          key,
-                          String(data.get(key) ?? "").trim(),
-                        ])
-                      )
-                    );
-                    await profile.refresh();
-                    setSaved(true);
-                  } catch (error) {
-                    setSaveError(error);
-                  } finally {
-                    setSaving(false);
-                  }
-                }}
-              >
-                <label className="field">
-                  <span>名字</span>
-                  <input name="first_name" defaultValue={String(profile.data.first_name ?? "")} />
-                </label>
-                <label className="field">
-                  <span>姓氏</span>
-                  <input name="last_name" defaultValue={String(profile.data.last_name ?? "")} />
-                </label>
-                <label className="field">
-                  <span>显示名称 *</span>
-                  <input name="display_name" required defaultValue={String(profile.data.display_name ?? "")} />
-                </label>
-                <ErrorMessage error={saveError} />
-                {saved && (
-                  <p className="muted" role="status">
-                    已保存
-                  </p>
-                )}
-                <button className="button primary" disabled={saving}>
-                  {saving ? "正在保存…" : "保存"}
-                </button>
-              </form>
-              <button className="button" onClick={() => setAssets(true)}>
-                更换头像
-              </button>
-              <button
-                className="button"
-                onClick={() =>
-                  setConfirmation({
-                    title: "停用账号？",
-                    action: async () => {
-                      await client.request("/api/users/me/", "DELETE");
-                      await onLogout();
-                    },
-                  })
-                }
-              >
-                停用账号
-              </button>
-            </>
-          )
-        ))}
-      {tab === "preferences" && <PreferencesSettings client={client} onThemeChange={onThemeChange} />}
-      {tab === "notifications" && (
-        <>
-          <h2 className="section-label">通知偏好</h2>
-          <ErrorMessage error={preferences.error} />
-          {preferences.loading && <Loading />}
-          {preferences.data &&
-            Object.entries(preferences.data)
-              .filter(([, value]) => typeof value === "boolean")
-              .map(([key, value]) => (
-                <label className="settings-switch-row" key={key}>
-                  <span>{notificationLabels[key] ?? key}</span>
-                  <input
-                    type="checkbox"
-                    checked={Boolean(value)}
-                    onChange={async (event) => {
-                      try {
-                        await client.request("/api/users/me/notification-preferences/", "PATCH", {
-                          [key]: event.target.checked,
-                        });
-                        await preferences.refresh();
-                      } catch (error) {
-                        setPreferenceError(error);
-                      }
-                    }}
-                  />
-                </label>
-              ))}
-          <ErrorMessage error={preferenceError} />
-        </>
-      )}
-      {tab === "tokens" && <ApiTokenSettings client={client} />}
-      {tab === "connection" && (
-        <>
-          <h2 className="section-label">服务器</h2>
-          <p className="value">{client.server}</p>
-          <button className="button" onClick={onServerChange}>
-            切换服务器
-          </button>
-          <ActionButton action={async () => onLogout()}>退出登录</ActionButton>
-        </>
-      )}
+                  <button className="m3-icon-button pm-camera" aria-label="头像与封面" onClick={() => setAssets(true)}>
+                    <CanonicalIcon name="camera" size={21} />
+                  </button>
+                </section>
+                <form
+                  className="pm-profile-fields"
+                  onSubmit={async (event) => {
+                    event.preventDefault();
+                    if (saving) return;
+                    setSaving(true);
+                    setSaveError(undefined);
+                    setSaved(false);
+                    const data = new FormData(event.currentTarget);
+                    try {
+                      await api.updatePersonal(
+                        Object.fromEntries(
+                          ["first_name", "last_name", "display_name"].map((key) => [
+                            key,
+                            String(data.get(key) ?? "").trim(),
+                          ])
+                        )
+                      );
+                      await profile.refresh();
+                      setSaved(true);
+                    } catch (error) {
+                      setSaveError(error);
+                    } finally {
+                      setSaving(false);
+                    }
+                  }}
+                >
+                  <h2>基本信息</h2>
+                  <div className="pm-name-fields">
+                    <label className="pm-filled-field">
+                      <span>名字</span>
+                      <input
+                        type="text"
+                        name="first_name"
+                        aria-label="名字"
+                        defaultValue={String(profile.data.first_name ?? "")}
+                      />
+                    </label>
+                    <label className="pm-filled-field">
+                      <span>姓氏</span>
+                      <input
+                        type="text"
+                        name="last_name"
+                        aria-label="姓氏"
+                        defaultValue={String(profile.data.last_name ?? "")}
+                      />
+                    </label>
+                  </div>
+                  <label className="pm-filled-field pm-display-name">
+                    <span>
+                      显示名称 <b>*</b>
+                    </span>
+                    <input
+                      type="text"
+                      name="display_name"
+                      aria-label="显示名称"
+                      required
+                      defaultValue={String(profile.data.display_name ?? "")}
+                    />
+                  </label>
+                  <ErrorMessage error={saveError} />
+                  {saved && (
+                    <p className="muted" role="status">
+                      已保存
+                    </p>
+                  )}
+                  <div className="pm-profile-actions">
+                    <button type="submit" className="m3-button pm-save" disabled={saving}>
+                      {saving ? "正在保存…" : "保存"}
+                    </button>
+                    <button type="button" className="pm-avatar-change" onClick={() => setAssets(true)}>
+                      <CanonicalIcon name="camera" size={17} />
+                      更换头像
+                    </button>
+                  </div>
+                  <button
+                    type="button"
+                    className="pm-deactivate"
+                    onClick={() =>
+                      setConfirmation({
+                        title: "停用账号？",
+                        action: async () => {
+                          await client.request("/api/users/me/", "DELETE");
+                          await onLogout();
+                        },
+                      })
+                    }
+                  >
+                    停用账号
+                  </button>
+                </form>
+              </>
+            )
+          ))}
+        {tab === "preferences" && <PreferencesSettings client={client} onThemeChange={onThemeChange} />}
+        {tab === "notifications" && (
+          <>
+            <h2 className="section-label">通知偏好</h2>
+            <ErrorMessage error={preferences.error} />
+            {preferences.loading && <Loading />}
+            {preferences.data &&
+              Object.entries(preferences.data)
+                .filter(([, value]) => typeof value === "boolean")
+                .map(([key, value]) => (
+                  <label className="settings-switch-row" key={key}>
+                    <span>{notificationLabels[key] ?? key}</span>
+                    <input
+                      type="checkbox"
+                      checked={Boolean(value)}
+                      onChange={async (event) => {
+                        try {
+                          await client.request("/api/users/me/notification-preferences/", "PATCH", {
+                            [key]: event.target.checked,
+                          });
+                          await preferences.refresh();
+                        } catch (error) {
+                          setPreferenceError(error);
+                        }
+                      }}
+                    />
+                  </label>
+                ))}
+            <ErrorMessage error={preferenceError} />
+          </>
+        )}
+        {tab === "tokens" && <ApiTokenSettings client={client} />}
+        {tab === "connection" && (
+          <>
+            <h2 className="section-label">服务器</h2>
+            <p className="value">{client.server}</p>
+            <button className="button" onClick={onServerChange}>
+              切换服务器
+            </button>
+            <ActionButton action={async () => onLogout()}>退出登录</ActionButton>
+          </>
+        )}
+      </main>
       {assets && (
         <Sheet title="头像与封面" onClose={() => setAssets(false)}>
           <SettingsImage
@@ -539,14 +568,14 @@ function ProjectSettings({ client, workspaceSlug, projectId }: Pick<Props, "clie
       <PageHeading title="项目设置" />
       <label className="field">
         <span>项目</span>
-        <select value={chosen} onChange={(event) => setChosen(event.target.value)}>
+        <MobileSelect value={chosen} onChange={(event) => setChosen(event.target.value)}>
           <option value="">请选择项目</option>
           {records(projects.data).map((item) => (
             <option key={item.id} value={item.id}>
               {item.name}
             </option>
           ))}
-        </select>
+        </MobileSelect>
       </label>
       {chosen && (
         <>

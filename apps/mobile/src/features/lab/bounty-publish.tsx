@@ -1,3 +1,4 @@
+import { MobileSelect } from "../../components/select";
 /**
  * Copyright (c) 2026 OpenOceanAcoustic and contributors
  * SPDX-License-Identifier: AGPL-3.0-only
@@ -171,7 +172,7 @@ export const LabBountyPublish = observer(function LabBountyPublish({
       }}
     >
       <LabField label="项目">
-        <select
+        <MobileSelect
           name="project_id"
           className={labInputClass}
           value={projectId}
@@ -199,7 +200,7 @@ export const LabBountyPublish = observer(function LabBountyPublish({
                 ))}
             </>
           )}
-        </select>
+        </MobileSelect>
       </LabField>
       {loadingBudgets ? (
         <p role="status" className="text-13 text-secondary">
@@ -231,7 +232,7 @@ export const LabBountyPublish = observer(function LabBountyPublish({
         </div>
       )}
       <LabField label="工作项">
-        <select
+        <MobileSelect
           name="issue_id"
           className={labInputClass}
           value={issueId}
@@ -257,7 +258,7 @@ export const LabBountyPublish = observer(function LabBountyPublish({
                 ))}
             </>
           )}
-        </select>
+        </MobileSelect>
       </LabField>
       {!fixedTask && (
         <LabField label="搜索工作项">
@@ -299,7 +300,7 @@ export const LabBountyPublish = observer(function LabBountyPublish({
         <textarea name="criteria" className={labInputClass} required rows={2} maxLength={4000} />
       </LabField>
       <LabField label="验收人">
-        <select
+        <MobileSelect
           name="reviewer_id"
           className={labInputClass}
           value={reviewerId}
@@ -312,18 +313,18 @@ export const LabBountyPublish = observer(function LabBountyPublish({
               {member.name}
             </option>
           ))}
-        </select>
+        </MobileSelect>
       </LabField>
       {major && (
         <LabField label="复核人">
-          <select name="independent_reviewer_id" className={labInputClass} required>
+          <MobileSelect name="independent_reviewer_id" className={labInputClass} required>
             <option value="">请选择</option>
             {project?.members.map((member) => (
               <option key={member.id} value={member.id}>
                 {member.name}
               </option>
             ))}
-          </select>
+          </MobileSelect>
         </LabField>
       )}
       <section className="lab-form-section">

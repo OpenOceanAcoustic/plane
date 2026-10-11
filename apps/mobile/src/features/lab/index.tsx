@@ -1,4 +1,5 @@
 /** Copyright (c) 2026 OpenOceanAcoustic and contributors. SPDX-License-Identifier: AGPL-3.0-only */
+import { MobileSelect } from "../../components/select";
 import { useContext, useState } from "react";
 import { MobileHeaderContext } from "../../components/navigation";
 import type { ApiClient } from "../../lib/client";
@@ -46,14 +47,14 @@ export default function LabFeature({
           {section === "tasks" && (
             <>
               <LabField label="项目">
-                <select value={taskProject} onChange={(e) => setTaskProject(e.target.value)}>
+                <MobileSelect value={taskProject} onChange={(e) => setTaskProject(e.target.value)}>
                   <option value="">全部项目</option>
                   {store.planner?.projects.map((row) => (
                     <option key={row.id} value={row.id}>
                       {row.name}
                     </option>
                   ))}
-                </select>
+                </MobileSelect>
               </LabField>
               <Fields store={store} projectId={taskProject} onOpenIssue={onOpenIssue} />
             </>

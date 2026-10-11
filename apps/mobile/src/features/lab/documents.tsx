@@ -1,4 +1,5 @@
 /** Copyright (c) 2026 OpenOceanAcoustic and contributors. SPDX-License-Identifier: AGPL-3.0-only */
+import { MobileSelect } from "../../components/select";
 import { useState } from "react";
 import { PageHeading } from "../../components/ui";
 import type { LabTask } from "@plane/types";
@@ -40,7 +41,7 @@ export function Documents({
       {docs.data?.can_edit && <FloatingAction label="新建实验记录" onClick={() => setCreating(true)} />}
       <ErrorMessage error={docs.error} />
       <LabField label="项目">
-        <select
+        <MobileSelect
           value={project}
           onChange={(e) => {
             setProject(e.target.value);
@@ -53,7 +54,7 @@ export function Documents({
               {row.name}
             </option>
           ))}
-        </select>
+        </MobileSelect>
       </LabField>
       <input
         className="lab-input"
@@ -142,7 +143,7 @@ export function Documents({
           </LabField>
           <ErrorMessage error={tasks.error} />
           <LabField label="任务">
-            <select name="issue_id" required>
+            <MobileSelect name="issue_id" required>
               <option value="">请选择</option>
               {tasks.data
                 ?.filter((row) => !links.data?.tasks.some((link) => link.id === row.id))
@@ -151,7 +152,7 @@ export function Documents({
                     {row.key} {row.title}
                   </option>
                 ))}
-            </select>
+            </MobileSelect>
           </LabField>
         </LabDialog>
       )}
@@ -246,7 +247,7 @@ export function TaskDocuments({
         >
           <ErrorMessage error={choices.error} />
           <LabField label="同项目文档">
-            <select name="page_id" required>
+            <MobileSelect name="page_id" required>
               <option value="">请选择</option>
               {choices.data?.documents
                 .filter((row) => !row.is_locked && !resource.data?.documents.some((d) => d.id === row.id))
@@ -255,7 +256,7 @@ export function TaskDocuments({
                     {row.name}
                   </option>
                 ))}
-            </select>
+            </MobileSelect>
           </LabField>
         </LabDialog>
       )}

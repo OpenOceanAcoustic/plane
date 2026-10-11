@@ -1,3 +1,4 @@
+import { MobileSelect } from "../../components/select";
 import { PageHeading } from "../../components/ui";
 import { useMemo, useState } from "react";
 import { ErrorMessage, Html, records, useData, type Entity } from "../../components/ui";
@@ -258,7 +259,7 @@ function DraftEditor(
         <input className={labInputClass} name="name" defaultValue={initial?.name ?? ""} required maxLength={255} />
       </LabField>
       <LabField label="项目">
-        <select
+        <MobileSelect
           className={labInputClass}
           value={project}
           onChange={(event) => {
@@ -274,19 +275,19 @@ function DraftEditor(
               {row.name}
             </option>
           ))}
-        </select>
+        </MobileSelect>
       </LabField>
       <LabField label="描述">
         <RichHtmlEditor value={html} onChange={setHtml} />
       </LabField>
       <LabField label="优先级">
-        <select className={labInputClass} name="priority" defaultValue={initial?.priority ?? "none"}>
+        <MobileSelect className={labInputClass} name="priority" defaultValue={initial?.priority ?? "none"}>
           {priorities.map((priority) => (
             <option key={priority.value} value={priority.value}>
               {priority.label}
             </option>
           ))}
-        </select>
+        </MobileSelect>
       </LabField>
       <LabField label="开始日期">
         <input
@@ -308,7 +309,7 @@ function DraftEditor(
         <div key={project}>
           <ErrorMessage error={states.error ?? members.error ?? labels.error ?? cycles.error ?? modules.error} />
           <LabField label="状态">
-            <select
+            <MobileSelect
               className={labInputClass}
               name="state_id"
               value={stateId}
@@ -323,7 +324,7 @@ function DraftEditor(
                   {row.name}
                 </option>
               ))}
-            </select>
+            </MobileSelect>
           </LabField>
           <ChoiceList
             label="负责人"
@@ -340,7 +341,7 @@ function DraftEditor(
             initial={sameProject ? initial?.label_ids : []}
           />
           <LabField label="周期">
-            <select
+            <MobileSelect
               className={labInputClass}
               name="cycle_id"
               value={cycleId}
@@ -355,7 +356,7 @@ function DraftEditor(
                   {row.name}
                 </option>
               ))}
-            </select>
+            </MobileSelect>
           </LabField>
           <ChoiceList
             label="模块"
@@ -371,7 +372,7 @@ function DraftEditor(
             />
           </LabField>
           <LabField label="父任务">
-            <select
+            <MobileSelect
               className={labInputClass}
               name="parent_id"
               value={parentId}
@@ -388,7 +389,7 @@ function DraftEditor(
                   {task.name}
                 </option>
               ))}
-            </select>
+            </MobileSelect>
           </LabField>
         </div>
       )}

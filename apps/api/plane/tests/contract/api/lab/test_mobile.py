@@ -51,22 +51,33 @@ def test_mobile_login_session_and_replay(mobile_identity):
     assert Client().get("/api/lab/session/").status_code == 401
 
 
-def test_mobile_admin_has_independent_cookie_and_role_gate(mobile_identity):
+@pytest.mark.parametrize("is_instance_admin", [False, True])
+def test_mobile_admin_is_web_only_and_does_not_issue_a_session(mobile_identity, is_instance_admin):
     user, totp, _ = mobile_identity
-    assert login(Client(), totp, admin=True).status_code == 401
-    instance = Instance.objects.create(instance_name="Mobile contract", current_version="1.4.2", last_checked_at=timezone.now())
-    InstanceAdmin.objects.create(instance=instance, user=user)
+    if is_instance_admin:
+        instance = Instance.objects.create(
+            instance_name="Mobile contract", current_version="1.4.2", last_checked_at=timezone.now()
+        )
+        InstanceAdmin.objects.create(instance=instance, user=user)
     client = Client()
-    assert login(client, totp, admin=True).status_code == 200
-    assert "admin-session-id" in client.cookies
-    assert "session-id" not in client.cookies
-    session = Session.objects.get(session_key=client.cookies["admin-session-id"].value).get_decoded()
-    assert session["lab_purpose"] == "admin"
-    assert session["lab_client"] == "android"
-    assert session["lab_expires_at"] > timezone.now().timestamp()
-    assert session["lab_admin_reauthenticated_at"] > timezone.now().timestamp() - 10
-    assert client.get("/api/lab/session/?admin=true").json()["client_platform"] == "android"
-    assert client.get("/api/lab/session/").status_code == 401
+    response = login(client, totp, admin=True)
+    assert response.status_code == 403
+    assert response.json()["code"] == "ADMIN_WEB_ONLY"
+    assert "admin-session-id" not in response.cookies
+    assert "session-id" not in response.cookies
+    assert not Session.objects.filter(user_id=str(user.id)).exists()
+    # Blocking the obsolete entry must not consume the code or prevent web administration.
+    response = client.post(
+        "/auth/lab/admin/sign-in/",
+        {"username": user.username, "code": totp.now()},
+        content_type="application/json",
+    )
+    assert response.status_code == (200 if is_instance_admin else 401)
+    if is_instance_admin:
+        session = Session.objects.get(session_key=client.cookies["admin-session-id"].value).get_decoded()
+        assert session["lab_purpose"] == "admin"
+        assert session["lab_client"] == "web"
+        assert "session-id" not in client.cookies
 
 
 def test_mobile_auth_requires_csrf_and_never_trusts_client_platform(mobile_identity):
@@ -77,23 +88,27 @@ def test_mobile_auth_requires_csrf_and_never_trusts_client_platform(mobile_ident
     response = client.post(
         "/auth/lab/mobile/sign-in/",
         {"username": "android", "code": totp.now(), "client_platform": "web", "lab_client": "web"},
-        content_type="application/json", HTTP_X_CSRFTOKEN=csrf,
+        content_type="application/json",
+        HTTP_X_CSRFTOKEN=csrf,
     )
     assert response.status_code == 200
     assert client.get("/api/lab/session/").json()["capabilities"]["data_export"] is False
 
 
-@pytest.mark.parametrize("path", [
-    "/api/workspaces/lab/lab/planning-export/",
-    "/api/workspaces/lab/lab/planner/?format=csv",
-    "/api/workspaces/lab/lab/analytics/?format=csv",
-    "/api/workspaces/lab/lab/analytics/?format=png",
-    "/api/workspaces/lab/lab/analytics/?format=svg",
-    "/api/workspaces/lab/lab/finance/entries/?format=csv",
-    "/api/workspaces/lab/export-issues/",
-    "/api/workspaces/lab/export-analytics/",
-    "/api/workspaces/lab/user-activity/00000000-0000-0000-0000-000000000001/export/",
-])
+@pytest.mark.parametrize(
+    "path",
+    [
+        "/api/workspaces/lab/lab/planning-export/",
+        "/api/workspaces/lab/lab/planner/?format=csv",
+        "/api/workspaces/lab/lab/analytics/?format=csv",
+        "/api/workspaces/lab/lab/analytics/?format=png",
+        "/api/workspaces/lab/lab/analytics/?format=svg",
+        "/api/workspaces/lab/lab/finance/entries/?format=csv",
+        "/api/workspaces/lab/export-issues/",
+        "/api/workspaces/lab/export-analytics/",
+        "/api/workspaces/lab/user-activity/00000000-0000-0000-0000-000000000001/export/",
+    ],
+)
 def test_mobile_cannot_request_dedicated_export_directly(mobile_identity, path):
     _, totp, _ = mobile_identity
     client = Client()
@@ -106,7 +121,9 @@ def test_mobile_cannot_request_dedicated_export_directly(mobile_identity, path):
 def test_web_login_preserves_export_capability(mobile_identity):
     _, totp, _ = mobile_identity
     client = Client()
-    response = client.post("/auth/lab/sign-in/", {"username": "android", "code": totp.now()}, content_type="application/json")
+    response = client.post(
+        "/auth/lab/sign-in/", {"username": "android", "code": totp.now()}, content_type="application/json"
+    )
     assert response.status_code == 200
     assert client.get("/api/lab/session/").json()["capabilities"]["data_export"] is True
 
@@ -148,7 +165,11 @@ def test_ticket_is_short_lived_and_page_session_bound(laboratory, settings):
     session.save()
     page = Page.objects.create(workspace=lab["workspace"], owned_by=lab["member"], name="Collaborative mobile")
     ProjectPage.objects.create(workspace=lab["workspace"], project=lab["project"], page=page)
-    response = client.post(lab["base"] + "live-ticket/", {"project_id": str(lab["project"].id), "page_id": str(page.id)}, content_type="application/json")
+    response = client.post(
+        lab["base"] + "live-ticket/",
+        {"project_id": str(lab["project"].id), "page_id": str(page.id)},
+        content_type="application/json",
+    )
     assert response.status_code == 201
     body = response.json()
     assert body["expires_in"] == 60
@@ -157,6 +178,7 @@ def test_ticket_is_short_lived_and_page_session_bound(laboratory, settings):
     assert "cookie" not in body
     from plane.lab.mobile import ticket_key
     from plane.settings.redis import redis_instance
+
     redis = redis_instance()
     key = ticket_key(body["ticket"])
     assert 0 < redis.ttl(key) <= 60
@@ -171,6 +193,7 @@ def test_ticket_is_short_lived_and_page_session_bound(laboratory, settings):
 
 def test_ticket_rejects_private_pages_restricted_guests_and_missing_session(laboratory):
     from plane.db.models import ProjectMember
+
     lab = laboratory
     page = Page.objects.create(workspace=lab["workspace"], owned_by=lab["lead"], name="Private", access=1)
     ProjectPage.objects.create(workspace=lab["workspace"], project=lab["project"], page=page)
@@ -182,11 +205,13 @@ def test_ticket_rejects_private_pages_restricted_guests_and_missing_session(labo
     page.save(update_fields=["access"])
     ProjectMember.objects.filter(project=lab["project"], member=lab["member"]).update(role=5)
     assert client.post(lab["base"] + "live-ticket/", body, content_type="application/json").status_code == 403
-    assert Client().post(lab["base"] + "live-ticket/", body, content_type="application/json").status_code in (401,403)
+    assert Client().post(lab["base"] + "live-ticket/", body, content_type="application/json").status_code in (401, 403)
+
 
 @pytest.mark.parametrize("restriction", ["locked", "archived", "guest"])
 def test_readonly_live_ticket_retains_authorized_document_synchronization(laboratory, restriction):
     from plane.db.models import ProjectMember
+
     lab = laboratory
     page = Page.objects.create(workspace=lab["workspace"], owned_by=lab["member"], name="Read-only collaboration")
     ProjectPage.objects.create(workspace=lab["workspace"], project=lab["project"], page=page)
@@ -204,6 +229,10 @@ def test_readonly_live_ticket_retains_authorized_document_synchronization(labora
         page.save(update_fields=["owned_by"])
     client = Client()
     client.force_login(lab["member"])
-    response = client.post(lab["base"] + "live-ticket/", {"project_id": str(lab["project"].id), "page_id": str(page.id)}, content_type="application/json")
+    response = client.post(
+        lab["base"] + "live-ticket/",
+        {"project_id": str(lab["project"].id), "page_id": str(page.id)},
+        content_type="application/json",
+    )
     assert response.status_code == 201
     assert response.json()["read_only"] is True

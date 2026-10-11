@@ -1,3 +1,4 @@
+import { MobileSelect } from "../../components/select";
 import { useState } from "react";
 import {
   ActionButton,
@@ -167,7 +168,7 @@ export function ProjectEstimates({
         <h2>估点方案</h2>
         <label className="field">
           <span>当前方案</span>
-          <select
+          <MobileSelect
             disabled={!manage}
             value={
               typeof project.estimate === "object" && project.estimate
@@ -189,7 +190,7 @@ export function ProjectEstimates({
                 {estimate.name}
               </option>
             ))}
-          </select>
+          </MobileSelect>
         </label>
         {manage && (
           <button

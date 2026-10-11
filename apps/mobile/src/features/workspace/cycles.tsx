@@ -1,3 +1,4 @@
+import { MobileSelect } from "../../components/select";
 import { PageHeading } from "../../components/ui";
 import { useState } from "react";
 import { records, useData, type Entity } from "../../components/ui";
@@ -47,14 +48,18 @@ export default function ActiveCycles(props: WorkspaceProps) {
       ) : (
         <>
           <LabField label="项目筛选">
-            <select className={labInputClass} value={project} onChange={(event) => setProject(event.target.value)}>
+            <MobileSelect
+              className={labInputClass}
+              value={project}
+              onChange={(event) => setProject(event.target.value)}
+            >
               <option value="">全部项目</option>
               {projects.data?.map((row) => (
                 <option value={row.id} key={row.id}>
                   {row.name}
                 </option>
               ))}
-            </select>
+            </MobileSelect>
           </LabField>
           <Status loading={cycles.loading} error={cycles.error} empty={!rows.length} />
           <div className="lab-list">

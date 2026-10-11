@@ -1,7 +1,28 @@
 import { defineConfig } from "vite";
 import { fileURLToPath, URL } from "node:url";
+import postcss from "postcss";
+import cascadeLayers from "@csstools/postcss-cascade-layers";
 
 export default defineConfig({
+  plugins: [
+    {
+      name: "mobile-cascade-layer-compatibility",
+      apply: "build",
+      enforce: "post",
+      async generateBundle(_options, bundle) {
+        // Layer specificity must be calculated across the entire stylesheet, not per source file.
+        for (const asset of Object.values(bundle)) {
+          if (asset.type !== "asset" || !asset.fileName.endsWith(".css")) continue;
+          const source = typeof asset.source === "string" ? asset.source : Buffer.from(asset.source).toString("utf8");
+          const result = await postcss([cascadeLayers()]).process(source, { from: undefined, map: false });
+          result.root.walkAtRules("layer", () => {
+            throw new Error("Mobile CSS contains an uncompiled cascade layer");
+          });
+          asset.source = result.css;
+        }
+      },
+    },
+  ],
   base: "./",
   define: { "process.env": "{}" },
   resolve: {
@@ -40,5 +61,5 @@ export default defineConfig({
       "/live": { target: process.env.MOBILE_TEST_SERVER || "http://127.0.0.1:18100", ws: true, changeOrigin: true },
     },
   },
-  build: { target: "chrome95", sourcemap: false },
+  build: { target: "chrome95", sourcemap: false, cssCodeSplit: false },
 });

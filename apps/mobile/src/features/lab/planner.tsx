@@ -1,4 +1,5 @@
 /** Copyright (c) 2026 OpenOceanAcoustic and contributors. SPDX-License-Identifier: AGPL-3.0-only */
+import { MobileSelect } from "../../components/select";
 import { useState } from "react";
 import { PageHeading } from "../../components/ui";
 import { CanonicalIcon } from "../../components/navigation";
@@ -231,491 +232,576 @@ export function Planner({
               <CanonicalIcon name="menu" />
             </button>
           </PageHeading>
-          <ErrorMessage error={store.error || calendar.error} />
-          {notice && (
-            <p role="status" className="lab-muted">
-              {notice}
-            </p>
-          )}
-          {team && !planner.team_access ? (
-            <Empty>暂无团队排期查看权限。</Empty>
-          ) : (
-            <>
-              {!team && view === "agenda" && (
-                <div className="lab-planner-context-actions">
-                  <Button
-                    onClick={() => {
-                      setDay(today());
-                      setMonth(today().slice(0, 7));
-                    }}
-                  >
-                    今天
-                  </Button>
-                </div>
-              )}
-              {!team && view === "overview" && (
-                <div className="lab-stats">
-                  <div className="lab-stat">
-                    <span>规划事项</span>
-                    <strong>{planner.items.length}</strong>
-                  </div>
-                  <div className="lab-stat">
-                    <span>待排事项</span>
-                    <strong>
-                      {
-                        planner.items.filter((item) => item.schedule.future_count === 0 && item.status !== "done")
-                          .length
-                      }
-                    </strong>
-                  </div>
-                  <div className="lab-stat">
-                    <span>本周计划</span>
-                    <strong>
-                      {planner.items.reduce((total, item) => total + item.schedule.week_minutes, 0) / 60} h
-                    </strong>
-                  </div>
-                </div>
-              )}
-              {!team && ["overview", "board", "list"].includes(view) && (
-                <Tabs
-                  value={primaryView}
-                  onChange={(next) => setView(next === "calendar" ? "week" : next)}
-                  items={[
-                    { id: "overview", name: "综合" },
-                    { id: "board", name: "文件夹看板" },
-                    { id: "calendar", name: "个人周历" },
-                  ]}
-                />
-              )}
-              {!team && ["overview", "board", "list"].includes(view) && (
-                <div className="lab-folders">
-                  {[{ id: "all", name: "全部" }, ...planner.folders, { id: "unclassified", name: "未分类" }].map(
-                    (row) => (
-                      <button
-                        key={row.id}
-                        className={`lab-folder ${folder === row.id ? "active" : ""}`}
-                        onClick={() => setFolder(row.id)}
-                      >
-                        <CanonicalIcon name="projects" />
-                        <span className="folder-label">{row.name}</span>
-                        <small className="folder-count">
-                          {
-                            planner.items.filter(
-                              (item) =>
-                                row.id === "all" ||
-                                (row.id === "unclassified" ? !item.folder_id : item.folder_id === row.id)
-                            ).length
-                          }
-                        </small>
-                      </button>
-                    )
-                  )}
-                </div>
-              )}
-              {view === "overview" && (
-                <>
-                  <div className="lab-section-heading">
-                    <h3>{status ? statuses.find((row) => row.id === status)?.name : "进行中"}</h3>
-                    <button className="lab-text-button" onClick={() => setFilterOpen(true)}>
-                      筛选
-                    </button>
-                  </div>
-                  {(status ? rows : rows.filter((item) => item.status === "active")).map(card)}
-                  {!(status ? rows : rows.filter((item) => item.status === "active")).length && (
-                    <Empty>暂无进行中事项。</Empty>
-                  )}
-                  <div className="lab-section-heading">
-                    <h3>个人周历</h3>
-                    <button className="lab-text-button" onClick={() => setView("week")}>
-                      日 / 周 / 月
-                    </button>
-                  </div>
-                </>
-              )}
-              {view === "board" && (
-                <div className="lab-kanban">
-                  {statuses
-                    .filter((row) => !status || status === row.id)
-                    .map((row) => (
-                      <section className="lab-kanban-column" key={row.id}>
-                        <h3>
-                          {row.name} · {rows.filter((item) => item.status === row.id).length}
-                        </h3>
-                        {rows.filter((item) => item.status === row.id).map(card)}
-                        <Button
-                          onClick={() => {
-                            setChosenItem(undefined);
-                            setDialog("item");
-                          }}
-                        >
-                          新增事项
-                        </Button>
-                      </section>
-                    ))}
-                </div>
-              )}
-              {view === "list" && (rows.length ? rows.map(card) : <Empty />)}
-              {["gantt", "fields"].includes(view) && (
-                <LabField label="项目">
-                  <select value={project} onChange={(event) => setProject(event.target.value)}>
-                    <option value="">{view === "gantt" ? "请选择项目" : "全部项目及个人事项"}</option>
-                    {planner.projects.map((row) => (
-                      <option key={row.id} value={row.id}>
-                        {row.name}
-                      </option>
-                    ))}
-                  </select>
-                </LabField>
-              )}
-              {["overview", "agenda", "month", "week", "timeline"].includes(view) && (
-                <>
-                  {view !== "overview" && (
-                    <Tabs
-                      value={team ? teamMode : view}
-                      onChange={(next) => {
-                        if (team) {
-                          setTeamMode(next);
-                          setView(next === "columns" ? "agenda" : "week");
-                        } else setView(next);
+          <main className="pm-body pm-planner">
+            <ErrorMessage error={store.error || calendar.error} />
+            {notice && (
+              <p role="status" className="lab-muted">
+                {notice}
+              </p>
+            )}
+            {team && !planner.team_access ? (
+              <Empty>暂无团队排期查看权限。</Empty>
+            ) : (
+              <>
+                {!team && view === "agenda" && (
+                  <div className="lab-planner-context-actions">
+                    <Button
+                      onClick={() => {
+                        setDay(today());
+                        setMonth(today().slice(0, 7));
                       }}
-                      items={
-                        team
-                          ? [
-                              { id: "timeline", name: "人员时间轴" },
-                              { id: "columns", name: "人员分列" },
-                            ]
-                          : [
-                              { id: "agenda", name: "日" },
-                              { id: "week", name: "周" },
-                              { id: "month", name: "月" },
-                              { id: "timeline", name: "事项时间轴" },
-                            ]
-                      }
-                    />
-                  )}
-                  {((team && teamMode === "timeline") || view === "timeline") && (
-                    <div className="lab-calendar-chips" role="group" aria-label="时间范围">
+                    >
+                      今天
+                    </Button>
+                  </div>
+                )}
+                {!team && view === "overview" && (
+                  <div className="pm-stat-strip">
+                    <div>
+                      <span>规划事项</span>
+                      <strong>{planner.items.length}</strong>
+                    </div>
+                    <div>
+                      <span>待排事项</span>
+                      <strong>
+                        {
+                          planner.items.filter((item) => item.schedule.future_count === 0 && item.status !== "done")
+                            .length
+                        }
+                      </strong>
+                    </div>
+                    <div>
+                      <span>本周计划</span>
+                      <strong>
+                        {planner.items.reduce((total, item) => total + item.schedule.week_minutes, 0) / 60}
+                        <small>h</small>
+                      </strong>
+                    </div>
+                  </div>
+                )}
+                {!team && ["overview", "board", "list"].includes(view) && (
+                  <>
+                    <div className="pm-view-tabs" role="tablist" aria-label="规划视图">
                       {[
-                        { id: "agenda", name: "日" },
-                        { id: "week", name: "周" },
-                        { id: "month", name: "月" },
-                      ].map((entry) => (
+                        { id: "overview", name: "综合" },
+                        { id: "board", name: "文件夹看板" },
+                        { id: "calendar", name: "个人周历" },
+                      ].map((item) => (
                         <button
-                          key={entry.id}
-                          aria-pressed={rangeMode === entry.id}
-                          className={`lab-chip ${rangeMode === entry.id ? "active" : ""}`}
-                          onClick={() => (team ? setView(entry.id) : setTimelineScale(entry.id))}
+                          className={primaryView === item.id ? "pm-selected" : ""}
+                          key={item.id}
+                          role="tab"
+                          aria-selected={primaryView === item.id}
+                          onClick={() => setView(item.id === "calendar" ? "week" : item.id)}
                         >
-                          {entry.name}
+                          {item.name}
                         </button>
                       ))}
                     </div>
-                  )}
-                  {((team && teamMode === "columns") || (!team && view === "agenda")) && (
-                    <div className="lab-calendar-chips" role="group" aria-label="选择日期">
-                      {(team ? weekDates : dateChips).map((date) => (
-                        <button
-                          key={date}
-                          aria-pressed={day === date}
-                          className={`lab-chip ${day === date ? "active" : ""}`}
-                          onClick={() => {
-                            setDay(date);
-                            setMonth(date.slice(0, 7));
-                          }}
-                        >
-                          {Number(date.slice(-2))} 周
-                          {["日", "一", "二", "三", "四", "五", "六"][new Date(`${date}T12:00:00+08:00`).getUTCDay()]}
-                        </button>
-                      ))}
+                    <div className={`pm-folder-strip${planner.folders.length > 1 ? " is-scroll" : ""}`}>
+                      {[{ id: "all", name: "全部" }, ...planner.folders, { id: "unclassified", name: "未分类" }].map(
+                        (row) => (
+                          <button
+                            key={row.id}
+                            className={folder === row.id ? "pm-selected" : ""}
+                            onClick={() => setFolder(row.id)}
+                          >
+                            {row.name}
+                            <span>
+                              {
+                                planner.items.filter(
+                                  (item) =>
+                                    row.id === "all" ||
+                                    (row.id === "unclassified" ? !item.folder_id : item.folder_id === row.id)
+                                ).length
+                              }
+                            </span>
+                          </button>
+                        )
+                      )}
                     </div>
-                  )}
-                  {team && (
-                    <LabField label="成员">
-                      <select value={member} onChange={(event) => setMember(event.target.value)}>
-                        <option value="">全部成员</option>
-                        {calendar.data?.members.map((row) => (
-                          <option key={row.id} value={row.id}>
-                            {row.name}
-                          </option>
-                        ))}
-                      </select>
-                    </LabField>
-                  )}
-                  {view !== "overview" && (
-                    <LabField label="项目">
-                      <select value={project} onChange={(event) => setProject(event.target.value)}>
-                        <option value="">全部项目及个人事项</option>
-                        {planner.projects.map((row) => (
-                          <option key={row.id} value={row.id}>
-                            {row.name}
-                          </option>
-                        ))}
-                      </select>
-                    </LabField>
-                  )}
-                  {view === "month" ? (
-                    <>
-                      <LabField label="排期月份">
-                        <input
-                          type="month"
-                          value={month}
-                          onChange={(event) => {
-                            if (!event.target.value) return;
-                            setMonth(event.target.value);
-                            setDay(`${event.target.value}-01`);
-                          }}
-                        />
-                      </LabField>
-                      {!team && (
-                        <div className="lab-month">
-                          {["一", "二", "三", "四", "五", "六", "日"].map((label) => (
-                            <span key={label}>{label}</span>
-                          ))}
-                          {Array.from(
-                            { length: (new Date(`${month}-01T12:00:00+08:00`).getUTCDay() + 6) % 7 },
-                            (_, index) => (
-                              <span key={`blank-${index}`} />
-                            )
-                          )}
-                          {monthDays(month).map((date) => (
+                  </>
+                )}
+                {!team && view === "overview" && (
+                  <>
+                    <section className="pm-in-progress">
+                      <div className="pm-inline-heading">
+                        <h2>{status ? statuses.find((row) => row.id === status)?.name : "进行中"}</h2>
+                        <button className="pm-text-button" onClick={() => setFilterOpen(true)}>
+                          <CanonicalIcon name="sort" size={16} />
+                          筛选
+                        </button>
+                      </div>
+                      {(status ? rows : rows.filter((item) => item.status === "active")).map(card)}
+                      {!(status ? rows : rows.filter((item) => item.status === "active")).length && (
+                        <p>暂无进行中事项</p>
+                      )}
+                    </section>
+                    <section className="pm-calendar">
+                      <div className="pm-calendar-heading">
+                        <h2>个人周历</h2>
+                        <div className="pm-calendar-scope">
+                          {[
+                            { id: "agenda", name: "日" },
+                            { id: "week", name: "周" },
+                            { id: "month", name: "月" },
+                          ].map((item) => (
                             <button
-                              key={date}
-                              aria-label={date}
-                              className={day === date ? "active" : ""}
-                              onClick={() => setDay(date)}
+                              key={item.id}
+                              className={item.id === "agenda" ? "pm-selected" : ""}
+                              onClick={() => setView(item.id)}
                             >
-                              {Number(date.slice(-2))}
-                              <small>
-                                {events.filter((row) => localInput(row.start).slice(0, 10) === date).length || ""}
-                              </small>
+                              {item.name}
                             </button>
                           ))}
                         </div>
-                      )}
-                    </>
-                  ) : (
-                    view !== "overview" &&
-                    (team || view !== "agenda") && (
-                      <LabField label={view === "week" ? "所选周的日期" : "日期"}>
-                        <input
-                          type="date"
-                          value={day}
-                          onChange={(event) => {
-                            if (!event.target.value) return;
-                            setDay(event.target.value);
-                            setMonth(event.target.value.slice(0, 7));
-                          }}
-                        />
-                      </LabField>
-                    )
-                  )}
-                  {view === "week" && !team && (
-                    <div className="lab-week">
-                      <div className="lab-week-labels">
-                        <span />
+                      </div>
+                      <div className="pm-date-line">
+                        <strong>{Number(day.slice(5, 7))}月</strong>
+                        <span>{calendarDateLabel(day).replace("日 ", "日 · ")}</span>
+                      </div>
+                      <div className="pm-week-strip" aria-label="选择日期">
                         {weekDates.map((date, index) => (
-                          <span key={date}>
-                            {Number(date.slice(-2))} {["一", "二", "三", "四", "五", "六", "日"][index]}
-                          </span>
+                          <button
+                            key={date}
+                            className={day === date ? "pm-selected" : ""}
+                            aria-current={day === date ? "date" : undefined}
+                            onClick={() => {
+                              setDay(date);
+                              setMonth(date.slice(0, 7));
+                            }}
+                          >
+                            <span>{["一", "二", "三", "四", "五", "六", "日"][index]}</span>
+                            <strong>{Number(date.slice(-2))}</strong>
+                          </button>
                         ))}
                       </div>
-                      <div className="lab-week-grid">
-                        <div className="lab-week-hours">
-                          {Array.from({ length: 13 }, (_, index) => (
-                            <span key={index}>{index + 8}:00</span>
-                          ))}
-                        </div>
-                        {weekDates.map((date) => (
-                          <div className="lab-week-day" key={date}>
-                            {visibleEvents
-                              .filter((row) => localInput(row.start).slice(0, 10) === date)
-                              .map((row) => {
-                                const start = localInput(row.start);
-                                const end = localInput(row.end);
-                                const from = Number(start.slice(11, 13)) * 60 + Number(start.slice(14, 16));
-                                const until =
-                                  end.slice(0, 10) !== date
-                                    ? 1440
-                                    : Number(end.slice(11, 13)) * 60 + Number(end.slice(14, 16));
-                                if (from >= 1200 || until <= 480) return null;
-                                return (
-                                  <button
-                                    key={row.id}
-                                    className="lab-week-event"
-                                    disabled={!canOpenEvent(row)}
-                                    style={{
-                                      top: `${Math.max(0, from - 480) * 0.7}px`,
-                                      height: `${Math.max(24, (Math.min(until, 1200) - Math.max(from, 480)) * 0.7)}px`,
-                                      borderColor: row.category_color || row.color || undefined,
-                                    }}
-                                    onClick={() => openEvent(row)}
-                                  >
-                                    {row.title || "忙碌"}
-                                  </button>
-                                );
-                              })}
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                  {view === "timeline" || (team && teamMode === "timeline") ? (
-                    <>
-                      <h3 className="lab-section-heading">
-                        {rangeDates[0]} — {rangeDates.at(-1)}
-                      </h3>
-                      <div className="lab-range-timeline">
-                        <div className="lab-range-labels">
-                          <span>{team ? "成员" : "事项"}</span>
-                          <div style={{ gridTemplateColumns: `repeat(${rangeDates.length}, minmax(28px, 1fr))` }}>
-                            {rangeDates.map((date) => (
-                              <span key={date}>{Number(date.slice(-2))}</span>
-                            ))}
-                          </div>
-                        </div>
-                        {timelineEvents.map((row) => (
-                          <div className="lab-range-row" key={row.id}>
-                            <span>
-                              {team
-                                ? (calendar.data?.members.find((person) => person.id === row.user_id)?.name ?? "成员")
-                                : row.title || "忙碌"}
-                            </span>
-                            <div className="lab-range-track">
+                      {events
+                        .filter((row) => localInput(row.start).slice(0, 10) === day)
+                        // oxlint-disable-next-line unicorn/no-array-sort -- ES2022; sorts a freshly filtered list
+                        .sort((left, right) => left.start.localeCompare(right.start))
+                        .map((row) => (
+                          <div className="pm-day-agenda" key={row.id}>
+                            <div className="pm-time-labels">
+                              <strong>{localInput(row.start).slice(11, 16)}</strong>
+                              <span>{localInput(row.end).slice(11, 16)}</span>
+                            </div>
+                            <div className="pm-agenda-track">
                               <button
-                                className="lab-range-event"
+                                className="pm-time-block"
                                 disabled={!canOpenEvent(row)}
-                                style={{
-                                  left: `${Math.max(0, ((new Date(row.start).getTime() - rangeStart) / (rangeEnd - rangeStart)) * 100)}%`,
-                                  width: `${Math.max(1, ((Math.min(new Date(row.end).getTime(), rangeEnd) - Math.max(new Date(row.start).getTime(), rangeStart)) / (rangeEnd - rangeStart)) * 100)}%`,
-                                  borderColor: row.category_color || row.color || undefined,
-                                }}
                                 onClick={() => openEvent(row)}
-                                title={`${row.title || "忙碌"} · ${localInput(row.start)} — ${localInput(row.end)}`}
                               >
-                                {row.title || "忙碌"}
+                                <strong>{row.title || "忙碌"}</strong>
+                                <span>
+                                  {localInput(row.start).slice(11, 16)}–{localInput(row.end).slice(11, 16)} ·{" "}
+                                  {row.category_name ?? "时间块"}
+                                </span>
                               </button>
                             </div>
                           </div>
                         ))}
-                      </div>
-                      {!team && <Button onClick={() => setFilterOpen(true)}>选择显示的文件夹与事项</Button>}
-                      <h3 className="lab-section-heading">{team ? "排期明细" : "已选时间块"}</h3>
-                      <div className="lab-agenda">{timelineEvents.map(eventCard)}</div>
-                    </>
-                  ) : team && teamMode === "columns" ? (
-                    <div className="lab-team-records">
-                      {Array.from(new Set(visibleEvents.map((row) => localInput(row.start).slice(11, 16))))
-                        // oxlint-disable-next-line unicorn/no-array-sort -- ES2022; sorts a newly created list
-                        .sort()
-                        .map((time) => {
-                          const instant = new Date(calendarInstant(`${day}T${time}`)).getTime();
-                          const active = visibleEvents.filter(
-                            (row) => new Date(row.start).getTime() <= instant && new Date(row.end).getTime() > instant
-                          );
-                          return (
-                            <article className="lab-card" key={time}>
-                              <h3>{time}</h3>
-                              <dl className="lab-kv">
-                                {(calendar.data?.members ?? [])
-                                  .filter((person) => !member || person.id === member)
-                                  .map((person) => (
-                                    <div key={person.id}>
-                                      <dt>{person.name}</dt>
-                                      <dd>
-                                        {active.some((row) => row.user_id === person.id)
-                                          ? active
-                                              .filter((row) => row.user_id === person.id)
-                                              .map((row) => (
-                                                <button
-                                                  key={row.id}
-                                                  className="lab-text-button"
-                                                  disabled={!canOpenEvent(row)}
-                                                  onClick={() => openEvent(row)}
-                                                >
-                                                  {row.title || "忙碌"}
-                                                </button>
-                                              ))
-                                          : "暂无排期"}
-                                      </dd>
-                                    </div>
-                                  ))}
-                              </dl>
-                            </article>
-                          );
-                        })}
-                      <h3 className="lab-section-heading">排期明细</h3>
-                      <div className="lab-agenda">{visibleEvents.map(eventCard)}</div>
-                    </div>
-                  ) : (
-                    <div className={`lab-agenda ${!team && view === "agenda" ? "lab-personal-agenda" : ""}`}>
-                      {eventDates.map((date) => (
-                        <section key={date}>
-                          <h3 className="lab-agenda-date">
-                            <CanonicalIcon name="plan" size={18} />
-                            <span>{calendarDateLabel(date)}</span>
+                      {!calendar.loading && !events.some((row) => localInput(row.start).slice(0, 10) === day) && (
+                        <Empty>当前日期暂无排期。</Empty>
+                      )}
+                    </section>
+                    <button
+                      className="m3-button pm-create-plan"
+                      onClick={() => {
+                        setChosenItem(undefined);
+                        setDialog("item");
+                      }}
+                    >
+                      <CanonicalIcon name="plus" size={18} />
+                      新建规划
+                    </button>
+                  </>
+                )}
+                {view === "board" && (
+                  <div className="lab-kanban">
+                    {statuses
+                      .filter((row) => !status || status === row.id)
+                      .map((row) => (
+                        <section className="lab-kanban-column" key={row.id}>
+                          <h3>
+                            {row.name} · {rows.filter((item) => item.status === row.id).length}
                           </h3>
-                          {visibleEvents
-                            .filter((row) => localInput(row.start).slice(0, 10) === date)
-                            // oxlint-disable-next-line unicorn/no-array-sort -- ES2022; sorts a newly filtered array
-                            .sort((a, b) => a.start.localeCompare(b.start))
-                            .map(eventCard)}
+                          {rows.filter((item) => item.status === row.id).map(card)}
+                          <Button
+                            onClick={() => {
+                              setChosenItem(undefined);
+                              setDialog("item");
+                            }}
+                          >
+                            新增事项
+                          </Button>
                         </section>
                       ))}
-                    </div>
-                  )}
-                  {!calendar.loading &&
-                    !(view === "timeline" || (team && teamMode === "timeline") ? timelineEvents : visibleEvents)
-                      .length && <Empty>当前日期范围暂无排期。</Empty>}
-                </>
-              )}
-              {view === "gantt" &&
-                (project ? (
-                  <Gantt store={store} projectId={project} onOpenIssue={onOpenIssue} />
-                ) : (
-                  <Empty>选择一个项目查看甘特排期。</Empty>
-                ))}
-              {view === "fields" && <Fields store={store} projectId={project} onOpenIssue={onOpenIssue} />}
-              {!team && ["overview", "board", "list"].includes(view) && (
-                <FloatingAction
-                  label="新增事项"
-                  onClick={() => {
-                    setChosenItem(undefined);
-                    setDialog("item");
-                  }}
-                />
-              )}
-              {!team && view === "agenda" && (
-                <FloatingAction
-                  label="安排时间"
-                  onClick={() => {
-                    setScheduledItem(rows[0]?.id ?? "");
-                    setSchedule("new");
-                  }}
-                />
-              )}
-              {["agenda", "month", "week", "timeline"].includes(view) && (team || view !== "agenda") && (
-                <div className="lab-actions">
-                  <Button
-                    variant="primary"
+                  </div>
+                )}
+                {view === "list" && (rows.length ? rows.map(card) : <Empty />)}
+                {["gantt", "fields"].includes(view) && (
+                  <LabField label="项目">
+                    <MobileSelect value={project} onChange={(event) => setProject(event.target.value)}>
+                      <option value="">{view === "gantt" ? "请选择项目" : "全部项目及个人事项"}</option>
+                      {planner.projects.map((row) => (
+                        <option key={row.id} value={row.id}>
+                          {row.name}
+                        </option>
+                      ))}
+                    </MobileSelect>
+                  </LabField>
+                )}
+                {["agenda", "month", "week", "timeline"].includes(view) && (
+                  <>
+                    {view !== "overview" && (
+                      <Tabs
+                        value={team ? teamMode : view}
+                        onChange={(next) => {
+                          if (team) {
+                            setTeamMode(next);
+                            setView(next === "columns" ? "agenda" : "week");
+                          } else setView(next);
+                        }}
+                        items={
+                          team
+                            ? [
+                                { id: "timeline", name: "人员时间轴" },
+                                { id: "columns", name: "人员分列" },
+                              ]
+                            : [
+                                { id: "agenda", name: "日" },
+                                { id: "week", name: "周" },
+                                { id: "month", name: "月" },
+                                { id: "timeline", name: "事项时间轴" },
+                              ]
+                        }
+                      />
+                    )}
+                    {((team && teamMode === "timeline") || view === "timeline") && (
+                      <div className="lab-calendar-chips" role="group" aria-label="时间范围">
+                        {[
+                          { id: "agenda", name: "日" },
+                          { id: "week", name: "周" },
+                          { id: "month", name: "月" },
+                        ].map((entry) => (
+                          <button
+                            key={entry.id}
+                            aria-pressed={rangeMode === entry.id}
+                            className={`lab-chip ${rangeMode === entry.id ? "active" : ""}`}
+                            onClick={() => (team ? setView(entry.id) : setTimelineScale(entry.id))}
+                          >
+                            {entry.name}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                    {((team && teamMode === "columns") || (!team && view === "agenda")) && (
+                      <div className="lab-calendar-chips" role="group" aria-label="选择日期">
+                        {(team ? weekDates : dateChips).map((date) => (
+                          <button
+                            key={date}
+                            aria-pressed={day === date}
+                            className={`lab-chip ${day === date ? "active" : ""}`}
+                            onClick={() => {
+                              setDay(date);
+                              setMonth(date.slice(0, 7));
+                            }}
+                          >
+                            {Number(date.slice(-2))} 周
+                            {["日", "一", "二", "三", "四", "五", "六"][new Date(`${date}T12:00:00+08:00`).getUTCDay()]}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                    {team && (
+                      <LabField label="成员">
+                        <MobileSelect value={member} onChange={(event) => setMember(event.target.value)}>
+                          <option value="">全部成员</option>
+                          {calendar.data?.members.map((row) => (
+                            <option key={row.id} value={row.id}>
+                              {row.name}
+                            </option>
+                          ))}
+                        </MobileSelect>
+                      </LabField>
+                    )}
+                    {view !== "overview" && (
+                      <LabField label="项目">
+                        <MobileSelect value={project} onChange={(event) => setProject(event.target.value)}>
+                          <option value="">全部项目及个人事项</option>
+                          {planner.projects.map((row) => (
+                            <option key={row.id} value={row.id}>
+                              {row.name}
+                            </option>
+                          ))}
+                        </MobileSelect>
+                      </LabField>
+                    )}
+                    {view === "month" ? (
+                      <>
+                        <LabField label="排期月份">
+                          <input
+                            type="month"
+                            value={month}
+                            onChange={(event) => {
+                              if (!event.target.value) return;
+                              setMonth(event.target.value);
+                              setDay(`${event.target.value}-01`);
+                            }}
+                          />
+                        </LabField>
+                        {!team && (
+                          <div className="lab-month">
+                            {["一", "二", "三", "四", "五", "六", "日"].map((label) => (
+                              <span key={label}>{label}</span>
+                            ))}
+                            {Array.from(
+                              { length: (new Date(`${month}-01T12:00:00+08:00`).getUTCDay() + 6) % 7 },
+                              (_, index) => (
+                                <span key={`blank-${index}`} />
+                              )
+                            )}
+                            {monthDays(month).map((date) => (
+                              <button
+                                key={date}
+                                aria-label={date}
+                                className={day === date ? "active" : ""}
+                                onClick={() => setDay(date)}
+                              >
+                                {Number(date.slice(-2))}
+                                <small>
+                                  {events.filter((row) => localInput(row.start).slice(0, 10) === date).length || ""}
+                                </small>
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                      </>
+                    ) : (
+                      view !== "overview" &&
+                      (team || view !== "agenda") && (
+                        <LabField label={view === "week" ? "所选周的日期" : "日期"}>
+                          <input
+                            type="date"
+                            value={day}
+                            onChange={(event) => {
+                              if (!event.target.value) return;
+                              setDay(event.target.value);
+                              setMonth(event.target.value.slice(0, 7));
+                            }}
+                          />
+                        </LabField>
+                      )
+                    )}
+                    {view === "week" && !team && (
+                      <div className="lab-week">
+                        <div className="lab-week-labels">
+                          <span />
+                          {weekDates.map((date, index) => (
+                            <span key={date}>
+                              {Number(date.slice(-2))} {["一", "二", "三", "四", "五", "六", "日"][index]}
+                            </span>
+                          ))}
+                        </div>
+                        <div className="lab-week-grid">
+                          <div className="lab-week-hours">
+                            {Array.from({ length: 13 }, (_, index) => (
+                              <span key={index}>{index + 8}:00</span>
+                            ))}
+                          </div>
+                          {weekDates.map((date) => (
+                            <div className="lab-week-day" key={date}>
+                              {visibleEvents
+                                .filter((row) => localInput(row.start).slice(0, 10) === date)
+                                .map((row) => {
+                                  const start = localInput(row.start);
+                                  const end = localInput(row.end);
+                                  const from = Number(start.slice(11, 13)) * 60 + Number(start.slice(14, 16));
+                                  const until =
+                                    end.slice(0, 10) !== date
+                                      ? 1440
+                                      : Number(end.slice(11, 13)) * 60 + Number(end.slice(14, 16));
+                                  if (from >= 1200 || until <= 480) return null;
+                                  return (
+                                    <button
+                                      key={row.id}
+                                      className="lab-week-event"
+                                      disabled={!canOpenEvent(row)}
+                                      style={{
+                                        top: `${Math.max(0, from - 480) * 0.7}px`,
+                                        height: `${Math.max(24, (Math.min(until, 1200) - Math.max(from, 480)) * 0.7)}px`,
+                                        borderColor: row.category_color || row.color || undefined,
+                                      }}
+                                      onClick={() => openEvent(row)}
+                                    >
+                                      {row.title || "忙碌"}
+                                    </button>
+                                  );
+                                })}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                    {view === "timeline" || (team && teamMode === "timeline") ? (
+                      <>
+                        <h3 className="lab-section-heading">
+                          {rangeDates[0]} — {rangeDates.at(-1)}
+                        </h3>
+                        <div className="lab-range-timeline">
+                          <div className="lab-range-labels">
+                            <span>{team ? "成员" : "事项"}</span>
+                            <div style={{ gridTemplateColumns: `repeat(${rangeDates.length}, minmax(28px, 1fr))` }}>
+                              {rangeDates.map((date) => (
+                                <span key={date}>{Number(date.slice(-2))}</span>
+                              ))}
+                            </div>
+                          </div>
+                          {timelineEvents.map((row) => (
+                            <div className="lab-range-row" key={row.id}>
+                              <span>
+                                {team
+                                  ? (calendar.data?.members.find((person) => person.id === row.user_id)?.name ?? "成员")
+                                  : row.title || "忙碌"}
+                              </span>
+                              <div className="lab-range-track">
+                                <button
+                                  className="lab-range-event"
+                                  disabled={!canOpenEvent(row)}
+                                  style={{
+                                    left: `${Math.max(0, ((new Date(row.start).getTime() - rangeStart) / (rangeEnd - rangeStart)) * 100)}%`,
+                                    width: `${Math.max(1, ((Math.min(new Date(row.end).getTime(), rangeEnd) - Math.max(new Date(row.start).getTime(), rangeStart)) / (rangeEnd - rangeStart)) * 100)}%`,
+                                    borderColor: row.category_color || row.color || undefined,
+                                  }}
+                                  onClick={() => openEvent(row)}
+                                  title={`${row.title || "忙碌"} · ${localInput(row.start)} — ${localInput(row.end)}`}
+                                >
+                                  {row.title || "忙碌"}
+                                </button>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                        {!team && <Button onClick={() => setFilterOpen(true)}>选择显示的文件夹与事项</Button>}
+                        <h3 className="lab-section-heading">{team ? "排期明细" : "已选时间块"}</h3>
+                        <div className="lab-agenda">{timelineEvents.map(eventCard)}</div>
+                      </>
+                    ) : team && teamMode === "columns" ? (
+                      <div className="lab-team-records">
+                        {Array.from(new Set(visibleEvents.map((row) => localInput(row.start).slice(11, 16))))
+                          // oxlint-disable-next-line unicorn/no-array-sort -- ES2022; sorts a newly created list
+                          .sort()
+                          .map((time) => {
+                            const instant = new Date(calendarInstant(`${day}T${time}`)).getTime();
+                            const active = visibleEvents.filter(
+                              (row) => new Date(row.start).getTime() <= instant && new Date(row.end).getTime() > instant
+                            );
+                            return (
+                              <article className="lab-card" key={time}>
+                                <h3>{time}</h3>
+                                <dl className="lab-kv">
+                                  {(calendar.data?.members ?? [])
+                                    .filter((person) => !member || person.id === member)
+                                    .map((person) => (
+                                      <div key={person.id}>
+                                        <dt>{person.name}</dt>
+                                        <dd>
+                                          {active.some((row) => row.user_id === person.id)
+                                            ? active
+                                                .filter((row) => row.user_id === person.id)
+                                                .map((row) => (
+                                                  <button
+                                                    key={row.id}
+                                                    className="lab-text-button"
+                                                    disabled={!canOpenEvent(row)}
+                                                    onClick={() => openEvent(row)}
+                                                  >
+                                                    {row.title || "忙碌"}
+                                                  </button>
+                                                ))
+                                            : "暂无排期"}
+                                        </dd>
+                                      </div>
+                                    ))}
+                                </dl>
+                              </article>
+                            );
+                          })}
+                        <h3 className="lab-section-heading">排期明细</h3>
+                        <div className="lab-agenda">{visibleEvents.map(eventCard)}</div>
+                      </div>
+                    ) : (
+                      <div className={`lab-agenda ${!team && view === "agenda" ? "lab-personal-agenda" : ""}`}>
+                        {eventDates.map((date) => (
+                          <section key={date}>
+                            <h3 className="lab-agenda-date">
+                              <CanonicalIcon name="plan" size={18} />
+                              <span>{calendarDateLabel(date)}</span>
+                            </h3>
+                            {visibleEvents
+                              .filter((row) => localInput(row.start).slice(0, 10) === date)
+                              // oxlint-disable-next-line unicorn/no-array-sort -- ES2022; sorts a newly filtered array
+                              .sort((a, b) => a.start.localeCompare(b.start))
+                              .map(eventCard)}
+                          </section>
+                        ))}
+                      </div>
+                    )}
+                    {!calendar.loading &&
+                      !(view === "timeline" || (team && teamMode === "timeline") ? timelineEvents : visibleEvents)
+                        .length && <Empty>当前日期范围暂无排期。</Empty>}
+                  </>
+                )}
+                {view === "gantt" &&
+                  (project ? (
+                    <Gantt store={store} projectId={project} onOpenIssue={onOpenIssue} />
+                  ) : (
+                    <Empty>选择一个项目查看甘特排期。</Empty>
+                  ))}
+                {view === "fields" && <Fields store={store} projectId={project} onOpenIssue={onOpenIssue} />}
+                {!team && ["board", "list"].includes(view) && (
+                  <FloatingAction
+                    label="新增事项"
+                    onClick={() => {
+                      setChosenItem(undefined);
+                      setDialog("item");
+                    }}
+                  />
+                )}
+                {!team && view === "agenda" && (
+                  <FloatingAction
+                    label="安排时间"
                     onClick={() => {
                       setScheduledItem(rows[0]?.id ?? "");
                       setSchedule("new");
                     }}
-                  >
-                    安排时间
-                  </Button>
-                  <Button
-                    onClick={() => {
-                      setDay(today());
-                      setMonth(today().slice(0, 7));
-                    }}
-                  >
-                    今天
-                  </Button>
-                </div>
-              )}
-            </>
-          )}
+                  />
+                )}
+                {["agenda", "month", "week", "timeline"].includes(view) && (team || view !== "agenda") && (
+                  <div className="lab-actions">
+                    <Button
+                      variant="primary"
+                      onClick={() => {
+                        setScheduledItem(rows[0]?.id ?? "");
+                        setSchedule("new");
+                      }}
+                    >
+                      安排时间
+                    </Button>
+                    <Button
+                      onClick={() => {
+                        setDay(today());
+                        setMonth(today().slice(0, 7));
+                      }}
+                    >
+                      今天
+                    </Button>
+                  </div>
+                )}
+              </>
+            )}
+          </main>
         </>
       )}
       {filterOpen && (
@@ -747,30 +833,30 @@ export function Planner({
             />
           </LabField>
           <LabField label="项目">
-            <select value={project} onChange={(event) => setProject(event.target.value)}>
+            <MobileSelect value={project} onChange={(event) => setProject(event.target.value)}>
               <option value="">全部项目与个人事项</option>
               {planner.projects.map((row) => (
                 <option key={row.id} value={row.id}>
                   {row.name}
                 </option>
               ))}
-            </select>
+            </MobileSelect>
           </LabField>
           {team ? (
             <LabField label="成员">
-              <select value={member} onChange={(event) => setMember(event.target.value)}>
+              <MobileSelect value={member} onChange={(event) => setMember(event.target.value)}>
                 <option value="">全部成员</option>
                 {calendar.data?.members.map((row) => (
                   <option key={row.id} value={row.id}>
                     {row.name}
                   </option>
                 ))}
-              </select>
+              </MobileSelect>
             </LabField>
           ) : (
             <>
               <LabField label="显示的文件夹">
-                <select value={folder} onChange={(event) => setFolder(event.target.value)}>
+                <MobileSelect value={folder} onChange={(event) => setFolder(event.target.value)}>
                   <option value="all">全部文件夹</option>
                   {planner.folders.map((row) => (
                     <option key={row.id} value={row.id}>
@@ -778,17 +864,17 @@ export function Planner({
                     </option>
                   ))}
                   <option value="unclassified">未分类</option>
-                </select>
+                </MobileSelect>
               </LabField>
               <LabField label="状态">
-                <select value={status} onChange={(event) => setStatus(event.target.value)}>
+                <MobileSelect value={status} onChange={(event) => setStatus(event.target.value)}>
                   <option value="">全部状态</option>
                   {statuses.map((row) => (
                     <option key={row.id} value={row.id}>
                       {row.name}
                     </option>
                   ))}
-                </select>
+                </MobileSelect>
               </LabField>
               <label className="lab-switch-field">
                 <span>仅看待排事项</span>
@@ -1010,34 +1096,37 @@ export function Planner({
             </LabField>
           )}
           <LabField label="文件夹">
-            <select name="folder_id" defaultValue={chosenItem?.folder_id ?? ""}>
+            <MobileSelect name="folder_id" defaultValue={chosenItem?.folder_id ?? ""}>
               <option value="">未分类</option>
               {planner.folders.map((row) => (
                 <option key={row.id} value={row.id}>
                   {row.name}
                 </option>
               ))}
-            </select>
+            </MobileSelect>
           </LabField>
           <LabField label="分类">
-            <select name="category_id" defaultValue={chosenItem?.category_id ?? planner.default_category_id ?? ""}>
+            <MobileSelect
+              name="category_id"
+              defaultValue={chosenItem?.category_id ?? planner.default_category_id ?? ""}
+            >
               <option value="">未分类</option>
               {planner.categories?.map((row) => (
                 <option key={row.id} value={row.id}>
                   {row.name}
                 </option>
               ))}
-            </select>
+            </MobileSelect>
           </LabField>
           {!chosenItem?.bounty_id && !chosenItem?.is_bounty && chosenItem?.can_edit_issue !== false && (
             <LabField label="状态">
-              <select name="status" defaultValue={chosenItem?.status ?? "todo"}>
+              <MobileSelect name="status" defaultValue={chosenItem?.status ?? "todo"}>
                 {statuses.map((row) => (
                   <option key={row.id} value={row.id}>
                     {row.name}
                   </option>
                 ))}
-              </select>
+              </MobileSelect>
             </LabField>
           )}
           {!chosenItem?.issue_id && (
@@ -1082,14 +1171,14 @@ export function Planner({
           </LabField>
           <ErrorMessage error={search.error} />
           <LabField label="任务">
-            <select name="issue_id" required>
+            <MobileSelect name="issue_id" required>
               <option value="">请选择</option>
               {search.data?.map((row) => (
                 <option key={row.id} value={row.id}>
                   {row.project} · {row.key} {row.title}
                 </option>
               ))}
-            </select>
+            </MobileSelect>
           </LabField>
         </LabDialog>
       )}
@@ -1198,7 +1287,7 @@ export function Planner({
           }}
         >
           <LabField label="项目">
-            <select name="project_id" value={project} required onChange={(e) => setProject(e.target.value)}>
+            <MobileSelect name="project_id" value={project} required onChange={(e) => setProject(e.target.value)}>
               <option value="">请选择</option>
               {planner.projects
                 .filter((row) => row.lead)
@@ -1207,11 +1296,11 @@ export function Planner({
                     {row.name}
                   </option>
                 ))}
-            </select>
+            </MobileSelect>
           </LabField>
           {statuses.map((row) => (
             <LabField key={row.id} label={row.name}>
-              <select
+              <MobileSelect
                 key={`${project}-${row.id}`}
                 name={row.id}
                 defaultValue={planner.projects.find((p) => p.id === project)?.mapping[row.id as "todo"] ?? ""}
@@ -1224,7 +1313,7 @@ export function Planner({
                       {state.name}
                     </option>
                   ))}
-              </select>
+              </MobileSelect>
             </LabField>
           ))}
         </LabDialog>
@@ -1256,14 +1345,14 @@ export function Planner({
         >
           {schedule === "new" && (
             <LabField label="事项">
-              <select name="item_id" required defaultValue={scheduledItem}>
+              <MobileSelect name="item_id" required defaultValue={scheduledItem}>
                 <option value="">请选择</option>
                 {planner.items.map((row) => (
                   <option key={row.id} value={row.id}>
                     {row.title}
                   </option>
                 ))}
-              </select>
+              </MobileSelect>
             </LabField>
           )}
           <LabField label="开始时间（上海）">

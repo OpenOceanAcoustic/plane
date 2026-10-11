@@ -1,11 +1,11 @@
 /** Copyright (c) 2026 OpenOceanAcoustic and contributors. SPDX-License-Identifier: AGPL-3.0-only */
 import type { CSSProperties } from "react";
 import type { LabChart, LabChartRow } from "@plane/types";
-const palette = ["#3767cc", "#8052b4", "#329776", "#d69c55", "#c26598"];
+const palette = ["var(--accent)", "var(--green)", "var(--tertiary)", "#97b4e6", "var(--secondary)"];
 const number = (row: LabChartRow, key: string) => Number(row[key]) || 0;
 function seriesColors(chart: LabChart) {
-  if (chart.id === "vc-budget") return ["#329776", "#8052b4", "#c26598"];
-  if (chart.id === "vc-participants") return ["#8052b4", "#329776"];
+  if (chart.id === "vc-budget") return ["var(--green)", "var(--accent)", "var(--tertiary)"];
+  if (chart.id === "vc-participants") return ["#97b4e6", "var(--accent)"];
   return palette;
 }
 export function ChartVisual({ chart, onSelect }: { chart: LabChart; onSelect: (row: LabChartRow) => void }) {

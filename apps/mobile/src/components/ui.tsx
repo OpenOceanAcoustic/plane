@@ -1,10 +1,11 @@
+import { MobileSelect } from "./select";
 import { useContext, useEffect, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import useSWR from "swr";
-import { ChevronLeft, X } from "lucide-react";
 import sanitizeHtml from "sanitize-html";
 import type { ApiClient } from "../lib/client";
-import { isTopDialog } from "../lib/dialog";
+import { Sheet } from "./sheet";
+export { Sheet } from "./sheet";
 import { MobileClientContext, RichHtmlEditor, resolveImage } from "./rich-editor";
 import { CanonicalIcon, MobileHeaderContext } from "./navigation";
 
@@ -107,23 +108,23 @@ export function PageHeading({
   if (header?.title && !inline)
     return (
       <>
-        {header.detail ? (
-          <span className="detail-issue-id">{title}</span>
-        ) : (
-          createPortal(
-            <>
-              <h1>{title}</h1>
-              {subtitle && <small className="header-project-code">{subtitle}</small>}
-            </>,
-            header.title
-          )
+        {createPortal(
+          <>
+            <h1>{title}</h1>
+            {subtitle && <small className="header-project-code">{subtitle}</small>}
+          </>,
+          header.title
         )}
         {children && header.actions && createPortal(children, header.actions)}
         {onBack &&
           header.back &&
           createPortal(
-            <button className="icon-button" onClick={onBack} aria-label="返回">
-              <CanonicalIcon name="back" />
+            <button className="icon-button m3-icon-button" onClick={() => header.onBack(onBack)} aria-label="返回">
+              <CanonicalIcon
+                name={header.backIconRotated ? "arrow" : "back"}
+                size={header.backIconSize}
+                style={header.backIconRotated ? { transform: "rotate(180deg)" } : undefined}
+              />
             </button>,
             header.back
           )}
@@ -133,7 +134,7 @@ export function PageHeading({
     <div className="page-heading">
       {onBack && (
         <button className="icon-button" onClick={onBack} aria-label="返回">
-          <ChevronLeft />
+          <CanonicalIcon name="back" size={24} />
         </button>
       )}
       <div>
@@ -266,74 +267,6 @@ export function RecordList({
     </div>
   );
 }
-export function Sheet({
-  title,
-  children,
-  onClose,
-  busy = false,
-  className = "",
-}: {
-  title: string;
-  children: ReactNode;
-  onClose: () => void;
-  busy?: boolean;
-  className?: string;
-}) {
-  const ref = useRef<HTMLDivElement>(null);
-  const callbacks = useRef({ onClose, busy });
-  callbacks.current = { onClose, busy };
-  useEffect(() => {
-    const previous = document.activeElement as HTMLElement | null;
-    ref.current?.focus();
-    const close = (event: Event) => {
-      if (event.defaultPrevented || !isTopDialog(ref.current)) return;
-      event.preventDefault();
-      event.stopImmediatePropagation();
-      if (!callbacks.current.busy) callbacks.current.onClose();
-    };
-    const key = (event: KeyboardEvent) => {
-      if (!isTopDialog(ref.current)) return;
-      if (event.key === "Escape") {
-        close(event);
-      }
-      if (event.key === "Tab") {
-        const targets = ref.current?.querySelectorAll<HTMLElement>("button,input,select,textarea,a[href]");
-        if (!targets?.length) return;
-        const first = targets[0],
-          last = targets[targets.length - 1];
-        if (event.shiftKey && document.activeElement === first) {
-          event.preventDefault();
-          last.focus();
-        } else if (!event.shiftKey && document.activeElement === last) {
-          event.preventDefault();
-          first.focus();
-        }
-      }
-    };
-    window.addEventListener("mobileBack", close, true);
-    window.addEventListener("keydown", key, true);
-    return () => {
-      window.removeEventListener("mobileBack", close, true);
-      window.removeEventListener("keydown", key, true);
-      previous?.focus();
-    };
-  }, []);
-  return (
-    <div className="overlay">
-      <button className="scrim" onClick={onClose} disabled={busy} aria-label="关闭面板" />
-      <div className={`sheet ${className}`} role="dialog" aria-modal="true" aria-label={title} ref={ref} tabIndex={-1}>
-        <div className="handle" />
-        <header>
-          <h2>{title}</h2>
-          <button className="icon-button" aria-label="关闭" onClick={onClose} disabled={busy}>
-            <X />
-          </button>
-        </header>
-        {children}
-      </div>
-    </div>
-  );
-}
 export type FormField = {
   key: string;
   label: string;
@@ -400,7 +333,7 @@ export function FormSheet({
                 onChange={(e) => setValues({ ...values, [field.key]: e.target.value })}
               />
             ) : field.type === "select" ? (
-              <select
+              <MobileSelect
                 aria-label={field.label}
                 value={values[field.key]}
                 required={field.required}
@@ -412,7 +345,7 @@ export function FormSheet({
                     {option.label}
                   </option>
                 ))}
-              </select>
+              </MobileSelect>
             ) : (
               <input
                 aria-label={field.label}

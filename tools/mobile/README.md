@@ -21,7 +21,7 @@ Signing properties and the keystore are private files, excluded from Git. A new 
 installed APK signed by the old key. Back up the private directory separately from the source.
 The build script installs pinned dependencies, builds workspace dependencies and the mobile frontend,
 syncs local assets, verifies APK signatures and writes a SHA-256 checksum. It does not publish assets,
-install the APK, or change any running server. Use `adb install -r <output>/OpenOceanAcoustic-1.0.2.apk`
+install the APK, or change any running server. Use `adb install -r <output>/OpenOceanAcoustic-1.0.4.apk`
 to install/update; deployment URLs must be reachable from the Android device.
 
 ## JavaScript interface

@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useState } from "react";
+import { MobileSelect } from "../components/select";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { EditorContent, useEditor } from "@tiptap/react";
 import type { AnyExtension } from "@tiptap/core";
 import { Collaboration } from "@tiptap/extension-collaboration";
@@ -6,6 +7,7 @@ import { HocuspocusProvider } from "@hocuspocus/provider";
 import { TITLE_EDITOR_EXTENSIONS } from "@plane/editor/lib";
 import * as Y from "yjs";
 import { mobileEditorExtensions } from "../components/rich-editor";
+import { useMobileConfirmation } from "../components/confirm";
 import type { ApiClient } from "../lib/client";
 import {
   ActionButton,
@@ -40,14 +42,14 @@ export default function Documents(props: Props) {
       {!props.projectId && (
         <label className="field">
           <span>项目</span>
-          <select aria-label="项目" value={selected} onChange={(e) => setSelected(e.target.value)}>
+          <MobileSelect aria-label="项目" value={selected} onChange={(e) => setSelected(e.target.value)}>
             <option value="">选择项目</option>
             {records(projects.data).map((project) => (
               <option key={project.id} value={project.id}>
                 {project.name}
               </option>
             ))}
-          </select>
+          </MobileSelect>
         </label>
       )}
       <ErrorMessage error={projects.error} />
@@ -124,8 +126,11 @@ function DocumentDetail({
   const [connectionVersion, setConnectionVersion] = useState(0);
   const [status, setStatus] = useState("连接中");
   const [error, setError] = useState<unknown>();
+  const { ask, confirmation } = useMobileConfirmation();
+  const deleted = useRef(false);
   useEffect(() => {
     let active = true;
+    deleted.current = false;
     const document = new Y.Doc();
     const url = new URL("/live/collaboration", `${client.server}/`);
     url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
@@ -161,18 +166,27 @@ function DocumentDetail({
     });
     live.on("unsyncedChanges", (number: number) => setStatus(number ? "同步中…" : "已同步"));
     setProvider(live);
-    const back = (event: Event) => {
-      if (live.hasUnsyncedChanges && !window.confirm("文档仍在同步，离开此页面？")) event.preventDefault();
+    const navigate = (event: Event) => {
+      if (event.defaultPrevented || deleted.current || !live.hasUnsyncedChanges) return;
+      const action = (event as CustomEvent<{ navigate: () => void }>).detail?.navigate;
+      if (typeof action !== "function") return;
+      event.preventDefault();
+      void ask({ title: "离开文档", message: "文档仍在同步，离开此页面？", confirmLabel: "离开" })
+        .then((accepted) => {
+          if (accepted && active) action();
+          return undefined;
+        })
+        .catch(setError);
     };
-    window.addEventListener("mobileBack", back);
+    window.addEventListener("mobileNavigate", navigate);
     return () => {
       active = false;
-      window.removeEventListener("mobileBack", back);
+      window.removeEventListener("mobileNavigate", navigate);
       live.destroy();
       document.destroy();
       setProvider(null);
     };
-  }, [client, workspaceSlug, projectId, pageId, connectionVersion]);
+  }, [client, workspaceSlug, projectId, pageId, connectionVersion, ask]);
   return (
     <>
       <PageHeading title={String(page.data?.name ?? "文档")} />
@@ -267,8 +281,11 @@ function DocumentDetail({
             </button>
             <ActionButton
               action={async () => {
-                if (window.confirm("删除此文档？")) {
+                if (
+                  await ask({ title: "删除文档", message: "删除此文档？", confirmLabel: "删除", destructive: true })
+                ) {
                   await client.request(path, "DELETE");
+                  deleted.current = true;
                   onOpen(projectId, "");
                 }
               }}
@@ -330,6 +347,7 @@ function DocumentDetail({
           />
         </Sheet>
       )}
+      {confirmation}
     </>
   );
 }
@@ -398,7 +416,7 @@ function CollaborativeEditors({
       <EditorContent editor={title} />
       {writable && (
         <div className="editor-toolbar">
-          <select
+          <MobileSelect
             aria-label="段落样式"
             onChange={(e) => {
               if (e.target.value === "p") editor.chain().focus().setNode("paragraph").run();
@@ -414,7 +432,7 @@ function CollaborativeEditors({
             <option value="1">标题 1</option>
             <option value="2">标题 2</option>
             <option value="3">标题 3</option>
-          </select>
+          </MobileSelect>
           {[
             ["bold", "粗体"],
             ["italic", "斜体"],

@@ -28,8 +28,8 @@ if (["light", "dark", "system", "custom"].includes(savedTheme ?? ""))
   store.setTheme(savedTheme as MobileTheme["theme"]);
 const initialServer = localStorage.getItem("ooa.server") ?? "";
 const pageTitles: Record<string, string> = {
-  more: "更多",
-  inbox: "通知",
+  more: "工作台",
+  inbox: "收件箱",
   search: "搜索",
   projects: "项目",
   "project-overview": "项目概览",
@@ -104,6 +104,17 @@ const App = observer(function App() {
   const { mutate } = useSWRConfig();
   const theme = store.theme;
   const navigate = useCallback((route: MobileRoute) => requestMobileNavigation(() => store.navigate(route)), []);
+  const back = useCallback((fallback?: () => void, minimize = false) => {
+    const event = new Event("mobileBack", { cancelable: true });
+    window.dispatchEvent(event);
+    if (event.defaultPrevented) return;
+    requestMobileNavigation(() => {
+      if (store.back()) return;
+      if (fallback) fallback();
+      else if (minimize) void NativeApp.minimizeApp();
+      else store.root("home");
+    });
+  }, []);
   const restore = useCallback(async () => {
     const session = await client.request<{ user: MobileUser; client_platform: string; mobile_api_version: number }>(
       "/api/lab/session/"
@@ -192,9 +203,7 @@ const App = observer(function App() {
       };
     const plugins = [
       NativeApp.addListener("backButton", () => {
-        const event = new Event("mobileBack", { cancelable: true });
-        window.dispatchEvent(event);
-        if (!event.defaultPrevented && !store.back()) void NativeApp.minimizeApp();
+        back(undefined, true);
       }),
       NativeApp.addListener("appStateChange", ({ isActive }) => {
         if (isActive) {
@@ -221,7 +230,7 @@ const App = observer(function App() {
       window.removeEventListener("online", updateOnline);
       window.removeEventListener("offline", updateOnline);
     };
-  }, [mutate]);
+  }, [mutate, back]);
   useEffect(() => {
     const media = matchMedia("(prefers-color-scheme: dark)");
     const apply = () => {
@@ -233,7 +242,9 @@ const App = observer(function App() {
       for (const [variable, value] of [
         ["--accent", customTheme.primary],
         ["--surface", customTheme.background],
+        ["--bg", customTheme.background],
         ["--ink", customTheme.text],
+        ["--text", customTheme.text],
       ]) {
         if (theme === "custom" && /^#[0-9a-f]{6}$/i.test(value ?? ""))
           document.documentElement.style.setProperty(variable, value);
@@ -247,17 +258,31 @@ const App = observer(function App() {
     return () => media.removeEventListener("change", apply);
   }, [theme, customTheme]);
   const route = store.route;
-  const hasContextBack = Boolean(route.projectId || route.pageId || route.issueId);
+  const variant =
+    route.page === "home"
+      ? "home"
+      : ["project-overview", "tasks", "issue", "archived-tasks"].includes(route.page)
+        ? "project"
+        : ["more", "planner", "settings"].includes(route.page)
+          ? "personal"
+          : "standard";
+  const backIconSize =
+    variant === "project" ? 20 : variant === "personal" ? 21 : ["projects", "finance"].includes(route.page) ? 22 : 24;
+  const backIconRotated = variant === "personal" || ["projects", "finance"].includes(route.page);
   const headerContext = useMemo(
     () => ({
       title: headerTitle,
+      onBack: back,
+      variant: variant as "home" | "project" | "personal" | "standard",
+      backIconSize,
+      backIconRotated,
       actions: headerActions,
       back: headerBack,
       detail: route.page === "issue",
       composer,
       fab,
     }),
-    [headerTitle, headerActions, headerBack, route.page, composer, fab]
+    [headerTitle, headerActions, headerBack, route.page, composer, fab, back, variant, backIconSize, backIconRotated]
   );
   const selectedWorkspace = records(workspaces.data).find((item) => item.slug === store.workspaceSlug);
   if (setup) return <ServerSetup initial={server} onConnect={switchServer} />;
@@ -280,7 +305,15 @@ const App = observer(function App() {
   const rootLink = (target: string) => requestMobileNavigation(() => store.root(target));
   let content;
   if (page === "home")
-    content = <Home client={client} workspaceSlug={store.workspaceSlug} userId={store.user?.id} navigate={navigate} />;
+    content = (
+      <Home
+        client={client}
+        workspaceSlug={store.workspaceSlug}
+        userId={store.user?.id}
+        userName={store.user?.display_name || store.user?.username}
+        navigate={navigate}
+      />
+    );
   else if (page === "stickies") content = <Stickies client={client} workspaceSlug={store.workspaceSlug} />;
   else if (page === "more" && store.user)
     content = (
@@ -390,130 +423,131 @@ const App = observer(function App() {
   return (
     <MobileClientContext.Provider value={client}>
       <MobileHeaderContext.Provider value={headerContext}>
-        <div className="app-shell" data-page={page} key={epoch}>
-          <header
-            className={`topbar ${page === "home" ? "workspace-header" : page === "issue" ? "task-detail-header" : ["tasks", "archived-tasks"].includes(page) ? "compact-header project-view-header" : "compact-header"}`}
-          >
-            {page === "home" ? (
-              <>
-                <button className="workspace-switch" aria-label="切换工作区" onClick={() => setWorkspacePicker(true)}>
-                  <span className="workspace-logo">声</span>
-                  <span className="workspace-title">{String(selectedWorkspace?.name ?? "OpenOceanAcoustic")}</span>
-                  <CanonicalIcon name="down" size={16} />
-                </button>
-                <button
-                  className="icon-button workspace-grid"
-                  aria-label="应用"
-                  onClick={() => navigate({ page: "more" })}
-                >
-                  <CanonicalIcon name="apps" size={24} />
-                </button>
-                <button className="avatar" aria-label="个人设置" onClick={() => navigate({ page: "settings" })}>
-                  {(store.user?.display_name || store.user?.username || "声").slice(0, 1)}
-                </button>
-              </>
-            ) : (
-              <>
-                <div className="header-back-slot" ref={setHeaderBack} />
-                <button
-                  className="icon-button header-back-fallback"
-                  aria-label={hasContextBack ? "返回" : "切换工作区"}
-                  onClick={() => {
-                    if (hasContextBack) {
-                      const event = new Event("mobileBack", { cancelable: true });
-                      window.dispatchEvent(event);
-                      if (!event.defaultPrevented) store.back();
-                    } else setWorkspacePicker(true);
-                  }}
-                >
-                  {hasContextBack ? <CanonicalIcon name="back" /> : <span className="workspace-mark">声</span>}
-                </button>
-                <div className="app-heading">
-                  <div className="header-feature-title" ref={setHeaderTitle} />
-                  <h1 className="header-title-fallback">{pageTitles[page] ?? "OpenOceanAcoustic"}</h1>
-                </div>
-                <div className="header-feature-actions" ref={setHeaderActions} />
-                {page !== "issue" && (
+        <div className="app-shell v6-app" data-page={page} data-header={variant} key={epoch}>
+          <div className="phone-content app-content">
+            <header
+              className={`topbar ${page === "home" ? "home-topbar" : `m3-topbar ${variant === "project" ? "px-topbar" : variant === "personal" ? "pm-topbar" : "bx-topbar"}`}`}
+            >
+              {page === "home" ? (
+                <>
                   <button
-                    className="icon-button"
-                    aria-label={route.projectId ? "项目导航" : "应用"}
-                    onClick={() => {
-                      if (route.projectId) setProjectMenu(true);
-                      else if (page !== "more") navigate({ page: "more" });
-                    }}
+                    className="workspace-picker"
+                    aria-label="切换工作空间"
+                    onClick={() => setWorkspacePicker(true)}
                   >
-                    <CanonicalIcon name="apps" size={23} />
+                    <span className="workspace-icon">声</span>
+                    <span className="workspace-copy">
+                      <strong>OpenOceanAcoustic</strong>
+                      <span>{String(selectedWorkspace?.name ?? "工作空间")}</span>
+                    </span>
+                    <CanonicalIcon name="down" size={16} />
                   </button>
-                )}
-              </>
-            )}
-          </header>
-          {!online && (
-            <p className="network-status" role="status">
-              网络已断开
-            </p>
-          )}
-          {notice && (
-            <button className="network-status" role="status" onClick={() => setNotice("")}>
-              {notice}
-            </button>
-          )}
-          <main
-            className="page"
-            key={`${store.workspaceSlug}:${page}:${route.projectId}:${route.issueId}:${route.pageId}`}
-          >
-            <ErrorMessage error={error} />
-            {store.user && !store.workspaceSlug && !["settings", "more", "space"].includes(page) ? (
-              <>
-                <ErrorMessage error={workspaces.error} />
-                <p className="empty">暂无工作区</p>
-                <button className="button" onClick={() => setNewWorkspace(true)}>
-                  创建工作区
-                </button>
-                <button className="button" onClick={() => navigate({ page: "settings" })}>
-                  个人设置
-                </button>
-                <button className="button" onClick={() => navigate({ page: "space" })}>
-                  共享页面
-                </button>
-              </>
-            ) : (
-              content
-            )}
-            {page === "settings" && (
-              <div className="list">
-                {store.workspaceSlug && (
-                  <button className="button" onClick={() => navigate({ page: "workspace-settings" })}>
-                    <CanonicalIcon name="settings" size={18} />
-                    工作区设置
+                  <button
+                    className="account-avatar"
+                    aria-label="个人资料"
+                    onClick={() => navigate({ page: "settings" })}
+                  >
+                    {(store.user?.display_name || store.user?.username || "声").slice(0, 1)}
                   </button>
-                )}
-                <button className="button" onClick={() => navigate({ page: "space" })}>
-                  共享页面
-                </button>
-              </div>
+                </>
+              ) : (
+                <>
+                  <div className="header-back-slot" ref={setHeaderBack} />
+                  <button className="m3-icon-button header-back-fallback" aria-label="返回" onClick={() => back()}>
+                    <CanonicalIcon
+                      name={backIconRotated ? "arrow" : "back"}
+                      size={backIconSize}
+                      style={backIconRotated ? { transform: "rotate(180deg)" } : undefined}
+                    />
+                  </button>
+                  <div className="app-heading">
+                    <div className="header-feature-title" ref={setHeaderTitle} />
+                    <h1 className="header-title-fallback">{pageTitles[page] ?? "OpenOceanAcoustic"}</h1>
+                  </div>
+                  <div className="header-actions-group">
+                    <div className="header-feature-actions m3-bar-actions" ref={setHeaderActions} />
+                    {![
+                      "issue",
+                      "tasks",
+                      "project-overview",
+                      "finance",
+                      "analytics",
+                      "bounties",
+                      "archived-tasks",
+                    ].includes(page) && (
+                      <button
+                        className="m3-icon-button"
+                        aria-label={route.projectId ? "项目导航" : "工作台"}
+                        onClick={() => {
+                          if (route.projectId) setProjectMenu(true);
+                          else if (page !== "more") navigate({ page: "more" });
+                          else setWorkspacePicker(true);
+                        }}
+                      >
+                        <CanonicalIcon name="grid" size={variant === "personal" ? 20 : 22} />
+                      </button>
+                    )}
+                  </div>
+                </>
+              )}
+            </header>
+            {!online && (
+              <p className="network-status" role="status">
+                网络已断开
+              </p>
             )}
-          </main>
+            {notice && (
+              <button className="network-status" role="status" onClick={() => setNotice("")}>
+                {notice}
+              </button>
+            )}
+            <main
+              className="page"
+              key={`${store.workspaceSlug}:${page}:${route.projectId}:${route.issueId}:${route.pageId}`}
+            >
+              <ErrorMessage error={error} />
+              {store.user && !store.workspaceSlug && !["settings", "more", "space"].includes(page) ? (
+                <>
+                  <ErrorMessage error={workspaces.error} />
+                  <p className="empty">暂无工作区</p>
+                  <button className="button" onClick={() => setNewWorkspace(true)}>
+                    创建工作区
+                  </button>
+                  <button className="button" onClick={() => navigate({ page: "settings" })}>
+                    个人设置
+                  </button>
+                  <button className="button" onClick={() => navigate({ page: "space" })}>
+                    共享页面
+                  </button>
+                </>
+              ) : (
+                content
+              )}
+            </main>
+          </div>
           <div className="fab-mount" ref={setFab} />
           <div className="composer-mount" ref={setComposer} />
-          <nav className="bottom-dock" aria-label="主导航">
+          <nav className="bottom-nav" aria-label="主导航">
             {(
               [
                 ["home", "首页", "home"],
-                ["inbox", "通知", "tray"],
+                ["inbox", "收件箱", "inbox"],
                 ["search", "搜索", "search"],
               ] as const
             ).map(([target, label, icon]) => {
-              const active = target === "home" ? page !== "inbox" && page !== "search" : page === target;
+              const active = page === target;
               return (
                 <button
                   key={target}
-                  className={active ? "active" : ""}
+                  className={`nav-item${active ? " active" : ""}`}
                   aria-label={label}
                   aria-current={active ? "page" : undefined}
                   onClick={() => rootLink(target)}
                 >
-                  <CanonicalIcon name={icon} size={24} />
+                  <span className="nav-icon">
+                    <CanonicalIcon name={icon} size={22} />
+                  </span>
+                  <span>{label}</span>
                 </button>
               );
             })}
