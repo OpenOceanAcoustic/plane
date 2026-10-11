@@ -88,23 +88,27 @@ def test_mobile_auth_requires_csrf_and_never_trusts_client_platform(mobile_ident
     response = client.post(
         "/auth/lab/mobile/sign-in/",
         {"username": "android", "code": totp.now(), "client_platform": "web", "lab_client": "web"},
-        content_type="application/json", HTTP_X_CSRFTOKEN=csrf,
+        content_type="application/json",
+        HTTP_X_CSRFTOKEN=csrf,
     )
     assert response.status_code == 200
     assert client.get("/api/lab/session/").json()["capabilities"]["data_export"] is False
 
 
-@pytest.mark.parametrize("path", [
-    "/api/workspaces/lab/lab/planning-export/",
-    "/api/workspaces/lab/lab/planner/?format=csv",
-    "/api/workspaces/lab/lab/analytics/?format=csv",
-    "/api/workspaces/lab/lab/analytics/?format=png",
-    "/api/workspaces/lab/lab/analytics/?format=svg",
-    "/api/workspaces/lab/lab/finance/entries/?format=csv",
-    "/api/workspaces/lab/export-issues/",
-    "/api/workspaces/lab/export-analytics/",
-    "/api/workspaces/lab/user-activity/00000000-0000-0000-0000-000000000001/export/",
-])
+@pytest.mark.parametrize(
+    "path",
+    [
+        "/api/workspaces/lab/lab/planning-export/",
+        "/api/workspaces/lab/lab/planner/?format=csv",
+        "/api/workspaces/lab/lab/analytics/?format=csv",
+        "/api/workspaces/lab/lab/analytics/?format=png",
+        "/api/workspaces/lab/lab/analytics/?format=svg",
+        "/api/workspaces/lab/lab/finance/entries/?format=csv",
+        "/api/workspaces/lab/export-issues/",
+        "/api/workspaces/lab/export-analytics/",
+        "/api/workspaces/lab/user-activity/00000000-0000-0000-0000-000000000001/export/",
+    ],
+)
 def test_mobile_cannot_request_dedicated_export_directly(mobile_identity, path):
     _, totp, _ = mobile_identity
     client = Client()
@@ -117,7 +121,9 @@ def test_mobile_cannot_request_dedicated_export_directly(mobile_identity, path):
 def test_web_login_preserves_export_capability(mobile_identity):
     _, totp, _ = mobile_identity
     client = Client()
-    response = client.post("/auth/lab/sign-in/", {"username": "android", "code": totp.now()}, content_type="application/json")
+    response = client.post(
+        "/auth/lab/sign-in/", {"username": "android", "code": totp.now()}, content_type="application/json"
+    )
     assert response.status_code == 200
     assert client.get("/api/lab/session/").json()["capabilities"]["data_export"] is True
 
@@ -159,7 +165,11 @@ def test_ticket_is_short_lived_and_page_session_bound(laboratory, settings):
     session.save()
     page = Page.objects.create(workspace=lab["workspace"], owned_by=lab["member"], name="Collaborative mobile")
     ProjectPage.objects.create(workspace=lab["workspace"], project=lab["project"], page=page)
-    response = client.post(lab["base"] + "live-ticket/", {"project_id": str(lab["project"].id), "page_id": str(page.id)}, content_type="application/json")
+    response = client.post(
+        lab["base"] + "live-ticket/",
+        {"project_id": str(lab["project"].id), "page_id": str(page.id)},
+        content_type="application/json",
+    )
     assert response.status_code == 201
     body = response.json()
     assert body["expires_in"] == 60
@@ -168,6 +178,7 @@ def test_ticket_is_short_lived_and_page_session_bound(laboratory, settings):
     assert "cookie" not in body
     from plane.lab.mobile import ticket_key
     from plane.settings.redis import redis_instance
+
     redis = redis_instance()
     key = ticket_key(body["ticket"])
     assert 0 < redis.ttl(key) <= 60
@@ -182,6 +193,7 @@ def test_ticket_is_short_lived_and_page_session_bound(laboratory, settings):
 
 def test_ticket_rejects_private_pages_restricted_guests_and_missing_session(laboratory):
     from plane.db.models import ProjectMember
+
     lab = laboratory
     page = Page.objects.create(workspace=lab["workspace"], owned_by=lab["lead"], name="Private", access=1)
     ProjectPage.objects.create(workspace=lab["workspace"], project=lab["project"], page=page)
@@ -193,11 +205,13 @@ def test_ticket_rejects_private_pages_restricted_guests_and_missing_session(labo
     page.save(update_fields=["access"])
     ProjectMember.objects.filter(project=lab["project"], member=lab["member"]).update(role=5)
     assert client.post(lab["base"] + "live-ticket/", body, content_type="application/json").status_code == 403
-    assert Client().post(lab["base"] + "live-ticket/", body, content_type="application/json").status_code in (401,403)
+    assert Client().post(lab["base"] + "live-ticket/", body, content_type="application/json").status_code in (401, 403)
+
 
 @pytest.mark.parametrize("restriction", ["locked", "archived", "guest"])
 def test_readonly_live_ticket_retains_authorized_document_synchronization(laboratory, restriction):
     from plane.db.models import ProjectMember
+
     lab = laboratory
     page = Page.objects.create(workspace=lab["workspace"], owned_by=lab["member"], name="Read-only collaboration")
     ProjectPage.objects.create(workspace=lab["workspace"], project=lab["project"], page=page)
@@ -215,6 +229,10 @@ def test_readonly_live_ticket_retains_authorized_document_synchronization(labora
         page.save(update_fields=["owned_by"])
     client = Client()
     client.force_login(lab["member"])
-    response = client.post(lab["base"] + "live-ticket/", {"project_id": str(lab["project"].id), "page_id": str(page.id)}, content_type="application/json")
+    response = client.post(
+        lab["base"] + "live-ticket/",
+        {"project_id": str(lab["project"].id), "page_id": str(page.id)},
+        content_type="application/json",
+    )
     assert response.status_code == 201
     assert response.json()["read_only"] is True

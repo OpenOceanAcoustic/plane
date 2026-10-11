@@ -47,12 +47,14 @@ def is_export_request(request):
 
 def instance_mobile_version(view):
     """Attach capabilities outside the instance cache, including cached pre-upgrade data."""
+
     @wraps(view)
     def wrapped(*args, **kwargs):
         response = view(*args, **kwargs)
         if response.status_code == 200:
             response.data = {**response.data, "mobile_api_version": MOBILE_API_VERSION}
         return response
+
     return wrapped
 
 
@@ -64,11 +66,18 @@ class MobileSessionView(APIView):
         if request.query_params.get("admin") == "true" and not InstanceAdmin.objects.filter(user=request.user).exists():
             raise NotAuthenticated("管理员会话已失效")
         user = request.user
-        return Response({
-            "user": {"id": str(user.id), "username": user.username, "display_name": user.display_name, "email": user.email},
-            **session_capabilities(request),
-            "mobile_api_version": MOBILE_API_VERSION,
-        })
+        return Response(
+            {
+                "user": {
+                    "id": str(user.id),
+                    "username": user.username,
+                    "display_name": user.display_name,
+                    "email": user.email,
+                },
+                **session_capabilities(request),
+                "mobile_api_version": MOBILE_API_VERSION,
+            }
+        )
 
 
 def ticket_key(token):
@@ -104,8 +113,13 @@ class LiveTicketView(LabView):
             redis_instance().set(ticket_key(token), json.dumps(payload), ex=TICKET_TTL, nx=True)
         except RedisError:
             return Response({"error": "协作服务暂不可用"}, status=503)
-        return Response({
-            "ticket": token, "expires_in": TICKET_TTL,
-            "document_name": str(page.id), "document_type": "project_page",
-            "read_only": payload["read_only"],
-        }, status=201)
+        return Response(
+            {
+                "ticket": token,
+                "expires_in": TICKET_TTL,
+                "document_name": str(page.id),
+                "document_type": "project_page",
+                "read_only": payload["read_only"],
+            },
+            status=201,
+        )
