@@ -21,6 +21,7 @@ from .finance_models import (
 )
 from .finance_services import finance_removal_state
 from .models import Audit, Bounty, Stage
+from .finance_permissions import action_permission
 from .permissions import project_ids, require_lead
 from .planning_views import LabView
 
@@ -87,6 +88,16 @@ def projection(workspace, user, overview, project=None, scope="finance", selecte
         return identifier
 
     def action(kind, label, node_id, body=None, enabled=True, reason=""):
+        identifier = (body or {}).get("project_id") or context_id
+        target = next((row for row in overview["projects"] if row["id"] == identifier), None)
+        if target and kind not in {"vc-stage", "project-archive", "project-unarchive"}:
+            permission = action_permission(kind)
+            if not (
+                target.get("can_manage_permissions")
+                if permission == "manage"
+                else permission in target.get("permissions", [])
+            ):
+                return
         actions.append(
             {
                 "id": f"{kind}:{node_id}",

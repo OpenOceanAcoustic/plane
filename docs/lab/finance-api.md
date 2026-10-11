@@ -82,3 +82,12 @@ Project VC budget and simplified bounty publication:
 - Hall publication writes task material once and submits the same deliverable/criteria as public and execution fields. Additional cash/person-day/safety inputs remain optional advanced settings. Publication reserves VC only; acceptance records earned VC, and cash confirmation/payment remain independent. Deletion releases unawarded VC to the original budget source.
 - The finance screen shows current project VC budget balances and a separate VC ledger/export tab. Existing stages, forecasts, settlement/cash records and historical qualifications remain unchanged when a new budget is set.
 - The bounty workflow canvas defaults to the main flow, with major-review stages included when required and only relevant exception/history branches visible. “全部流转” reveals the original available transitions, “主流程” restores the compact view, and “当前阶段” focuses the current node. Display filtering does not change server workflow nodes, actions, permissions or retained history.
+
+## Project finance delegation
+
+`GET finance/permissions/?project_id=<uuid>` lists active project members and their finance permissions.
+`POST finance/permissions/` accepts `{project_id,user_id,permissions}`. Permissions are `view`, `record`, `approve`, and `pay`; any write permission also includes `view`. An empty list revokes the grant. Grants apply only to the selected project and stop working when workspace/project membership is revoked or the member becomes a guest.
+
+Project creators, current project leads, and workspace administrators with active project membership retain all project finance permissions and can grant/revoke other members' access. Their own permissions cannot be removed by a grant. Delegates cannot grant access or delete/restore a finance project or stage. Public-pool management remains available to all active workspace administrators after a designated manager changes.
+
+`record` covers cash budgets, receipts, opening balances, internal transfers and reserves. `approve` covers final reward approval and reward formulas. `pay` covers payment scheduling/cancellation, offline payment, external expenses, risk-reserve expenditure and tax remittance. Reversal requires the permission of the original operation. Overview projects include `permissions`, `can_manage_permissions`, and `allowed_actions`; web and Android use the same server rules.

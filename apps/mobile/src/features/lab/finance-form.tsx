@@ -128,24 +128,28 @@ export function LabFinanceActionDialog({
   const defaults = chosen.body ?? {};
   const action = chosen.action;
   const members = data.members.map((member) => ({ value: member.id, label: member.name }));
-  const manageable = data.accounts.filter((account) => account.can_manage);
+  const projectAllowed = (id: string | null) =>
+    data.projects.some((project) => project.id === id && project.allowed_actions?.includes(action));
+  const manageable = data.accounts.filter(
+    (account) => account.can_manage && (account.project_id ? projectAllowed(account.project_id) : data.is_manager)
+  );
   const accounts = manageable.map((account) => ({
     value: account.id,
     label: `${account.label} · 可用 ¥${account.available}`,
   }));
   const stages = data.stages
-    .filter((stage) => stage.can_manage && !stage.deleted)
+    .filter((stage) => stage.can_manage && projectAllowed(stage.project_id) && !stage.deleted)
     .map((stage) => ({ value: stage.stage_id, label: `${stage.name} · 执行实额 ¥${stage.execution_funded}` }));
   const unsettledStages = (store.stages ?? [])
     .filter(
       (stage) =>
         (!projectId || stage.project_id === projectId) &&
         !data.stages.some((row) => row.stage_id === stage.id) &&
-        store.planner?.projects.some((project) => project.id === stage.project_id && project.lead)
+        data.projects.some((project) => project.id === stage.project_id && project.allowed_actions?.includes("stage"))
     )
     .map((stage) => ({ value: stage.id, label: `${stage.project} · ${stage.name} · B ${stage.budget} VC` }));
   const settlements = data.settlements
-    .filter((row) => row.can_manage)
+    .filter((row) => row.can_pay)
     .map((row) => ({
       value: row.id,
       label: `${row.user_name} · ${row.kind === "history" ? "历史" : "执行"} · 待付 ¥${row.outstanding}`,
@@ -189,7 +193,7 @@ export function LabFinanceActionDialog({
           "batch_id",
           "原到账风险准备金批次",
           data.batches
-            .filter((row) => row.can_manage && !row.reversed)
+            .filter((row) => row.can_pay && !row.reversed)
             .map((row) => ({ value: row.id, label: `${row.source} · 尚余 ¥${row.risk_remaining}` }))
         ),
         select("category", "责任事项类别", [
@@ -297,9 +301,9 @@ export function LabFinanceActionDialog({
     case "opening":
       fields = [
         select("project_id", "资金归属", [
-          { value: "public", label: "实验室公共资金" },
+          ...(data.is_manager ? [{ value: "public", label: "实验室公共资金" }] : []),
           ...data.projects
-            .filter((project) => project.is_lead && !project.deleted)
+            .filter((project) => project.allowed_actions?.includes("opening") && !project.deleted)
             .map((project) => ({ value: project.id, label: project.name })),
         ]),
         select("stage_id", "所属阶段（奖励余额必填）", stages, false),

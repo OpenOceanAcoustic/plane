@@ -5,6 +5,7 @@ from django.urls import path
 
 from .finance_views import (
     FinanceActionView,
+    FinancePermissionView,
     FinanceEntriesView,
     FinanceOverviewView,
     RewardForecastView,
@@ -13,6 +14,7 @@ from .finance_views import (
 )
 
 finance_patterns = [
+    path("finance/permissions/", FinancePermissionView.as_view()),
     path("finance/overview/", FinanceOverviewView.as_view()),
     path("finance/entries/", FinanceEntriesView.as_view()),
     path("finance/formulas/<uuid:pk>/", RewardFormulaView.as_view()),

@@ -45,7 +45,7 @@ RAYON_NUM_THREADS=1 pnpm --filter space build
 tools/lab/lab.sh start
 ```
 
-随后 `sh backend.sh` 输出内网注册链接。已发出的有效链接可将 `localhost` 替换为 `192.168.137.90`，保留端口、路径和 `#` 后的 token。再次运行不带参数的 `setup` 会保留已配置的访问地址；显式使用 `--public-url http://localhost:8080` 才恢复回环入口。
+随后 `sh backend.sh` 输出内网注册链接。有效链接可将 `localhost` 替换为 `192.168.137.90`，保留端口及带 token 的完整路径。再次运行不带参数的 `setup` 会保留已配置的访问地址；显式使用 `--public-url http://localhost:8080` 才恢复回环入口。
 
 本机首次构建已使用 DaoCloud 缓存拉取上游镜像，Alpine/PyPI 下载使用阿里云，Go 模块使用 goproxy.cn。容器下载较慢的依赖经宿主机缓存供构建使用，系统包保留签名校验，宿主机通过 HTTPS 验证远端下载。运行镜像已保存在 Docker 中，日常 `start`/`stop` 无需重新下载或依赖临时构建缓存。备份同样复用已有 Alpine 镜像，仅在本地缺失时拉取。
 
@@ -76,7 +76,7 @@ sh backend.sh purge
 
 管理员初始化已有有效邀请时须先用 `revoke` 撤销，再生成新链接；管理员已完成绑定后使用 `invite` 添加成员。注册链接不写入文件。
 
-输出的 URL 默认 24 小时有效。token 位于 URL 的 fragment（`#` 后），避免进入反向代理日志、Referer 和链接预览；浏览器只将它发送到认证 POST 接口。GET 不消耗邀请。`list` 输出 ID 和状态，不能重新取回原 token。请直接、安全地交给已确认身份的成员。
+输出的 URL 格式为 `/lab/register/<token>`，默认 24 小时有效。代理在返回注册页面前向后端验证 token；没有 token、无效、已使用、撤销或过期的链接均返回 HTTP 404，固定 `/lab/register` 和旧 fragment 链接也返回 404。GET、HEAD 和链接预览不消耗邀请；成功确认绑定后立即失效并返回登录。注册页面不缓存，设置 `Referrer-Policy: no-referrer`，代理日志省略 URL 和凭据头。`list` 输出 ID 和状态，不能重新取回原 token。请直接、安全地交给已确认身份的成员；尚未使用的旧 fragment 邀请须撤销后重新签发。
 
 注册填写 3–64 位英文用户名（忽略大小写）、显示姓名、联系邮箱；邮箱用于联系，无需 SMTP 验证。恢复链接无需重新填写资料。扫码绑定 Authenticator 后输入六位码确认，再等待下一动态码登录。每个动态码时间步只能使用一次，管理后台和主应用也共用这一限制。动态码采用 30 秒标准 TOTP、前后一步时钟容差，依据 [PyOTP 文档](https://pyauth.github.io/pyotp/)。每账号十分钟五次登录提交，成功也计数；重复点击、切换 IP 或重启服务均不增加额度。
 

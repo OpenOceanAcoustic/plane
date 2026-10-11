@@ -4,6 +4,8 @@
  */
 
 import { LabLogin } from "@/components/lab/login";
+import { useParams } from "react-router";
 export default function LabRegisterPage() {
-  return <LabLogin register />;
+  const { token } = useParams();
+  return <LabLogin key={token} register invitationToken={token} />;
 }

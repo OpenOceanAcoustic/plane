@@ -10,7 +10,7 @@ from .workflow_urls import workflow_patterns
 from .bounty_urls import bounty_patterns
 from .lifecycle_workflow import lifecycle_patterns
 from .finance_urls import finance_patterns
-from .auth_views import LabAuthView, LabBrowserView, LabSignOutView
+from .auth_views import LabAuthView, LabBrowserView, LabInvitationView, LabSignOutView
 from .mobile import LiveTicketView
 from .contributions import ContributionsCalendarView, ContributionsEntriesView, ContributionsView
 from .planning_views import (
@@ -39,6 +39,7 @@ from .bounty_views import (
 )
 
 auth_patterns = [
+    path("invitation/", LabInvitationView.as_view()),
     path("enroll/", LabAuthView.as_view(operation="enroll")),
     path("confirm/", LabAuthView.as_view(operation="confirm")),
     path("sign-in/", LabAuthView.as_view(operation="signin")),

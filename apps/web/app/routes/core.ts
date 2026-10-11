@@ -14,7 +14,7 @@ export const coreRoutes: RouteConfigEntry[] = [
 
   // Home - Sign In
   layout("./(home)/layout.tsx", [index("./(home)/page.tsx")]),
-  route("lab/register", "./lab-register.tsx"),
+  route("lab/register/:token", "./lab-register.tsx"),
 
   // Sign Up
   layout("./(all)/sign-up/layout.tsx", [route("sign-up", "./(all)/sign-up/page.tsx")]),

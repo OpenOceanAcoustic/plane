@@ -12,6 +12,7 @@ import type { LabFinanceDeletion } from "./finance-delete";
 import { LabFinanceActionDialog, accountKindLabels, financeActionLabels } from "./finance-form";
 import type { LabFinanceChosenAction } from "./finance-form";
 import { LabForecastDialog, LabFormulaEditor } from "./finance-formula";
+import { FinancePermissionDialog } from "./finance-permissions";
 import { LabLedger } from "./ledger";
 import { LabRecordWorkflowView } from "./record-workflow";
 // oxlint-disable-next-line import/no-unassigned-import -- local financial and task surfaces
@@ -84,6 +85,7 @@ export const LabFinance = observer(function LabFinance({
     });
   const [tab, setTab] = useState("accounts");
   const [chosen, setChosen] = useState<LabFinanceChosenAction>();
+  const [permissionsOpen, setPermissionsOpen] = useState(false);
   const [formulaOpen, setFormulaOpen] = useState(false);
   const [forecastOpen, setForecastOpen] = useState(false);
   const [deletion, setDeletion] = useState<LabFinanceDeletion>();
@@ -122,10 +124,12 @@ export const LabFinance = observer(function LabFinance({
     gross: totalMoney(activeBatches.map((batch) => batch.gross)),
     D: totalMoney(activeBatches.map((batch) => batch.D)),
   };
-  const lead = Boolean(selectedProject?.is_lead && !selectedProject.deleted);
-  const canManage = projectId
-    ? lead
-    : Boolean(data?.is_manager || data?.projects.some((project) => project.is_lead && !project.deleted));
+  const lead = Boolean(selectedProject?.can_manage_permissions && !selectedProject.deleted);
+  const allowedActions = new Set(data?.allowed_actions ?? []);
+  const canManage = allowedActions.size > 0;
+  const canApprove = projectId
+    ? selectedProject?.permissions?.includes("approve")
+    : data?.projects.some((row) => row.permissions?.includes("approve") && !row.deleted);
   const memberName = (id: string) => data?.members.find((member) => member.id === id)?.name ?? "本人／历史成员";
   const stageName = (id: string) => data?.stages.find((stage) => stage.stage_id === id)?.name ?? "阶段";
   const accountName = (id: string) => data?.accounts.find((account) => account.id === id)?.label ?? "资金账户";
@@ -162,6 +166,15 @@ export const LabFinance = observer(function LabFinance({
   ];
   return (
     <div className="lab-finance space-y-5">
+      {permissionsOpen && selectedProject?.can_manage_permissions && (
+        <FinancePermissionDialog
+          key={projectId}
+          store={store}
+          projectId={projectId}
+          onClose={() => setPermissionsOpen(false)}
+          onSaved={onSaved}
+        />
+      )}
       <div className="flex flex-wrap items-center gap-2">
         <select
           aria-label="资金项目"
@@ -192,12 +205,17 @@ export const LabFinance = observer(function LabFinance({
             设置 VC 预算
           </Button>
         )}
-        {lead && (
+        {selectedProject?.can_manage_permissions && (
+          <Button variant="neutral-primary" size="sm" onClick={() => setPermissionsOpen(true)}>
+            财务权限
+          </Button>
+        )}
+        {canApprove && !!projectId && (
           <Button variant="neutral-primary" size="sm" onClick={() => setFormulaOpen(true)}>
             项目奖励公式
           </Button>
         )}
-        {selectedProject?.is_lead && !selectedProject.deleted && (
+        {selectedProject?.can_manage_permissions && !selectedProject.deleted && (
           <Button
             variant="danger"
             size="sm"
@@ -213,7 +231,7 @@ export const LabFinance = observer(function LabFinance({
             删除资金项目
           </Button>
         )}
-        {selectedProject?.is_lead && selectedProject.deleted && (
+        {selectedProject?.can_manage_permissions && selectedProject.deleted && (
           <Button
             size="sm"
             variant="neutral-primary"
@@ -240,11 +258,13 @@ export const LabFinance = observer(function LabFinance({
             }}
           >
             <option value="">办理资金事项…</option>
-            {managementActions.map((action) => (
-              <option key={action} value={action}>
-                {financeActionLabels[action]}
-              </option>
-            ))}
+            {managementActions
+              .filter((action) => allowedActions.has(action))
+              .map((action) => (
+                <option key={action} value={action}>
+                  {financeActionLabels[action]}
+                </option>
+              ))}
           </select>
         )}
         {(data?.is_manager || data?.can_designate_manager) && (
@@ -407,7 +427,16 @@ export const LabFinance = observer(function LabFinance({
                 {
                   label: "办理",
                   cell: (row) =>
-                    row.can_manage ? (
+                    row.can_manage &&
+                    allowedActions.has(
+                      row.kind === "execution"
+                        ? "dispute"
+                        : row.kind === "withholding"
+                          ? "tax-remit"
+                          : row.kind === "retained"
+                            ? "stage-allocation"
+                            : "expense"
+                    ) ? (
                       <Button
                         size="sm"
                         variant="neutral-primary"
@@ -442,7 +471,7 @@ export const LabFinance = observer(function LabFinance({
           <section aria-label="真实到账批次" className="space-y-2">
             <div className="flex flex-wrap items-center gap-3">
               <h2 className="mr-auto text-14 font-semibold">实际到账与准备金明细</h2>
-              {data.stages.some((stage) => stage.can_manage && !stage.deleted) && (
+              {data.stages.some((stage) => stage.can_record && !stage.deleted) && (
                 <Button size="sm" variant="primary" onClick={() => open("receipt")}>
                   登记一笔到账
                 </Button>
@@ -555,7 +584,7 @@ export const LabFinance = observer(function LabFinance({
                     <span className="text-12 text-secondary">
                       公式 {stage.formula_version ? `v${stage.formula_version}` : "尚未配置"}
                     </span>
-                    {stage.can_manage && !stage.deleted && (
+                    {stage.can_delete && !stage.deleted && (
                       <Button
                         size="sm"
                         variant="danger"
@@ -840,12 +869,14 @@ export const LabFinance = observer(function LabFinance({
                 {
                   label: "办理",
                   cell: (row) =>
-                    row.can_manage ? (
+                    row.can_manage || row.can_pay ? (
                       <div className="flex flex-col gap-1">
-                        <Button size="sm" onClick={() => open("commit", { settlement_id: row.id })}>
-                          安排支付
-                        </Button>
-                        {row.kind === "execution" && (
+                        {row.can_pay && (
+                          <Button size="sm" onClick={() => open("commit", { settlement_id: row.id })}>
+                            安排支付
+                          </Button>
+                        )}
+                        {row.can_manage && row.kind === "execution" && (
                           <Button
                             size="sm"
                             variant="neutral-primary"

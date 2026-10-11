@@ -4,20 +4,14 @@
  */
 import { expect, test } from "@playwright/test";
 
-test("StrictMode preserves a one-use fragment until binding, without sending it in page URLs", async ({
-  page,
-  baseURL,
-}) => {
+test("StrictMode preserves the path token until binding and then returns to login", async ({ page, baseURL }) => {
+  const invitation = "A".repeat(43);
   let enrolled = false,
     confirmed = false;
-  const pageRequests: string[] = [];
-  page.on("request", (request) => {
-    if (request.method() === "GET") pageRequests.push(request.url());
-  });
   await page.route("**/auth/get-csrf-token/", (route) => route.fulfill({ json: { csrf_token: "test-csrf" } }));
   await page.route("**/auth/lab/enroll/", async (route) => {
     expect(route.request().postDataJSON()).toEqual({
-      token: "one-use-invitation",
+      token: invitation,
       username: "alice",
       display_name: "成员",
       email: "alice@example.org",
@@ -38,9 +32,9 @@ test("StrictMode preserves a one-use fragment until binding, without sending it 
     confirmed = true;
     await route.fulfill({ status: 201, json: { username: "alice" } });
   });
-  await page.goto("/register#one-use-invitation");
+  await page.goto(`/register/${invitation}`);
   await expect(page.getByRole("button", { name: "开始绑定" })).toBeVisible();
-  await expect(page).toHaveURL(new URL("/register", baseURL).href);
+  await expect(page).toHaveURL(new URL(`/register/${invitation}`, baseURL).href);
   await page.getByLabel("用户名", { exact: true }).fill("alice");
   await page.getByLabel("显示姓名").fill("成员");
   await page.getByLabel("联系邮箱").fill("alice@example.org");
@@ -48,9 +42,9 @@ test("StrictMode preserves a one-use fragment until binding, without sending it 
   await expect(page.getByAltText("Authenticator 绑定二维码")).toBeVisible();
   await page.getByLabel("六位动态码").fill("123456");
   await page.getByRole("button", { name: "确认绑定" }).click();
-  await expect(page.getByRole("status")).toContainText("绑定成功");
+  await expect(page).toHaveURL(new URL("/", baseURL).href);
+  await expect(page.getByLabel("用户名", { exact: true })).toBeVisible();
   expect(enrolled && confirmed).toBeTruthy();
-  expect(pageRequests.every((url) => !url.includes("one-use-invitation"))).toBeTruthy();
 });
 
 test("no invite offers no registration form and login exposes only username and dynamic code", async ({ page }) => {

@@ -49,7 +49,7 @@ from .finance_models import (
     PublicDutyPayment,
 )
 from .models import Allocation, Bounty, Ledger, Stage
-from .permissions import require_lead
+from .finance_permissions import action_permission, project_finance_access, require_project_finance
 
 ZERO = Decimal("0.00")
 CENT = Decimal("0.01")
@@ -171,17 +171,14 @@ def policy(workspace, create=False):
 
 
 def manager_allowed(user, workspace):
-    return (
-        policy(workspace).manager_id == user.id
-        and WorkspaceMember.objects.filter(
-            workspace=workspace, member=user, role=20, is_active=True, member__is_active=True
-        ).exists()
-    )
+    return WorkspaceMember.objects.filter(
+        workspace=workspace, member=user, role=20, is_active=True, member__is_active=True
+    ).exists()
 
 
 def require_manager(user, workspace):
     if not manager_allowed(user, workspace):
-        raise PermissionDenied("公共资金池由指定工作区管理员管理")
+        raise PermissionDenied("需要有效工作区管理员权限")
 
 
 def account(workspace, kind, stage=None, project=None):
@@ -209,11 +206,11 @@ def account(workspace, kind, stage=None, project=None):
     return row
 
 
-def account_permission(user, row):
+def account_permission(user, row, permission="record"):
     if row.kind in PUBLIC_KINDS or row.kind == "withholding" and row.project_id_snapshot is None:
         require_manager(user, row.workspace)
     else:
-        require_lead(user, row.project)
+        require_project_finance(user, row.project, permission)
 
 
 def balance(row):
@@ -379,22 +376,22 @@ def require_evidence(data):
     return require_reason(data, "evidence")
 
 
-def stage_budget(user, workspace, identifier):
+def stage_budget(user, workspace, identifier, permission="record"):
     row = get_object_or_404(
         StageBudget.objects.select_related("stage__project", "stage__workspace"),
         stage_id=identifier,
         stage__workspace_id_snapshot=workspace.id,
     )
-    require_lead(user, row.stage.project)
+    require_project_finance(user, row.stage.project, permission)
     require_finance_open(workspace, row.stage.project_id_snapshot, row.stage_id)
     return row
 
 
-def account_by_id(user, workspace, identifier):
+def account_by_id(user, workspace, identifier, permission="record"):
     row = get_object_or_404(
         FinancialAccount.objects.select_related("project", "workspace", "stage"), id=identifier, workspace=workspace
     )
-    account_permission(user, row)
+    account_permission(user, row, permission)
     require_finance_open(workspace, row.project_id_snapshot, row.stage_id)
     return row
 
@@ -526,7 +523,7 @@ def create_budget(operation, user, workspace, data):
         id=data.get("stage_id"),
         workspace_id_snapshot=workspace.id,
     )
-    require_lead(user, stage.project)
+    require_project_finance(user, stage.project, "record")
     if StageBudget.objects.filter(stage=stage).exists():
         raise ValidationError("本阶段现金方案已经冻结；请新建阶段保留旧方案")
     value = money(data.get("E"))
@@ -631,7 +628,7 @@ def create_receipt(operation, user, workspace, data):
 
 
 def create_settlement(operation, user, workspace, data):
-    budget = stage_budget(user, workspace, data.get("stage_id"))
+    budget = stage_budget(user, workspace, data.get("stage_id"), "approve")
     member = user_in_workspace(workspace, data.get("user_id"))
     final = money(data.get("amount"))
     basis = require_reason(data, "performance_basis")
@@ -687,7 +684,7 @@ def historical_amounts(budget):
 
 
 def create_history_settlement(operation, user, workspace, data):
-    budget = stage_budget(user, workspace, data.get("stage_id"))
+    budget = stage_budget(user, workspace, data.get("stage_id"), "approve")
     if not budget.upgraded:
         raise ValidationError("仅升级项目支持历史孵化奖励")
     latest = settlement_latest(budget, "history")
@@ -737,7 +734,7 @@ def create_commit(operation, user, workspace, data):
         id=data.get("settlement_id"),
         budget__stage__workspace_id_snapshot=workspace.id,
     )
-    require_lead(user, settlement.budget.stage.project)
+    require_project_finance(user, settlement.budget.stage.project, "pay")
     latest = settlement_latest(settlement.budget, settlement.kind).get(str(settlement.user_id_snapshot))
     if not latest or latest.id != settlement.id:
         raise ValidationError("请选择成员最新累计核准记录")
@@ -758,7 +755,7 @@ def create_payment(operation, user, workspace, data):
         id=data.get("commitment_id"),
         account__workspace=workspace,
     )
-    require_lead(user, row.settlement.budget.stage.project)
+    require_project_finance(user, row.settlement.budget.stage.project, "pay")
     require_evidence(data)
     gross, withheld = money(data.get("gross"), True), money(data.get("withheld", "0"))
     if gross > commitment_remaining(row) or withheld > gross or gross > balance(row.account):
@@ -787,7 +784,7 @@ def release_risk(operation, user, workspace, data):
         budget__stage__workspace_id_snapshot=workspace.id,
         operation__reversal__isnull=True,
     )
-    require_lead(user, batch.budget.stage.project)
+    require_project_finance(user, batch.budget.stage.project, "record")
     require_evidence(data)
     value = money(data.get("amount"), True)
     risk = account(workspace, "risk", stage=batch.budget.stage)
@@ -804,7 +801,7 @@ def release_risk(operation, user, workspace, data):
 
 
 def external_expense(operation, user, workspace, data, tax=False):
-    row = account_by_id(user, workspace, data.get("account_id"))
+    row = account_by_id(user, workspace, data.get("account_id"), "pay")
     value = money(data.get("amount"), True)
     if row.kind not in (
         {"withholding"} if tax else {"project", "retained", "public", "future_research", "future_exploration"}
@@ -905,7 +902,7 @@ def reverse_operation(operation, user, workspace, data):
     if original.kind == "exploration-allocation":
         require_manager(user, workspace)
     elif original.project_id_snapshot:
-        require_lead(user, original.project)
+        require_project_finance(user, original.project, action_permission("reverse", original))
     else:
         require_manager(user, workspace)
     if operation.kind != "receipt-delete":
@@ -941,7 +938,7 @@ def reverse_operation(operation, user, workspace, data):
             if not entry.batch_id or entry.batch.operation_id != original.id:
                 raise PermissionDenied("只有原始到账分池记录可以随原批次冲正公共池划入")
         else:
-            account_permission(user, entry.account)
+            account_permission(user, entry.account, action_permission("reverse", original))
         require_finance_open(workspace, entry.account.project_id_snapshot, entry.account.stage_id, state=removal)
     if original.kind == "public-payment":
         payment = PublicDutyPayment.objects.get(operation=original)
@@ -1100,7 +1097,7 @@ def perform(user, workspace, action, data):
         if action == "exploration-allocation":
             require_manager(user, workspace)
         else:
-            require_lead(user, initial_project)
+            require_project_finance(user, initial_project, action_permission(action, original))
     if action in REMOVAL_KINDS:
         state = finance_removal_state(workspace)
         if action.endswith("-delete"):
@@ -1169,7 +1166,7 @@ def perform(user, workspace, action, data):
             id=data.get("commitment_id"),
             account__workspace=workspace,
         )
-        require_lead(user, row.settlement.budget.stage.project)
+        require_project_finance(user, row.settlement.budget.stage.project, "pay")
         if commitment_cancelled(row) or commitment_remaining(row) <= 0:
             raise ValidationError("该付款安排已核销或取消")
         result = CommitmentCancellation.objects.create(commitment=row, operation=operation)
@@ -1185,7 +1182,7 @@ def perform(user, workspace, action, data):
             budget__stage__workspace_id_snapshot=workspace.id,
             operation__reversal__isnull=True,
         )
-        require_lead(user, batch.budget.stage.project)
+        require_project_finance(user, batch.budget.stage.project, "pay")
         require_evidence(data)
         require_reason(data, "purpose")
         if data.get("category") not in ("refund", "rework"):
@@ -1314,7 +1311,7 @@ def perform(user, workspace, action, data):
         project = None
         if data.get("project_id"):
             project = get_object_or_404(Project, id=data["project_id"], workspace=workspace)
-            require_lead(user, project)
+            require_project_finance(user, project, "record")
         else:
             require_manager(user, workspace)
         if data.get("stage_id"):
@@ -1431,7 +1428,7 @@ def perform(user, workspace, action, data):
 
 @transaction.atomic
 def save_formula(user, project, data):
-    require_lead(user, project)
+    require_project_finance(user, project, "approve")
     lock(f"finance:{project.workspace_id}")
     require_finance_open(project.workspace, project.id)
     params = parameter_definitions(data.get("parameters", []))
@@ -1465,7 +1462,7 @@ def save_formula(user, project, data):
 
 
 def preview_formula(user, project, data):
-    require_lead(user, project)
+    require_project_finance(user, project, "approve")
     kind = data.get("kind", "task")
     if kind not in ("task", "member"):
         raise ValidationError("预测类型无效")
@@ -1510,9 +1507,7 @@ def create_forecast(user, workspace, data):
     )
     if not formula:
         raise ValidationError("项目尚未配置预计奖励公式")
-    lead = budget.stage.project and budget.stage.project.project_lead_id == user.id
-    if lead:
-        require_lead(user, budget.stage.project)
+    lead = "approve" in project_finance_access(user, budget.stage.project)[0]
     bounty, member = None, None
     if kind == "task":
         bounty = get_object_or_404(Bounty, id=data.get("bounty_id"), stage=budget.stage)
