@@ -4,6 +4,7 @@
  */
 
 export type LabStatus = "todo" | "active" | "review" | "done";
+export type LabPlanningVisibility = "private" | "organization" | "selected" | "leads" | "project";
 export type LabBountyBudget = {
   project_id: string;
   project: string;
@@ -80,6 +81,12 @@ export type LabItem = {
   category_name?: string | null;
   category_color?: string | null;
   public: boolean;
+  visibility?: LabPlanningVisibility;
+  visibility_locked?: boolean;
+  shared_user_ids?: string[];
+  owner_id?: string;
+  owner_name?: string;
+  editable?: boolean;
   folder_id: string | null;
   issue_id: string | null;
   project_id?: string;
@@ -110,6 +117,9 @@ export type LabProject = {
 export type LabPlanner = {
   user_id: string;
   team_access: boolean;
+  team_calendar_access?: boolean;
+  sharing_members?: LabMember[];
+  shared_items?: LabItem[];
   folders: LabFolder[];
   categories?: LabCategory[];
   default_category_id?: string | null;
@@ -175,6 +185,7 @@ export type LabAcceptance = {
   approved_at: string | null;
 };
 export type LabBounty = {
+  visibility?: "organization";
   id: string;
   stage_id: string;
   project_id: string;

@@ -951,6 +951,9 @@ importers:
       '@plane/types':
         specifier: workspace:*
         version: link:../../packages/types
+      '@plane/ui':
+        specifier: workspace:*
+        version: link:../../packages/ui
       '@tiptap/core':
         specifier: 'catalog:'
         version: 2.26.3(@tiptap/pm@2.26.1)

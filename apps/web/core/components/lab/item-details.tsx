@@ -5,7 +5,7 @@ import type { ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { ArrowRight, CalendarDays, Clock3, Globe2, LockKeyhole, Maximize2, Minimize2, Pencil } from "lucide-react";
 import type { LabEvent, LabItem, LabStatus } from "@plane/types";
-import { Button, LabBountyBadge } from "@plane/ui";
+import { Button, LabBountyBadge, labPlanningVisibilityLabel } from "@plane/ui";
 
 export type LabProjectIssueRef = { issue_id: string; project_id: string; archived?: boolean };
 export type LabOpenProjectIssue = (issue: LabProjectIssueRef) => void;
@@ -171,7 +171,7 @@ export function LabItemDetails({
             <dt className="text-secondary">可见范围</dt>
             <dd className="mt-1 flex items-center gap-1.5">
               {item.public ? <Globe2 size={13} /> : <LockKeyhole size={13} />}
-              {item.public ? "向负责人公开" : "仅自己可见"}
+              {labPlanningVisibilityLabel(item)}
             </dd>
           </div>
         )}

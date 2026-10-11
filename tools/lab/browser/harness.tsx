@@ -19,6 +19,54 @@ import { FinancePermissionDialog as WebFinancePermissionDialog } from "../../../
 import { FinancePermissionDialog as MobileFinancePermissionDialog } from "../../../apps/mobile/src/features/lab/finance-permissions";
 import type { LabStore as MobileLabStore } from "../../../apps/mobile/src/features/lab/transport";
 import type { LabItem } from "@plane/types";
+import { Planner as MobilePlanner } from "../../../apps/mobile/src/features/lab/planner";
+import { LabPlanningVisibilityFields } from "../../../packages/ui/src/lab-planning-visibility";
+import { MobileSelect } from "../../../apps/mobile/src/components/select";
+
+function VisibilityFields({ mobile = false }: { mobile?: boolean }) {
+  const [saved, setSaved] = useState("");
+  return (
+    <form
+      onSubmit={(event) => {
+        event.preventDefault();
+        const data = new FormData(event.currentTarget);
+        setSaved(
+          JSON.stringify({ visibility: data.get("visibility"), shared_user_ids: data.getAll("shared_user_ids") })
+        );
+      }}
+    >
+      <LabPlanningVisibilityFields
+        members={[
+          { id: "member-2", name: "张三" },
+          { id: "member-3", name: "李四" },
+        ]}
+        SelectComponent={mobile ? MobileSelect : "select"}
+      />
+      <button type="submit">保存</button>
+      <output>{saved}</output>
+    </form>
+  );
+}
+const MobilePlanning = observer(function MobilePlanning() {
+  const source = useMemo(() => new LabStore("", "lab"), []);
+  useEffect(() => {
+    void source.execute(source.loadPlanner);
+  }, [source]);
+  const store: MobileLabStore = {
+    slug: "lab",
+    scope: "lab",
+    planner: source.planner,
+    stages: [],
+    bounties: [],
+    busy: source.busy,
+    error: source.error,
+    request: source.request,
+    execute: source.execute,
+    loadPlanner: source.loadPlanner,
+    loadMarket: source.loadMarket,
+  };
+  return <MobilePlanner store={store} onOpenBounty={() => {}} />;
+});
 
 const Planning = observer(function Planning() {
   const store = useMemo(() => new LabStore("", "lab"), []);
@@ -127,6 +175,10 @@ createRoot(document.getElementById("root")!).render(
       <Contributions />
     ) : path === "/analytics" ? (
       <Analytics />
+    ) : path === "/visibility-fields" || path === "/mobile-visibility-fields" ? (
+      <VisibilityFields mobile={path.startsWith("/mobile")} />
+    ) : path === "/mobile-planner" ? (
+      <MobilePlanning />
     ) : path === "/planner" ? (
       <Planning />
     ) : path === "/workbench" ? (

@@ -1,6 +1,6 @@
 {
   "name": "@ooa/mobile",
-  "version": "1.0.6",
+  "version": "1.0.7",
   "private": true,
   "type": "module",
   "scripts": {
@@ -21,6 +21,7 @@
     "@plane/editor": "workspace:*",
     "@plane/shared-state": "workspace:*",
     "@plane/types": "workspace:*",
+    "@plane/ui": "workspace:*",
     "@tiptap/core": "catalog:",
     "@tiptap/extension-collaboration": "catalog:",
     "@tiptap/extension-image": "catalog:",

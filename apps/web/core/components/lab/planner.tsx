@@ -19,6 +19,8 @@ import type { LabOpenProjectIssue } from "./item-details";
 import { LabTaskOverview } from "./task-overview";
 import { LabBountyPlanningDialog } from "./bounty-planning-dialog";
 import { LabIssueDeleteDialog } from "./issue-delete-dialog";
+import { LabSharedPlanning } from "./shared-planning";
+import { LabPlanningVisibilityFields, labPlanningVisibilityLabel } from "@plane/ui";
 // oxlint-disable-next-line import/no-unassigned-import -- responsive board density shared with workbench
 import "./planner-workbench.css";
 import {
@@ -182,6 +184,7 @@ export const LabPlannerBoard = observer(function LabPlannerBoard({
   return (
     <div className="lab-planner-board flex min-w-0 flex-col gap-4" data-compact={compact}>
       <div className="flex flex-wrap items-center gap-2">
+        <LabSharedPlanning items={planner.shared_items ?? []} />
         <Button
           variant="neutral-primary"
           onClick={() => {
@@ -428,12 +431,9 @@ export const LabPlannerBoard = observer(function LabPlannerBoard({
                     )}
                     <div className="lab-planner-card-meta mb-3">
                       {!item.issue_id && (
-                        <span
-                          className="lab-planner-pill"
-                          title={item.public ? "团队可查看事项内容" : "团队只看到忙碌时间"}
-                        >
+                        <span className="lab-planner-pill" title={labPlanningVisibilityLabel(item)}>
                           {item.public ? <Globe2 size={11} /> : <LockKeyhole size={11} />}
-                          {item.public ? "公开事项" : "私人事项"}
+                          {labPlanningVisibilityLabel(item)}
                         </span>
                       )}
                       {item.priority && priorityNames[item.priority] && (
@@ -615,7 +615,9 @@ export const LabPlannerBoard = observer(function LabPlannerBoard({
                 description: data.get("description"),
                 category_id: data.get("category_id") || null,
                 folder_id: data.get("folder_id") || null,
-                public: data.get("public") === "on",
+                ...(!editing?.issue_id
+                  ? { visibility: data.get("visibility"), shared_user_ids: data.getAll("shared_user_ids") }
+                  : {}),
               })
             )
           }
@@ -628,9 +630,7 @@ export const LabPlannerBoard = observer(function LabPlannerBoard({
               <LabField label="说明">
                 <textarea className={labInputClass} name="description" defaultValue={editing?.description} />
               </LabField>
-              <label className="text-13">
-                <input type="checkbox" name="public" defaultChecked={editing?.public} /> 向负责人公开事项内容
-              </label>
+              <LabPlanningVisibilityFields item={editing} members={planner.sharing_members} />
             </>
           )}
           <LabField label="事项类别">

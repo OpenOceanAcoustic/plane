@@ -126,6 +126,17 @@ class PersonalItem(Record):
     kind = models.CharField(max_length=16, default="research")
     status = models.CharField(max_length=16, default="todo")
     public = models.BooleanField(default=False)
+    visibility = models.CharField(
+        max_length=16,
+        default="private",
+        choices=[
+            ("private", "private"),
+            ("organization", "organization"),
+            ("selected", "selected"),
+            ("leads", "leads"),
+        ],
+    )
+    shared_users = models.ManyToManyField(settings.AUTH_USER_MODEL, related_name="shared_planning_items", blank=True)
 
     class Meta:
         constraints = [

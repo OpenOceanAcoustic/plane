@@ -67,7 +67,8 @@ def bounty_data(row, user, reward_context=None):
             }
         ),
         "access_level": level,
-        "public_summary": publication.summary if publication else "",
+        "public_summary": publication.summary if publication else row.title,
+        "visibility": "organization",
         "detail_url": capabilities["bounty_detail_url"],
         "issue_key": f"{row.issue.project.identifier}-{row.issue.sequence_id}" if row.issue_id else None,
         "can_claim": bool(
@@ -96,8 +97,8 @@ def bounty_data(row, user, reward_context=None):
         "issue_id": str(row.issue_id) if row.issue_id else None,
         "issue_id_snapshot": str(row.issue_id_snapshot),
         "title": row.title,
-        "deliverable": publication.deliverable if public and publication else "" if public else row.deliverable,
-        "criteria": publication.criteria if public and publication else "" if public else row.criteria,
+        "deliverable": publication.deliverable if public and publication else row.deliverable,
+        "criteria": publication.criteria if public and publication else row.criteria,
         "budget": str(row.budget),
         "claim_available": str(claim_available),
         "reserved": None if public else str(row.reserved),

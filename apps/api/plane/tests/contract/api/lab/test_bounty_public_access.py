@@ -55,8 +55,9 @@ def test_hall_public_projection_hides_team_evidence_and_old_unpublished_material
     assert record["issue_key"] == f"OA-{issue.sequence_id}"
     assert client.get(lab["base"] + f"bounties/{bounty}/materials/").status_code == 403
     BountyPublication.objects.filter(bounty_id=bounty).delete()
-    assert client.get(lab["base"] + "bounties/").json() == []
-    assert client.get(lab["base"] + f"bounties/{bounty}/detail/").status_code == 404
+    legacy = client.get(lab["base"] + f"bounties/{bounty}/detail/")
+    assert legacy.status_code == 200 and legacy.json()["visibility"] == "organization"
+    assert legacy.json()["evidence"] == "" and legacy.json()["allocations"] == []
     assert lab["client"](lab["lead"]).get(lab["base"] + "bounties/").status_code == 200
 
 
@@ -221,7 +222,7 @@ def test_card_metadata_personal_workitem_without_bounty_has_no_quota(laboratory)
     assert result[0]["bounty_id"] is None and result[0]["bounty_budget"] is None
 
 
-def test_old_bounty_requires_explicit_summary_and_never_publishes_old_evidence(laboratory):
+def test_old_bounty_keeps_organization_visibility_and_never_publishes_old_evidence(laboratory):
     lab = laboratory
     bounty, _, _ = prepare(lab)
     BountyPublication.objects.filter(bounty_id=bounty).delete()
@@ -239,12 +240,12 @@ def test_old_bounty_requires_explicit_summary_and_never_publishes_old_evidence(l
     assert record["public_summary"] == data["public_summary"]
     assert record["deliverable"] == data["public_deliverable"] and record["evidence"] == ""
     assert (
-        action(lab, lab["lead"], bounty, "public-summary", {"enabled": False, "reason": "暂停公示"}).status_code == 200
+        action(lab, lab["lead"], bounty, "public-summary", {"enabled": False, "reason": "暂停公示"}).status_code == 400
     )
-    assert lab["client"](user).get(lab["base"] + "bounties/").json() == []
+    assert len(lab["client"](user).get(lab["base"] + "bounties/").json()) == 1
 
 
-def test_busy_calendar_events_have_no_bounty_star_metadata(laboratory):
+def test_organization_bounty_calendar_shows_public_title_without_native_task_access(laboratory):
     from plane.lab.models import TimeBlock
 
     lab = laboratory
@@ -261,9 +262,8 @@ def test_busy_calendar_events_have_no_bounty_star_metadata(laboratory):
 
     query = urlencode({"team": "1", "start": begin.isoformat(), "end": (begin + timedelta(days=1)).isoformat()})
     hidden = lab["client"](admin).get(lab["base"] + "calendar/?" + query).json()["events"][0]
-    assert hidden["title"] == "忙碌" and not hidden["editable"]
-    assert not set(hidden).intersection(
-        {"bounty_id", "bounty_status", "bounty_detail_url", "color", "category_color", "issue_id"}
-    )
+    assert hidden["title"] == "Team task" and not hidden["editable"]
+    assert hidden["bounty_id"] == bounty and not hidden["can_open_issue"]
+    assert "issue_id" not in hidden and "revision" not in hidden and hidden["category_color"] is None
     own = lab["client"](user).get(lab["base"] + "calendar/?" + query.replace("team=1", "team=0")).json()["events"][0]
     assert own["bounty_id"] == bounty and own["color"] == "#abcdef"

@@ -11,6 +11,8 @@ import { today, monthDays, scheduleMutation } from "./business";
 import { calendarInstant, localInput } from "./calendar-time";
 import { Fields } from "./fields";
 import { Gantt } from "./gantt";
+import { LabPlanningVisibilityFields, labPlanningVisibilityLabel } from "@plane/ui";
+import { SharedPlanning } from "./shared-planning";
 const statuses = [
   { id: "todo", name: "待做" },
   { id: "active", name: "进行中" },
@@ -233,13 +235,14 @@ export function Planner({
             </button>
           </PageHeading>
           <main className="pm-body pm-planner">
+            {!team && <SharedPlanning items={planner.shared_items ?? []} />}
             <ErrorMessage error={store.error || calendar.error} />
             {notice && (
               <p role="status" className="lab-muted">
                 {notice}
               </p>
             )}
-            {team && !planner.team_access ? (
+            {team && !(planner.team_calendar_access ?? planner.team_access) ? (
               <Empty>暂无团队排期查看权限。</Empty>
             ) : (
               <>
@@ -1011,7 +1014,7 @@ export function Planner({
               状态: statuses.find((row) => row.id === chosenItem.status)?.name,
               事项类别: chosenItem.category_name ?? "未分类",
               文件夹: planner.folders.find((row) => row.id === chosenItem.folder_id)?.name ?? "未分类",
-              可见范围: chosenItem.public ? "团队可见" : "仅自己可见",
+              可见范围: labPlanningVisibilityLabel(chosenItem),
               截止日期: chosenItem.target_date,
               本周计划: `${chosenItem.schedule.week_minutes / 60} h`,
             }}
@@ -1072,7 +1075,9 @@ export function Planner({
               description: form.get("description"),
               category_id: form.get("category_id") || null,
               folder_id: form.get("folder_id") || null,
-              public: form.get("public") === "on",
+              ...(!item?.issue_id
+                ? { visibility: form.get("visibility"), shared_user_ids: form.getAll("shared_user_ids") }
+                : {}),
               ...(!(item?.bounty_id || item?.is_bounty) && item?.can_edit_issue !== false
                 ? { status: form.get("status") }
                 : {}),
@@ -1130,10 +1135,11 @@ export function Planner({
             </LabField>
           )}
           {!chosenItem?.issue_id && (
-            <label>
-              <input name="public" type="checkbox" defaultChecked={chosenItem?.public} />
-              团队可查看事项内容
-            </label>
+            <LabPlanningVisibilityFields
+              item={chosenItem}
+              members={planner.sharing_members}
+              SelectComponent={MobileSelect}
+            />
           )}
           {chosenItem && (
             <Button onClick={() => setDeleteTarget({ path: `items/${chosenItem.id}/`, title: chosenItem.title })}>

@@ -595,7 +595,7 @@ export const LabMarket = observer(function LabMarket({ store }: { store: LabStor
                 public_summary: form.get("public_summary"),
                 public_deliverable: form.get("public_deliverable"),
                 public_criteria: form.get("public_criteria"),
-                enabled: form.get("enabled") === "on",
+                enabled: true,
                 reason: form.get("reason"),
               })
             )
@@ -610,10 +610,7 @@ export const LabMarket = observer(function LabMarket({ store }: { store: LabStor
           <LabField label="全实验室公开验收条件">
             <textarea name="public_criteria" className={labInputClass} required />
           </LabField>
-          <label className="flex items-center gap-2 text-13">
-            <input name="enabled" type="checkbox" defaultChecked />
-            公开展示在全实验室大厅
-          </label>
+          <LabField label="可见范围">组织内可见</LabField>
           <LabField label="修改依据">
             <textarea name="reason" className={labInputClass} required />
           </LabField>
