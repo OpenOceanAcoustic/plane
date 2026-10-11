@@ -86,16 +86,6 @@
 .bx-bounty-card + .bx-bounty-card {
   margin-top: 16px;
 }
-.pm-folder-strip {
-  overflow-x: auto;
-  scrollbar-width: none;
-}
-.pm-folder-strip.is-scroll > button {
-  flex: 0 0 auto;
-}
-.pm-folder-strip::-webkit-scrollbar {
-  display: none;
-}
 .bx-create-bounty {
   position: fixed;
   bottom: calc(96px + var(--native-inset-bottom, 0px));

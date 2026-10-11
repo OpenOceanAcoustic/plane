@@ -301,7 +301,7 @@ export function Planner({
                         </button>
                       ))}
                     </div>
-                    <div className={`pm-folder-strip${planner.folders.length > 1 ? " is-scroll" : ""}`}>
+                    <div className="pm-folder-strip">
                       {[{ id: "all", name: "全部" }, ...planner.folders, { id: "unclassified", name: "未分类" }].map(
                         (row) => (
                           <button
