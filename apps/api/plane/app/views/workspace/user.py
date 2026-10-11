@@ -497,7 +497,7 @@ class WorkspaceUserProfileStatsEndpoint(BaseAPIView):
                 project__project_projectmember__is_active=True,
                 project__archived_at__isnull=True,
             )
-            .filter(**filters)
+            .filter(**{f"issue__{key}": value for key, value in filters.items()})
             .count()
         )
 
