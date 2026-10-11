@@ -4,12 +4,12 @@
 
 import json
 import os
-from pathlib import Path
 import subprocess
 import tempfile
 import time
 import unittest
 import uuid
+from pathlib import Path
 
 
 @unittest.skipUnless(
@@ -68,15 +68,16 @@ class PublicProxyImageStartupTests(unittest.TestCase):
         )
         logs = json.loads(adapted.stdout)["logging"]["logs"]
         encoders = [log["encoder"] for log in logs.values() if "encoder" in log]
-        self.assertEqual(len(encoders), 1)
-        self.assertEqual(
-            encoders[0]["fields"],
-            {
-                "request>uri": {"filter": "delete"},
-                "request>headers": {"filter": "delete"},
-                "resp_headers": {"filter": "delete"},
-            },
-        )
+        self.assertEqual(len(encoders), 2)
+        for encoder in encoders:
+            self.assertEqual(
+                encoder["fields"],
+                {
+                    "request>uri": {"filter": "delete"},
+                    "request>headers": {"filter": "delete"},
+                    "resp_headers": {"filter": "delete"},
+                },
+            )
         subprocess.run(
             common
             + [
@@ -150,6 +151,7 @@ class PublicProxyImageStartupTests(unittest.TestCase):
                             "http://127.0.0.1/",
                         ],
                         capture_output=True,
+                        check=False,
                     )
                     if web.returncode == 0:
                         break
@@ -198,7 +200,7 @@ class PublicProxyImageStartupTests(unittest.TestCase):
                 self.assertEqual(host["CapDrop"], ["ALL"])
                 self.assertIn("no-new-privileges", host["SecurityOpt"])
             finally:
-                subprocess.run(["docker", "rm", "-fv", name], capture_output=True)
+                subprocess.run(["docker", "rm", "-fv", name], capture_output=True, check=False)
 
 
 if __name__ == "__main__":
