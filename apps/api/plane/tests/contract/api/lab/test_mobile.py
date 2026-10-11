@@ -51,22 +51,33 @@ def test_mobile_login_session_and_replay(mobile_identity):
     assert Client().get("/api/lab/session/").status_code == 401
 
 
-def test_mobile_admin_has_independent_cookie_and_role_gate(mobile_identity):
+@pytest.mark.parametrize("is_instance_admin", [False, True])
+def test_mobile_admin_is_web_only_and_does_not_issue_a_session(mobile_identity, is_instance_admin):
     user, totp, _ = mobile_identity
-    assert login(Client(), totp, admin=True).status_code == 401
-    instance = Instance.objects.create(instance_name="Mobile contract", current_version="1.4.2", last_checked_at=timezone.now())
-    InstanceAdmin.objects.create(instance=instance, user=user)
+    if is_instance_admin:
+        instance = Instance.objects.create(
+            instance_name="Mobile contract", current_version="1.4.2", last_checked_at=timezone.now()
+        )
+        InstanceAdmin.objects.create(instance=instance, user=user)
     client = Client()
-    assert login(client, totp, admin=True).status_code == 200
-    assert "admin-session-id" in client.cookies
-    assert "session-id" not in client.cookies
-    session = Session.objects.get(session_key=client.cookies["admin-session-id"].value).get_decoded()
-    assert session["lab_purpose"] == "admin"
-    assert session["lab_client"] == "android"
-    assert session["lab_expires_at"] > timezone.now().timestamp()
-    assert session["lab_admin_reauthenticated_at"] > timezone.now().timestamp() - 10
-    assert client.get("/api/lab/session/?admin=true").json()["client_platform"] == "android"
-    assert client.get("/api/lab/session/").status_code == 401
+    response = login(client, totp, admin=True)
+    assert response.status_code == 403
+    assert response.json()["code"] == "ADMIN_WEB_ONLY"
+    assert "admin-session-id" not in response.cookies
+    assert "session-id" not in response.cookies
+    assert not Session.objects.filter(user_id=str(user.id)).exists()
+    # Blocking the obsolete entry must not consume the code or prevent web administration.
+    response = client.post(
+        "/auth/lab/admin/sign-in/",
+        {"username": user.username, "code": totp.now()},
+        content_type="application/json",
+    )
+    assert response.status_code == (200 if is_instance_admin else 401)
+    if is_instance_admin:
+        session = Session.objects.get(session_key=client.cookies["admin-session-id"].value).get_decoded()
+        assert session["lab_purpose"] == "admin"
+        assert session["lab_client"] == "web"
+        assert "session-id" not in client.cookies
 
 
 def test_mobile_auth_requires_csrf_and_never_trusts_client_platform(mobile_identity):
