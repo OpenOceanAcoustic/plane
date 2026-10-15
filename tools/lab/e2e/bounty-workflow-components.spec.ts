@@ -176,7 +176,7 @@ test.beforeAll(async () => {
         ? await readFile(join(assetDirectory, globalStyle))
         : file
           ? await readFile(join(directory, file))
-          : '<!doctype html><html data-theme="light"><head><link rel="stylesheet" href="/global.css"><link rel="stylesheet" href="/app.css"><style>body{font-family:Inter,sans-serif;background:#f7f8fa;padding:24px}#root{max-width:1180px;margin:auto}[role=dialog]{background:white;position:fixed;inset:5%;overflow:auto;padding:24px;z-index:100}.lab-bounty-flow{height:430px}</style></head><body><div id="root"></div><script src="/app.js"></script></body></html>'
+          : '<!doctype html><html data-theme="light"><head><link rel="stylesheet" href="/global.css"><link rel="stylesheet" href="/app.css"><style>body{font-family:Inter,sans-serif;background:#f7f8fa;padding:24px}#root{max-width:1180px;margin:auto}[role=dialog]{background:white;position:fixed;inset:5%;transform:none;translate:none;overflow:auto;padding:24px;z-index:100}.lab-bounty-flow{height:430px}</style></head><body><div id="root"></div><script src="/app.js"></script></body></html>'
     );
   });
   await new Promise<void>((resolveListening) => server.listen(0, "127.0.0.1", resolveListening));
@@ -186,14 +186,36 @@ test.afterAll(async () => {
   if (server) await new Promise<void>((resolveClosed) => server.close(() => resolveClosed()));
   if (directory) await rm(directory, { recursive: true, force: true });
 });
-async function mount(page: import("@playwright/test").Page, data = workflow(), customBounty = bounty) {
+async function mount(
+  page: import("@playwright/test").Page,
+  data = workflow(),
+  customBounty = bounty,
+  quoteData?: import("../../../packages/types/src/index").LabBountyQuotes
+) {
   page.on("pageerror", (error) => console.error("workflow browser error:", error.message));
   page.on("console", (message) => {
     if (message.type() === "warn" || message.type() === "error") console.error("workflow console:", message.text());
   });
   await page.addInitScript((value) => Object.assign(window, { labBounty: value }), customBounty);
   await page.route("**/auth/get-csrf-token/", (route) => route.fulfill({ json: { csrf_token: "test" } }));
-  await page.route("**/lab/bounties/*/workflow/", (route) => route.fulfill({ json: data }));
+  await page.route("**/lab/bounties/*/workflow/**", (route) => route.fulfill({ json: data }));
+  await page.route("**/lab/bounties/*/quotes/", (route) =>
+    route.fulfill({
+      json: quoteData ?? {
+        quotes: [],
+        can_apply: customBounty.status === "open",
+        available: customBounty.claim_available ?? "10.00",
+        reviewers: [],
+        file_size_limit: 5242880,
+      },
+    })
+  );
+  await page.route("**/lab/stages/", (route) => route.fulfill({ json: [] }));
+  await page.route("**/lab/bounties/", (route) => route.fulfill({ json: [customBounty] }));
+  await page.route("**/lab/inbox/", (route) => route.fulfill({ json: [] }));
+  await page.route("**/lab/planner/", (route) =>
+    route.fulfill({ json: { user_id: "member-c", items: [], projects: [] } })
+  );
   await page.goto(origin);
   await expect(page.locator(".react-flow__node")).toHaveCount(data.nodes.length);
   await expect(page.locator(".react-flow__edge-path").first()).toHaveAttribute("d", /^M/);
@@ -241,21 +263,20 @@ for (const major of [false, true]) {
   });
 }
 
-test("claim warns against the current remaining quota before submission, including public summaries", async ({
-  page,
-}) => {
-  const data = workflow(false, [
-    { id: "claim", action: "claim", label: "申请认领", node_id: "claim", body: {}, enabled: true, reason: "" },
-  ]);
-  await mount(page, data, { ...bounty, claim_available: "4.00", allocations: [] });
-  await page.getByRole("button", { name: "申请认领", exact: true }).click();
-  const dialog = page.getByRole("dialog", { name: "申请认领", exact: true });
-  await dialog.getByLabel("计划 VC", { exact: true }).fill("4.01");
-  await expect(dialog.getByRole("alert")).toHaveText("超过可用额度 4.00 VC");
-  await expect(dialog.getByRole("button", { name: "保存", exact: true })).toBeDisabled();
-  await dialog.getByLabel("计划 VC", { exact: true }).fill("4.00");
-  await expect(dialog.getByRole("alert")).toHaveCount(0);
-  await expect(dialog.getByRole("button", { name: "保存", exact: true })).toBeEnabled();
+test("web workflow offers a fixed original price and permits a supported higher quote", async ({ page }) => {
+  await mount(page, workflow(false), { ...bounty, status: "open", claim_available: "4.00", allocations: [] });
+  await page.getByRole("button", { name: "按原价申请 · 4.00 VC", exact: true }).click();
+  let dialog = page.getByRole("dialog", { name: "按原价申请", exact: true });
+  await expect(dialog.getByLabel("原价（VC）", { exact: true })).toHaveValue("4.00");
+  await expect(dialog.getByLabel("原价（VC）", { exact: true })).toHaveAttribute("readonly", "");
+  await dialog.getByRole("button", { name: "取消", exact: true }).click();
+  await page.getByRole("button", { name: "议价申请", exact: true }).click();
+  dialog = page.getByRole("dialog", { name: "议价申请", exact: true });
+  await dialog.getByLabel("本人交付内容", { exact: true }).fill("新增分析");
+  await dialog.getByLabel("报价（VC）", { exact: true }).fill("8");
+  await expect(dialog.getByRole("button", { name: "提交申请", exact: true })).toBeDisabled();
+  await dialog.getByLabel("报价依据", { exact: true }).fill("工作量增加");
+  await expect(dialog.getByRole("button", { name: "提交申请", exact: true })).toBeEnabled();
 });
 
 test("acceptance warns immediately for planned and previously awarded bounds and keeps cumulative amounts valid", async ({
@@ -299,4 +320,244 @@ test("acceptance also validates the combined cumulative quota when individually 
   await dialog.getByLabel("成员甲 累计通过 VC（已授予 2.00／计划 6.00）", { exact: true }).fill("5.00");
   await expect(dialog.getByRole("alert")).toHaveCount(0);
   await expect(dialog.getByRole("button", { name: "保存", exact: true })).toBeEnabled();
+});
+
+function quoteFixture(): import("../../../packages/types/src/index").LabBountyQuotes {
+  return {
+    can_apply: false,
+    available: "20.00",
+    reviewers: [{ id: "reviewer", name: "复核人" }],
+    file_size_limit: 5242880,
+    quotes: [
+      {
+        id: "quote-one",
+        user_id: "applicant",
+        name: "申请人",
+        revision: 1,
+        kind: "negotiated",
+        vc: "45.00",
+        available_at_submission: "20.00",
+        deliverable: "完整分析报告",
+        basis: "新增分析工作",
+        status: "pending",
+        created_at: "2026-10-15T05:00:00Z",
+        reviewer_id: null,
+        allocation_id: null,
+        attachments: [],
+        history: [],
+        budget_snapshot: { budget: "20.00", stage_available: "980.00", allocations: [] },
+        adjustment: {
+          additional: "25.00",
+          next_budget: "45.00",
+          source_available: "980.00",
+          requires_review: true,
+          funded: true,
+        },
+        can_approve: true,
+        can_reject: true,
+        can_review: false,
+      },
+    ],
+  };
+}
+
+test("original application retains delivery text and refreshes a changed price before retry", async ({ page }) => {
+  let requests = 0;
+  const quoteData = { ...quoteFixture(), quotes: [], can_apply: true };
+  await page.route("**/lab/bounties/bounty/quotes/", (route) => route.fulfill({ json: quoteData }));
+  await mount(page, workflow(false), { ...bounty, status: "open" }, quoteData);
+  await page.route("**/lab/bounties/bounty/quotes/", async (route) => {
+    if (route.request().method() === "GET") return route.fulfill({ json: quoteData });
+    const body = route.request().postDataJSON();
+    requests++;
+    expect(body.deliverable).toBe("需要保留的交付内容");
+    if (requests === 1) {
+      expect(body.vc).toBe("20.00");
+      quoteData.available = "18.00";
+      return route.fulfill({ status: 409, json: { detail: "剩余 VC 已变化，请刷新并确认原价" } });
+    }
+    expect(body.vc).toBe("18.00");
+    quoteData.can_apply = false;
+    return route.fulfill({ status: 201, json: {} });
+  });
+  await page.getByRole("button", { name: "按原价申请 · 20.00 VC" }).click();
+  const dialog = page.getByRole("dialog", { name: "按原价申请", exact: true });
+  await dialog.getByLabel("本人交付内容").fill("需要保留的交付内容");
+  await dialog.getByRole("button", { name: "提交申请" }).click();
+  await expect(dialog.getByRole("alert")).toContainText("剩余 VC 已变化");
+  await expect(dialog.getByLabel("原价（VC）")).toHaveValue("18.00");
+  await expect(dialog.getByLabel("本人交付内容")).toHaveValue("需要保留的交付内容");
+  await dialog.getByRole("button", { name: "提交申请" }).click();
+  await expect(dialog).toHaveCount(0);
+  expect(requests).toBe(2);
+});
+
+test("file evidence alone permits a quote above the remaining VC and uploads before submission", async ({ page }) => {
+  const quoteData = { ...quoteFixture(), quotes: [], can_apply: true };
+  let uploaded = false;
+  let submitted = false;
+  await mount(page, workflow(false), { ...bounty, status: "open" }, quoteData);
+  await page.route("**/lab/bounties/bounty/quote-attachments/", async (route) => {
+    expect(route.request().postData()).toContain("proof.pdf");
+    uploaded = true;
+    return route.fulfill({
+      status: 201,
+      json: { id: "evidence", name: "proof.pdf", size: 10, download_path: "file/" },
+    });
+  });
+  await page.route("**/lab/bounties/bounty/quotes/", async (route) => {
+    if (route.request().method() === "GET") return route.fulfill({ json: quoteData });
+    expect(uploaded).toBe(true);
+    expect(route.request().postDataJSON()).toMatchObject({
+      kind: "negotiated",
+      vc: "30",
+      basis: "",
+      attachment_ids: ["evidence"],
+    });
+    submitted = true;
+    quoteData.can_apply = false;
+    return route.fulfill({ status: 201, json: {} });
+  });
+  await page.getByRole("button", { name: "议价申请", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "议价申请", exact: true });
+  await dialog.getByLabel("本人交付内容").fill("分析报告");
+  await dialog.getByLabel("报价（VC）").fill("30");
+  await expect(dialog.getByRole("button", { name: "提交申请" })).toBeDisabled();
+  await dialog
+    .getByLabel("依据附件")
+    .setInputFiles({ name: "proof.pdf", mimeType: "application/pdf", buffer: Buffer.from("proof data") });
+  await expect(dialog.getByRole("button", { name: "提交申请" })).toBeEnabled();
+  await dialog.getByRole("button", { name: "提交申请" }).click();
+  await expect(dialog).toHaveCount(0);
+  expect(submitted).toBe(true);
+});
+
+test("major top-up approval requires a reviewer and sends the displayed budget snapshot", async ({ page }) => {
+  const quoteData = quoteFixture();
+  let submitted = false;
+  await mount(page, workflow(false), { ...bounty, status: "open" }, quoteData);
+  await page.route("**/lab/bounties/bounty/quotes/quote-one/approve/", async (route) => {
+    expect(route.request().postDataJSON()).toMatchObject({
+      reviewer_id: "reviewer",
+      expected_budget: quoteData.quotes[0]!.budget_snapshot,
+    });
+    submitted = true;
+    quoteData.quotes[0]!.status = "pending_review";
+    quoteData.quotes[0]!.can_approve = false;
+    return route.fulfill({ json: quoteData.quotes[0] });
+  });
+  await page.getByRole("button", { name: "审批报价", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "审批报价", exact: true });
+  await expect(dialog.getByText("25.00", { exact: true })).toBeVisible();
+  await expect(dialog.getByRole("button", { name: "同意并提交复核" })).toBeDisabled();
+  await dialog.getByLabel("加价复核人").selectOption("reviewer");
+  await dialog.getByRole("button", { name: "同意并提交复核" }).click();
+  await expect(dialog).toHaveCount(0);
+  expect(submitted).toBe(true);
+  await expect(page.getByText(/申请人 · 45.00 VC.*待加价复核/)).toBeVisible();
+});
+
+test("rejection requires an opinion and a zero balance still exposes negotiation", async ({ page }) => {
+  const quoteData = quoteFixture();
+  quoteData.can_apply = true;
+  quoteData.available = "0.00";
+  await mount(page, workflow(false), { ...bounty, status: "open" }, quoteData);
+  await expect(page.getByRole("button", { name: /按原价申请/ })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "议价申请", exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "驳回申请", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "驳回申请", exact: true });
+  await expect(dialog.getByRole("button", { name: "确认驳回" })).toBeDisabled();
+  await dialog.getByLabel("处理意见").fill("请补充交付范围");
+  await expect(dialog.getByRole("button", { name: "确认驳回" })).toBeEnabled();
+});
+
+test("live quote approval completes through the browser and real Django API", async ({ browser }) => {
+  test.skip(!process.env.LAB_QUOTES_LIVE_FIXTURE, "Run through the Django live-server browser contract");
+  const fixture = JSON.parse(await readFile(process.env.LAB_QUOTES_LIVE_FIXTURE!, "utf8")) as {
+    server: string;
+    base: string;
+    bounty_id: string;
+    sessions: Record<string, { id: string; cookie: { name: string; value: string } }>;
+  };
+  const contexts: import("@playwright/test").BrowserContext[] = [];
+  async function open(role: string) {
+    const context = await browser.newContext();
+    contexts.push(context);
+    const session = fixture.sessions[role]!;
+    await context.addCookies([
+      { ...session.cookie, url: fixture.server },
+      { ...session.cookie, url: origin },
+    ]);
+    const response = await context.request.get(`${fixture.server}${fixture.base}bounties/${fixture.bounty_id}/detail/`);
+    expect(response.status()).toBe(200);
+    const record = await response.json();
+    const page = await context.newPage();
+    await page.addInitScript((value) => Object.assign(window, { labBounty: value }), record);
+    async function proxy(route: import("@playwright/test").Route) {
+      const url = new URL(route.request().url());
+      const headers: Record<string, string> = {
+        ...route.request().headers(),
+        origin: fixture.server,
+        referer: fixture.server + "/",
+      };
+      delete headers.host;
+      const proxied = await route.fetch({
+        url: fixture.server + url.pathname.replace("/api/workspaces/test/lab/", fixture.base) + url.search,
+        headers,
+      });
+      await route.fulfill({ response: proxied });
+    }
+    await page.route("**/api/**", proxy);
+    await page.route("**/auth/**", proxy);
+    await page.goto(origin);
+    return { context, page };
+  }
+  try {
+    const applicant = await open("member");
+    await applicant.page.getByRole("button", { name: "议价申请", exact: true }).click();
+    let dialog = applicant.page.getByRole("dialog", { name: "议价申请", exact: true });
+    await dialog.getByLabel("本人交付内容").fill("真实端到端分析报告");
+    await dialog.getByLabel("报价（VC）").fill("45");
+    await dialog.getByLabel("依据附件").setInputFiles({
+      name: "quote-proof.pdf",
+      mimeType: "application/pdf",
+      buffer: Buffer.from("private quote evidence"),
+    });
+    await dialog.getByRole("button", { name: "提交申请", exact: true }).click();
+    await expect(dialog).toHaveCount(0);
+    await expect(applicant.page.getByText(/第 1 次.*待负责人审批/)).toBeVisible();
+
+    const lead = await open("lead");
+    await lead.page.getByRole("button", { name: "审批报价", exact: true }).click();
+    dialog = lead.page.getByRole("dialog", { name: "审批报价", exact: true });
+    await dialog.getByLabel("加价复核人").selectOption(fixture.sessions.independent!.id);
+    await dialog.getByRole("button", { name: "同意并提交复核", exact: true }).click();
+    await expect(dialog).toHaveCount(0);
+    const before = await lead.context.request.get(
+      `${fixture.server}${fixture.base}bounties/${fixture.bounty_id}/detail/`
+    );
+    expect((await before.json()).reserved).toBe("20.00");
+
+    const reviewer = await open("independent");
+    await reviewer.page.getByRole("button", { name: "复核加价", exact: true }).click();
+    dialog = reviewer.page.getByRole("dialog", { name: "复核加价", exact: true });
+    await dialog.getByRole("button", { name: "批准承接", exact: true }).click();
+    await expect(dialog).toHaveCount(0);
+    const final = await lead.context.request.get(
+      `${fixture.server}${fixture.base}bounties/${fixture.bounty_id}/detail/`
+    );
+    const record = await final.json();
+    expect(record).toMatchObject({ budget: "45.00", reserved: "45.00", awarded: "0", major: true });
+    expect(record.allocations).toHaveLength(1);
+    expect(record.allocations[0]).toMatchObject({ planned: "45.00", approved: true, confirmed: true });
+    const planner = await applicant.context.request.get(`${fixture.server}${fixture.base}planner/`);
+    expect((await planner.json()).items.some((item: { issue_id: string }) => item.issue_id === record.issue_id)).toBe(
+      true
+    );
+  } finally {
+    await Promise.all(
+      contexts.flatMap((context) => context.pages().map((page) => page.unrouteAll({ behavior: "ignoreErrors" })))
+    );
+    await Promise.all(contexts.map((context) => context.close()));
+  }
 });

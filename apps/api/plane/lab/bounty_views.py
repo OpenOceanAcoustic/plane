@@ -101,6 +101,7 @@ def bounty_data(row, user, reward_context=None):
         "criteria": publication.criteria if public and publication else row.criteria,
         "budget": str(row.budget),
         "claim_available": str(claim_available),
+        "has_quote": row.quotes.filter(user_id_snapshot=user.id).exists(),
         "reserved": None if public else str(row.reserved),
         "awarded": None if public else str(bounties.total(row.ledger.all(), "delta")),
         "status": row.status,
@@ -512,7 +513,16 @@ class InboxView(LabView):
             except NotFound:
                 continue
             reason = None
-            if row.status == "publication_review" and row.independent_reviewer_id == request.user.id:
+            from .quotes import is_lead, is_quote_reviewer
+
+            if row.status == "open" and any(
+                is_quote_reviewer(request.user, quote)
+                for quote in row.quotes.filter(status="pending_review", reviewer=request.user)
+            ):
+                reason = "加价复核（网页）"
+            elif row.status == "open" and is_lead(request.user, row) and row.quotes.filter(status="pending").exists():
+                reason = "审批报价（网页）"
+            elif row.status == "publication_review" and row.independent_reviewer_id == request.user.id:
                 reason = "重大任务发布复核"
             elif row.status == "acceptance_review" and row.independent_reviewer_id == request.user.id:
                 reason = "重大任务验收复核"

@@ -5,6 +5,7 @@ from datetime import date, datetime
 from zoneinfo import ZoneInfo
 
 import pytest
+from freezegun import freeze_time
 
 from plane.db.models import Issue, ProjectMember
 from .test_bounties import action, prepare, start
@@ -128,6 +129,7 @@ def test_member_hours_are_separate_monday_weeks_and_clip_cross_week_blocks(labor
         assert sum(record["value"] for record in response.json()["records"]) == row["hours"]
 
 
+@freeze_time("2026-10-08 08:00:00")
 def test_vc_charts_follow_delta_ledger_reversals_and_preserve_deleted_task_snapshots(laboratory):
     import uuid
 

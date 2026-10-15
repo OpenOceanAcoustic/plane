@@ -197,6 +197,7 @@ export type LabBounty = {
   criteria: string;
   budget: string;
   claim_available?: string;
+  has_quote?: boolean;
   reserved: string | null;
   awarded: string | null;
   status: LabBountyStatus;
@@ -239,3 +240,40 @@ export type LabBountyMaterial = {
 };
 export type LabTask = { id: string; title: string; project_id: string; project: string; key: string };
 export type LabTodo = { id: string; title: string; action: string; due_at: string | null; overdue: boolean };
+
+export type LabQuoteAttachment = { id: string; name: string; size: number; download_path: string };
+export type LabBountyQuote = {
+  id: string;
+  user_id: string;
+  name: string;
+  revision: number;
+  kind: "original" | "negotiated";
+  vc: string;
+  available_at_submission: string;
+  deliverable: string;
+  basis: string;
+  status: "pending" | "pending_review" | "approved" | "rejected" | "closed";
+  created_at: string;
+  reviewer_id: string | null;
+  allocation_id: string | null;
+  attachments: LabQuoteAttachment[];
+  history: { id: string; label: string; actor: string; created_at: string; reason: string }[];
+  budget_snapshot: Record<string, unknown> | null;
+  adjustment: {
+    additional: string;
+    next_budget: string;
+    source_available: string;
+    requires_review: boolean;
+    funded: boolean;
+  } | null;
+  can_approve: boolean;
+  can_reject: boolean;
+  can_review: boolean;
+};
+export type LabBountyQuotes = {
+  quotes: LabBountyQuote[];
+  can_apply: boolean;
+  available: string;
+  reviewers: LabMember[];
+  file_size_limit: number;
+};

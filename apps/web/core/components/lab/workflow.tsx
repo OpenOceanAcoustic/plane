@@ -25,6 +25,7 @@ import {
 } from "@plane/ui";
 import { acceptanceLabels, workflowActionBody } from "./workflow-types";
 import type { LabWorkflow, LabWorkflowAction } from "./workflow-types";
+import { LabBountyQuotesPanel } from "./bounty-quotes";
 import { bountyWorkflowLayout } from "./workflow-layout";
 import type { BountyWorkflowNode } from "./workflow-layout";
 
@@ -78,19 +79,21 @@ export const LabBountyWorkflow = observer(function LabBountyWorkflow({
   store,
   bounty,
   compact = false,
+  showQuotes = true,
   requestedStatus,
   onChanged,
 }: {
   store: LabStore;
   bounty: LabBounty;
   compact?: boolean;
+  showQuotes?: boolean;
   requestedStatus?: LabStatus;
   onChanged?: () => Promise<void>;
 }) {
   const revision = `${bounty.status}:${bounty.awarded}:${bounty.allocations.map((row) => `${row.id}-${row.approved}-${row.confirmed}-${row.closed}`).join(",")}:${bounty.acceptances.map((row) => `${row.id}-${row.approved_at}`).join(",")}`;
   const { data, error, mutate, isLoading, isValidating } = useSWR(
     ["lab-bounty-workflow", store.slug, bounty.id, revision],
-    () => store.request<LabWorkflow>(`bounties/${bounty.id}/workflow/`),
+    () => store.request<LabWorkflow>(`bounties/${bounty.id}/workflow/?quotes=1`),
     { refreshInterval: 30000, ...(compact ? { revalidateOnMount: true, dedupingInterval: 0 } : {}) }
   );
   const [chosen, setChosen] = useState<LabWorkflowAction>();
@@ -165,7 +168,10 @@ export const LabBountyWorkflow = observer(function LabBountyWorkflow({
     : { nodes: [], edges: [] };
   const actions =
     data?.actions.filter(
-      (action) => (!compact || planningActions.has(action.action)) && (!selectedNode || action.node_id === selectedNode)
+      (action) =>
+        action.action !== "claim" &&
+        (!compact || planningActions.has(action.action)) &&
+        (!selectedNode || action.node_id === selectedNode)
     ) ?? [];
   const history = data?.history.filter((event) => !selectedNode || event.node_id === selectedNode) ?? [];
   const newestHistory = Array.from({ length: history.length }, (_, index) => history[history.length - index - 1]!);
@@ -307,6 +313,16 @@ export const LabBountyWorkflow = observer(function LabBountyWorkflow({
             </ol>
           </details>
         </>
+      )}
+      {showQuotes && (
+        <LabBountyQuotesPanel
+          store={store}
+          bounty={bounty}
+          onChanged={async () => {
+            await mutate();
+            await onChanged?.();
+          }}
+        />
       )}
       {chosen && (
         <LabDialog

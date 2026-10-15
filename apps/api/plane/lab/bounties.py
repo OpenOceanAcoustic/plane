@@ -9,7 +9,7 @@ from decimal import Decimal, InvalidOperation
 
 from django.shortcuts import get_object_or_404
 from django.db import connection, transaction
-from django.db.models import Sum
+from django.db.models import Q, Sum
 from django.utils import timezone
 from rest_framework.exceptions import PermissionDenied, ValidationError
 
@@ -44,6 +44,15 @@ def claim_available(bounty):
     return max(
         Decimal("0.00"), bounty.budget - total(Allocation.objects.filter(bounty=bounty, approved=True), "planned")
     )
+
+
+def vc_major_reasons(budget, stage_budget):
+    reasons = []
+    if budget >= 40:
+        reasons.append("40VC")
+    if budget > stage_budget * Decimal("0.2"):
+        reasons.append("20%B")
+    return reasons
 
 
 def working_days(now, count):
@@ -158,11 +167,7 @@ def publish(user, stage_id, data):
     criteria = str(data.get("criteria", "")).strip()
     if not deliverable or not criteria:
         raise ValidationError("请填写交付要求和验收标准")
-    reasons = []
-    if budget >= 40:
-        reasons.append("40VC")
-    if budget > stage.budget * Decimal("0.2"):
-        reasons.append("20%B")
+    reasons = vc_major_reasons(budget, stage.budget)
     if amount(data.get("cash_commitment", 0)) >= 5000:
         reasons.append("cash")
     if amount(data.get("person_days", 0)) > 10:
@@ -265,6 +270,14 @@ def update_public_summary(user, bounty_id, data):
 @transaction.atomic
 def claim(user, bounty_id, data):
     bounty = locked_bounty(bounty_id)
+    from .quote_models import BountyQuote
+
+    if (
+        BountyQuote.objects.filter(bounty=bounty, status__in=("pending", "pending_review"))
+        .filter(Q(user_id_snapshot=user.id) | Q(reviewer=user, status="pending_review"))
+        .exists()
+    ):
+        raise ValidationError("已有待处理报价或复核，请在网页继续办理")
     if bounty.status != "open" or user.id in (bounty.reviewer_id, bounty.independent_reviewer_id):
         raise ValidationError("当前不能认领；验收及复核人员不能参与团队分工")
     access_level(user, bounty)
@@ -296,6 +309,10 @@ def approve_claim(user, bounty_id, allocation_id):
     if bounty.status != "open" or not allocation.user or not allocation.user.is_active:
         raise ValidationError("当前不能批准")
     workspace_member(allocation.user, bounty.stage.workspace.slug)
+    if allocation.user_id in (bounty.reviewer_id, bounty.independent_reviewer_id):
+        raise ValidationError("验收及复核人员不能参与团队分工")
+    if bounty.quotes.filter(reviewer_id=allocation.user_id, status="pending_review").exists():
+        raise ValidationError("待处理的加价复核人不能参与团队分工")
     if allocation.approved:
         grant_allocation(allocation, user)
         return
@@ -316,7 +333,16 @@ def confirm_claim(user, bounty_id):
     planning_issue_access(user, bounty.stage.workspace, bounty.issue_id)
     if bounty.status != "open" and not allocation.confirmed:
         raise ValidationError("当前不在开工确认阶段")
-    # Same personal reference, preserving any existing folder and category.
+    item = ensure_allocation_planning(allocation, user)
+    if not allocation.confirmed:
+        allocation.confirmed = True
+        allocation.save(update_fields=["confirmed"])
+        audit("bounty.claim_confirmed", allocation, user, bounty.stage.workspace, personal_item_id=str(item.id))
+
+
+def ensure_allocation_planning(allocation, actor):
+    """Preserve the participant's existing folder, category and schedule."""
+    bounty, user = allocation.bounty, allocation.user
     from .categories import item_category
 
     lock(f"lab-categories:{bounty.stage.workspace_id}:{user.id}")
@@ -327,12 +353,9 @@ def confirm_claim(user, bounty_id):
         issue=bounty.issue,
         defaults={"kind": "project", "category": item_category(user, bounty.stage.workspace, {}, "project")},
     )
-    if not allocation.confirmed:
-        allocation.confirmed = True
-        allocation.save(update_fields=["confirmed"])
-        audit("bounty.claim_confirmed", allocation, user, bounty.stage.workspace, personal_item_id=str(item.id))
     if created:
-        audit("planning.bounty_added", item, user, bounty.stage.workspace, bounty_id=str(bounty.id))
+        audit("planning.bounty_added", item, actor, bounty.stage.workspace, bounty_id=str(bounty.id))
+    return item
 
 
 @transaction.atomic
@@ -363,6 +386,9 @@ def start(user, bounty_id):
     bounty.issue.state = ProjectFlow.objects.get(project=bounty.stage.project).active
     bounty.issue.save(update_fields=["state", "completed_at"])
     audit("bounty.started", bounty, user, bounty.stage.workspace)
+    from .quotes import close_pending_quotes
+
+    close_pending_quotes(bounty, user, "悬赏已开工")
 
 
 @transaction.atomic
@@ -544,6 +570,9 @@ def cancel(user, bounty_id, reason):
         bounty.issue.state = ProjectFlow.objects.get(project=bounty.stage.project).todo
         bounty.issue.save(update_fields=["state", "completed_at"])
     audit("bounty.cancelled", bounty, user, bounty.stage.workspace, reason=str(reason))
+    from .quotes import close_pending_quotes
+
+    close_pending_quotes(bounty, user, "悬赏已取消")
 
 
 @transaction.atomic
@@ -557,6 +586,9 @@ def delete(user, bounty_id, reason):
         raise ValidationError("请填写删除原因")
     previous_status = bounty.status
     previous_reserved = bounty.reserved
+    from .quotes import close_pending_quotes
+
+    close_pending_quotes(bounty, user, "悬赏已删除")
     bounty.status = "deleted"
     bounty.reserved = total(Ledger.objects.filter(bounty=bounty), "delta")
     # Retain the immutable source UUID while allowing a new publication of the
