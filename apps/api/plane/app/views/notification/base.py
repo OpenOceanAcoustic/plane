@@ -211,9 +211,14 @@ class UnreadNotificationEndpoint(BaseAPIView):
     def get(self, request, slug):
         rows = visible_chat_notifications(
             Notification.objects.filter(
-                workspace__slug=slug, receiver=request.user, read_at__isnull=True,
-                archived_at__isnull=True, snoozed_till__isnull=True,
-            ), request.user, Workspace.objects.get(slug=slug),
+                workspace__slug=slug,
+                receiver=request.user,
+                read_at__isnull=True,
+                archived_at__isnull=True,
+                snoozed_till__isnull=True,
+            ),
+            request.user,
+            Workspace.objects.get(slug=slug),
         )
         unread_notifications_count = rows.exclude(sender__icontains="mentioned").count()
         mention_notifications_count = rows.filter(sender__icontains="mentioned").count()
