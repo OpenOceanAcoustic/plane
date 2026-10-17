@@ -437,6 +437,9 @@ class GenericAssetEndpoint(BaseAPIView):
             # Get the asset
             asset = FileAsset.objects.get(id=asset_id, workspace_id=workspace.id, is_deleted=False)
 
+            if asset.entity_type == "CHAT_IMAGE":
+                return Response({"error": "Use the conversation image endpoint."}, status=status.HTTP_403_FORBIDDEN)
+
             from plane.lab.document_files import native_document_file_response
 
             document_response = native_document_file_response(request.user, asset)
@@ -623,6 +626,9 @@ class GenericAssetEndpoint(BaseAPIView):
         """
         try:
             asset = FileAsset.objects.get(id=asset_id, workspace__slug=slug, is_deleted=False)
+
+            if asset.entity_type == "CHAT_IMAGE":
+                return Response({"error": "Use the conversation image endpoint."}, status=status.HTTP_403_FORBIDDEN)
 
             # Update is_uploaded status
             asset.is_uploaded = request.data.get("is_uploaded", asset.is_uploaded)

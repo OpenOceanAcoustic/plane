@@ -19,9 +19,11 @@ import { EditorMentionsRoot } from "@/components/editor/embeds/mentions";
 import { IssueActivityLoader } from "@/components/issues/issue-detail/issue-activity/loader";
 import { useWorkItemCommentOperations } from "@/components/issues/issue-detail/issue-activity/helper";
 import { useIssueDetail } from "@/hooks/store/use-issue-detail";
+import { ChatImageService } from "@/services/chat-image.service";
 import type { LabOpenProjectIssue } from "./item-details";
 
 const scopeNames = { workspace: "组织", project: "项目", issue: "工作项" };
+const chatImageService = new ChatImageService();
 
 export const LabChat = observer(function LabChat({ openProjectIssue }: { openProjectIssue?: LabOpenProjectIssue }) {
   const { workspaceSlug = "" } = useParams();
@@ -264,7 +266,12 @@ const ChatConversation = observer(function ChatConversation({
   }, [store.messages, messageId, readVisible]);
 
   const operations: TCommentOperations = {
-    ...(thread.scope === "issue" ? legacyOperations : {}),
+    ...(thread.scope === "issue"
+      ? legacyOperations
+      : {
+          uploadCommentAsset: (_blockId: string, file: File) => chatImageService.upload(store.slug, thread.id, file),
+          duplicateCommentAsset: (assetId: string) => chatImageService.duplicate(store.slug, thread.id, assetId),
+        }),
     createComment: async (data) => {
       const sent = await store.send(thread.id, { ...data, parent_id: reply?.id });
       setReply(undefined);
@@ -341,7 +348,16 @@ const ChatConversation = observer(function ChatConversation({
     () => ({
       mentionHandler,
       issueReferences: references,
-      uploads: thread.scope === "issue",
+      uploads: true,
+      assetsManagedByMessage: thread.scope !== "issue",
+      fileHandler:
+        thread.scope !== "issue"
+          ? {
+              lifecycle: "message",
+              getAssetSrc: async (assetId) => chatImageService.source(store.slug, thread.id, assetId),
+              getAssetDownloadSrc: async (assetId) => chatImageService.source(store.slug, thread.id, assetId, true),
+            }
+          : undefined,
       onReply: thread.can_write ? setReply : undefined,
       draft: drafts[thread.id],
       onDraftChange: (value) => {
@@ -351,7 +367,7 @@ const ChatConversation = observer(function ChatConversation({
         if (reference.project_id) openProjectIssue?.({ issue_id: reference.id, project_id: reference.project_id });
       },
     }),
-    [mentionHandler, references, thread.scope, thread.can_write, thread.id, drafts, openProjectIssue]
+    [mentionHandler, references, thread.scope, thread.can_write, thread.id, drafts, openProjectIssue, store.slug]
   );
   return (
     <CommentContext.Provider value={context}>

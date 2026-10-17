@@ -31,6 +31,7 @@ from .chat import (
     visible_threads,
 )
 from .chat_models import ChatMention, ChatMessage, ChatSubmission, ChatThread
+from .chat_images import bind_images
 from .permissions import collaboration_projects, readable_issues
 from .planning_views import LabView
 
@@ -258,6 +259,7 @@ class ChatMessagesView(LabView):
             row = ChatMessage.objects.create(
                 thread=thread, actor=request.user, comment_html=html, comment_stripped=strip_tags(html), parent=parent
             )
+            bind_images(request.user, thread, row)
             notify_mentions(thread, row)
         ChatSubmission.objects.create(thread=thread, user=request.user, key=key, message_id=row.id)
         ChatThread.objects.filter(id=thread.id).update(activity_at=row.created_at)
@@ -282,7 +284,7 @@ class ChatMessageView(LabView):
             from plane.app.serializers import IssueCommentSerializer
 
             previous = IssueCommentSerializer(row).data
-        row.comment_html = clean_content(request.user, thread, request.data.get("comment_html", ""))
+        row.comment_html = clean_content(request.user, thread, request.data.get("comment_html", ""), row.id)
         row.comment_stripped = strip_tags(row.comment_html)
         row.comment_json = {}
         row.edited_at = timezone.now()
@@ -290,6 +292,7 @@ class ChatMessageView(LabView):
         if thread.scope == "issue":
             activity(row, request.user, "updated", previous)
         else:
+            bind_images(request.user, thread, row)
             notify_mentions(thread, row)
         return Response(message_data(row, thread, request.user))
 

@@ -23,6 +23,7 @@ type TUploaderArgs = {
   maxFileSize: number;
   onInvalidFile: (error: EFileError, file: File, message: string) => void;
   onUpload: (url: string, file: File) => void;
+  onUploadError?: () => void;
 };
 
 export const useUploader = (args: TUploaderArgs) => {
@@ -34,6 +35,7 @@ export const useUploader = (args: TUploaderArgs) => {
     maxFileSize,
     onInvalidFile,
     onUpload,
+    onUploadError,
   } = args;
   // states
   const [isUploading, setIsUploading] = useState(false);
@@ -75,6 +77,7 @@ export const useUploader = (args: TUploaderArgs) => {
         }
         onUpload(url, file);
       } catch {
+        onUploadError?.();
         console.error("useFileUpload: Error in uploading file");
       } finally {
         handleProgressStatus?.(false);
@@ -89,6 +92,7 @@ export const useUploader = (args: TUploaderArgs) => {
       maxFileSize,
       onInvalidFile,
       onUpload,
+      onUploadError,
     ]
   );
 

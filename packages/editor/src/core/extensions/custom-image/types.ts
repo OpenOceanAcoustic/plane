@@ -48,7 +48,10 @@ export type TCustomImageAttributes = {
   [ECustomImageAttributeNames.STATUS]: ECustomImageStatus;
 };
 
-export type UploadEntity = ({ event: "insert" } | { event: "drop"; file: File }) & { hasOpenedFileInputOnce?: boolean };
+export type UploadEntity = ({ event: "insert" } | { event: "drop"; file: File }) & {
+  hasOpenedFileInputOnce?: boolean;
+  uploadStarted?: boolean;
+};
 
 export type InsertImageComponentProps = {
   file?: File;
@@ -59,7 +62,7 @@ export type InsertImageComponentProps = {
 export type CustomImageExtensionOptions = {
   getImageDownloadSource: TFileHandler["getAssetDownloadSrc"];
   getImageSource: TFileHandler["getAssetSrc"];
-  restoreImage: TFileHandler["restore"];
+  restoreImage?: TFileHandler["restore"];
   uploadImage?: TFileHandler["upload"];
   duplicateImage?: TFileHandler["duplicate"];
 };

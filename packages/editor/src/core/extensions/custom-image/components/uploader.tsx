@@ -122,6 +122,11 @@ export function CustomImageUploader(props: CustomImageUploaderProps) {
     maxFileSize,
     onInvalidFile: handleInvalidFile,
     onUpload,
+    onUploadError: () => {
+      if (imageEntityId) imageComponentImageFileMap?.delete(imageEntityId);
+      loadImageFromFileSystem("");
+      updateAttributes({ status: ECustomImageStatus.PENDING });
+    },
   });
 
   const { draggedInside, onDrop, onDragEnter, onDragLeave } = useDropZone({
@@ -141,6 +146,8 @@ export function CustomImageUploader(props: CustomImageUploaderProps) {
     if (meta) {
       if (meta.event === "drop" && "file" in meta) {
         hasTriedUploadingOnMountRef.current = true;
+        if (meta.uploadStarted) return;
+        imageComponentImageFileMap?.set(imageEntityId ?? "", { ...meta, uploadStarted: true });
         uploadFile(meta.file);
       } else if (meta.event === "insert" && fileInputRef.current && !hasTriggeredFilePickerRef.current) {
         if (meta.hasOpenedFileInputOnce) return;

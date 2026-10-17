@@ -71,14 +71,16 @@ export const CommentCreate = observer(function CommentCreate(props: TCommentCrea
       if (!comment?.id) throw new Error("消息发送失败，请重试");
       if (comment?.id) onSubmitCallback?.(comment.id);
       if (uploadedAssetIds.length > 0) {
-        if (projectId) {
-          await fileService.updateBulkProjectAssetsUploadStatus(workspaceSlug, projectId.toString(), entityId, {
-            asset_ids: uploadedAssetIds,
-          });
-        } else {
-          await fileService.updateBulkWorkspaceAssetsUploadStatus(workspaceSlug, entityId, {
-            asset_ids: uploadedAssetIds,
-          });
+        if (!context.assetsManagedByMessage) {
+          if (projectId) {
+            await fileService.updateBulkProjectAssetsUploadStatus(workspaceSlug, projectId.toString(), comment.id, {
+              asset_ids: uploadedAssetIds,
+            });
+          } else {
+            await fileService.updateBulkWorkspaceAssetsUploadStatus(workspaceSlug, comment.id, {
+              asset_ids: uploadedAssetIds,
+            });
+          }
         }
         setUploadedAssetIds([]);
       }
