@@ -35,6 +35,9 @@ def test_project_lead_can_delete_published_bounty_without_deleting_native_issue(
     assert event.actor_id == lab["lead"].id
     assert event.details["reason"] == "撤回误发布的团队悬赏"
     assert event.details["issue_id"] == str(issue.id)
+    from .test_bounty_project_budget import assign
+
+    assign(lab, "20")
     republished = lead.post(lab["base"] + "bounties/", body, format="json")
     assert republished.status_code == 201, republished.content
     assert republished.json()["id"] != bounty_id
@@ -181,6 +184,9 @@ def test_delete_finished_bounty_preserves_earned_vc_forecasts_and_paid_cash(labo
     issue.refresh_from_db()
     issue.state = lab["states"]["todo"]
     issue.save(update_fields=["state", "completed_at"])
+    from .test_bounty_project_budget import assign
+
+    assign(lab, "20")
     republished = lead.post(lab["base"] + "bounties/", body, format="json")
     assert republished.status_code == 201, republished.content
     assert [list(model.objects.order_by("id").values()) for model in models] == facts
@@ -241,6 +247,9 @@ def test_delete_partial_bounty_releases_only_unearned_budget_and_keeps_correctio
         workspace=lab["workspace"], project=lab["project"], state=lab["states"]["todo"], name="新的团队任务"
     )
     new_body = {**body, "issue_id": str(next_issue.id), "budget": "90"}
+    from .test_bounty_project_budget import assign
+
+    assign(lab, "90")
     new_bounty = lead.post(lab["base"] + "bounties/", new_body, format="json")
     assert new_bounty.status_code == 201, new_bounty.content
     assert sum(Bounty.objects.filter(stage=bounty.stage).values_list("reserved", flat=True)) == 100

@@ -3,11 +3,9 @@
 
 """Resolve a project's current VC source without mixing frozen stages or cash."""
 
-from decimal import Decimal
 import uuid
 
 from django.db import connection, transaction
-from django.db.models import Sum
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from rest_framework.exceptions import ValidationError
@@ -16,8 +14,9 @@ from plane.db.models import Project, ProjectMember
 from .auth import audit, lock
 from .bounties import amount, publish
 from .bounty_flow import ensure_bounty_flow
-from .models import Audit, Bounty, Stage, WorkspacePolicy
+from .models import Audit, BountyFunding, Stage, WorkspacePolicy
 from .permissions import require_lead
+from .vc import can_allocate, parse_key, payment, require_member, stage_reserved, wallet
 
 
 STAGE_ORDER = ("-frozen_at", "-id")
@@ -87,7 +86,7 @@ def project_budgets(user, workspace):
         "project_id"
     )
     projects = list(
-        Project.objects.filter(workspace=workspace, project_lead=user, id__in=memberships).order_by("name", "id")
+        Project.objects.filter(workspace=workspace, id__in=memberships, archived_at__isnull=True).order_by("name", "id")
     )
     stages = {
         row.project_id: row
@@ -95,20 +94,15 @@ def project_budgets(user, workspace):
         .order_by("project_id", *STAGE_ORDER)
         .distinct("project_id")
     }
-    reservations = {
-        row["stage_id"]: row["reserved"]
-        for row in Bounty.objects.filter(stage_id__in=[stage.id for stage in stages.values()])
-        .values("stage_id")
-        .annotate(reserved=Sum("reserved"))
-    }
     rows = []
     for project in projects:
         stage = stages.get(project.id)
         project_deleted = project.id in removal["projects"]
         stage_deleted = bool(stage and stage.id in removal["stages"])
         deleted = project_deleted or stage_deleted
-        deletion_reason = stage_deletion_reason(workspace, stage, removal) if stage else None
-        reserved = reservations.get(stage.id, Decimal("0")) if stage else None
+        manages_stage = project.project_lead_id == user.id
+        deletion_reason = stage_deletion_reason(workspace, stage, removal) if stage and manages_stage else None
+        reserved = stage_reserved(stage) if stage else None
         rows.append(
             {
                 "project_id": str(project.id),
@@ -121,20 +115,22 @@ def project_budgets(user, workspace):
                 "configured": stage is not None,
                 "deleted": deleted,
                 "project_deleted": project_deleted,
-                "can_delete": bool(stage and not deleted and not deletion_reason),
+                "can_delete": bool(manages_stage and stage and not deleted and not deletion_reason),
                 "delete_reason": deletion_reason,
-                "can_restore": bool(stage_deleted and not project_deleted),
+                "can_restore": bool(manages_stage and stage_deleted and not project_deleted),
+                "wallet": wallet(user.id, project),
+                "can_allocate": can_allocate(user, project),
             }
         )
     return rows
 
 
 @transaction.atomic
-def publish_from_project(user, workspace, identifier, data):
+def publish_from_project(user, workspace, identifier, data, *, initialize_flow=True):
     from .finance_services import require_finance_open
 
     project = get_object_or_404(Project, id=identifier, workspace=workspace)
-    require_lead(user, project)
+    require_member(user, project)
     require_finance_open(workspace, project.id)
     # Keep the same order as financial configuration and native task mutation.
     lock(f"finance:{workspace.id}")
@@ -144,7 +140,7 @@ def publish_from_project(user, workspace, identifier, data):
     project = get_object_or_404(
         Project.objects.select_for_update(of=("self",), no_key=True), id=project.id, workspace=workspace
     )
-    require_lead(user, project)
+    require_member(user, project)
     require_finance_open(workspace, project.id)
     stage = (
         Stage.objects.select_for_update(of=("self",))
@@ -155,7 +151,41 @@ def publish_from_project(user, workspace, identifier, data):
     if not stage:
         raise ValidationError("请先在资金与奖励配置项目 VC 预算")
     require_finance_open(workspace, project.id, stage.id)
-    ensure_bounty_flow(user, project)
+    snapshot = {k: v for k, v in data.items() if k != "request_key"}
+    key = parse_key(data["request_key"]) if data.get("request_key") else None
+    if key:
+        previous = BountyFunding.objects.select_related("bounty__stage").filter(request_key=key).first()
+        if previous:
+            if (
+                previous.owner_id_snapshot != user.id
+                or previous.bounty.stage.project_id != project.id
+                or previous.request_snapshot != snapshot
+            ):
+                raise ValidationError("请求键已用于其他悬赏或支付内容")
+            return previous.bounty
+    budget = amount(data.get("budget"))
+    project_vc, earned_vc = payment(user, project, budget, data)
+    if initialize_flow:
+        ensure_bounty_flow(user, project, member_publication=True)
     # The legacy service owns validation, reservation, evidence and independent review.
     # Ignore any client stage_id: a project publication always resolves its source here.
-    return publish(user, stage.id, data)
+    bounty = publish(user, stage.id, data, member_payment=(project_vc, earned_vc))
+    BountyFunding.objects.create(
+        bounty=bounty,
+        owner=user,
+        owner_id_snapshot=user.id,
+        project_committed=project_vc,
+        earned_committed=earned_vc,
+        request_key=key,
+        request_snapshot=snapshot,
+    )
+    audit(
+        "bounty.vc_reserved",
+        bounty,
+        user,
+        workspace,
+        project_vc=str(project_vc),
+        earned_vc=str(earned_vc),
+        owner_id=str(user.id),
+    )
+    return bounty

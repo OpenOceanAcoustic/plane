@@ -12,7 +12,7 @@ from django.utils import timezone
 
 from plane.db.models import Issue, IssueAssignee, ProjectMember, State
 from plane.lab.models import Bounty, Folder, Ledger, PersonalCategory, PersonalItem, Stage, TimeBlock
-from .test_bounty_project_budget import budgets, configure, publication, task
+from .test_bounty_project_budget import assign, budgets, configure, publication, task
 from .test_bounties import action
 
 pytestmark = [pytest.mark.django_db(transaction=True), pytest.mark.contract]
@@ -21,6 +21,7 @@ pytestmark = [pytest.mark.django_db(transaction=True), pytest.mark.contract]
 def test_native_work_item_can_publish_with_authoritative_identity_and_one_budget_reservation(laboratory):
     lab = laboratory
     stage = configure(lab, cash=False)
+    assign(lab)
     issue = task(lab, "原生工作项的权威标题")
     task(lab, "另一个待做工作项")
     lead = lab["client"](lab["lead"])
@@ -55,6 +56,7 @@ def test_native_work_item_can_publish_with_authoritative_identity_and_one_budget
 def test_started_work_item_upgrade_preserves_native_work_and_requires_bounty_flow(laboratory, budget):
     lab = laboratory
     configure(lab, budget="1000", cash=False)
+    assign(lab, budget)
     issue = task(lab, "已经进行的原工作项")
     today = timezone.now().date()
     Issue.objects.filter(pk=issue.id).update(
@@ -160,6 +162,7 @@ def test_started_work_item_upgrade_preserves_native_work_and_requires_bounty_flo
 def test_native_attributes_can_change_without_bypassing_unstarted_bounty_state_guards(laboratory, status, budget):
     lab = laboratory
     configure(lab, budget="1000", cash=False)
+    assign(lab, budget)
     issue = task(lab, "发布时的原任务标题")
     Issue.objects.filter(pk=issue.id).update(state=lab["states"][status])
     lead = lab["client"](lab["lead"])
@@ -191,6 +194,7 @@ def test_native_attributes_can_change_without_bypassing_unstarted_bounty_state_g
 def test_started_native_guard_migration_can_reverse_and_reapply_without_changing_work(laboratory):
     lab = laboratory
     configure(lab, budget="1000", cash=False)
+    assign(lab)
     issue = task(lab, "迁移往返的进行中任务")
     Issue.objects.filter(pk=issue.id).update(state=lab["states"]["active"])
     response = lab["client"](lab["lead"]).post(lab["base"] + "bounties/", publication(lab, issue), format="json")
@@ -215,7 +219,8 @@ def test_started_native_guard_migration_can_reverse_and_reapply_without_changing
 )
 def test_unavailable_native_work_item_cannot_publish_or_reserve_budget(laboratory, invalid):
     lab = laboratory
-    configure(lab, cash=False)
+    stage = configure(lab, cash=False)
+    assign(lab)
     issue = task(lab)
     PersonalItem.objects.create(user=lab["lead"], workspace=lab["workspace"], issue=issue, kind="project")
     changes = {
@@ -237,18 +242,22 @@ def test_unavailable_native_work_item_cannot_publish_or_reserve_budget(laborator
     assert lead.get(lab["base"] + f"tasks/?publishable=1&issue_id={issue.id}").json() == []
     identities = set(Issue.all_objects.values_list("id", flat=True))
     result = lead.post(lab["base"] + "bounties/", publication(lab, issue), format="json")
-    expected = 404 if invalid in ("archived", "deleted", "draft") else 400
+    expected = 404 if invalid in ("archived", "deleted", "draft") else 403 if invalid == "project_archived" else 400
     assert result.status_code == expected, result.content
-    assert not Bounty.objects.exists() and budgets(lab)[0]["available"] == "100.00"
+    from plane.lab.vc import stage_reserved, wallet
+
+    assert not Bounty.objects.exists() and stage_reserved(Stage.objects.get(id=stage)) == 10
+    assert wallet(lab["lead"].id, lab["project"])["available"] == "10.00"
     assert set(Issue.all_objects.values_list("id", flat=True)) == identities
 
 
 @pytest.mark.parametrize("access", ["ordinary", "read_only_lead", "inactive_lead"])
-def test_native_publication_capability_and_post_require_active_project_lead(laboratory, access):
+def test_native_publication_capability_and_post_require_active_project_member(laboratory, access):
     lab = laboratory
     stage = configure(lab, cash=False)
     issue = task(lab)
     user = lab["member"] if access == "ordinary" else lab["lead"]
+    assign(lab, user=user)
     if access == "read_only_lead":
         ProjectMember.objects.filter(project=lab["project"], member=user).update(role=5)
     elif access == "inactive_lead":
@@ -256,6 +265,11 @@ def test_native_publication_capability_and_post_require_active_project_lead(labo
     PersonalItem.objects.create(user=user, workspace=lab["workspace"], issue=issue, kind="project")
     client = lab["client"](user)
     metadata = client.get(lab["base"] + f"task-card-metadata/?issue_ids={issue.id}")
+    if access == "ordinary":
+        assert metadata.status_code == 200 and metadata.json()["items"][0]["can_publish_bounty"]
+        result = client.post(lab["base"] + "bounties/", publication(lab, issue), format="json")
+        assert result.status_code == 201, result.content
+        return
     assert metadata.status_code == 200 and all(not row["can_publish_bounty"] for row in metadata.json()["items"])
     assert client.get(lab["base"] + f"tasks/?publishable=1&issue_id={issue.id}").json() == []
     result = client.post(lab["base"] + "bounties/", publication(lab, issue), format="json")

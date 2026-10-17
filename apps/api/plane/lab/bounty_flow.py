@@ -9,6 +9,7 @@ from rest_framework.exceptions import ValidationError
 from plane.db.models import Project, State
 from .auth import audit, lock
 from .models import ProjectFlow
+from .vc import require_member
 from .permissions import require_lead
 
 
@@ -22,15 +23,16 @@ def is_review(state):
 
 
 @transaction.atomic
-def ensure_bounty_flow(user, project):
-    require_lead(user, project)
+def ensure_bounty_flow(user, project, *, member_publication=False):
+    authorize = require_member if member_publication else require_lead
+    authorize(user, project)
     lock(f"finance:{project.workspace_id}")
     with connection.cursor() as cursor:
         cursor.execute("SELECT lab_wip_lock(%s)", [project.workspace_id])
     project = (
         Project.objects.select_for_update(of=("self",), no_key=True).select_related("workspace").get(id=project.id)
     )
-    require_lead(user, project)
+    authorize(user, project)
     existing = ProjectFlow.objects.filter(project=project).first()
     if existing:
         return existing

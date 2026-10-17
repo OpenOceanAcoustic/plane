@@ -16,7 +16,7 @@ from .bounty_models import BountyMaterial
 from .documents import accessible_pages, page_access
 from .document_files import available_file, file_data, file_response
 from .document_models import DocumentFileVersion
-from .permissions import require_lead
+from .permissions import require_bounty_manager
 from .planning_views import LabView
 
 
@@ -55,7 +55,7 @@ class BountyMaterialsView(LabView):
         materials = bounty.materials.filter(revoked_at__isnull=True).order_by("created_at")
         response = {"materials": [material_data(row) for row in materials]}
         if request.query_params.get("sources") == "1":
-            require_lead(request.user, bounty.stage.project)
+            require_bounty_manager(request.user, bounty)
             pages = accessible_pages(request.user, self.workspace, bounty.stage.project_id)
             versions = PageVersion.objects.filter(workspace=self.workspace, page__in=pages).select_related("page")
             attachments = (
@@ -86,7 +86,7 @@ class BountyMaterialsView(LabView):
     def post(self, request, slug, pk):
         bounty = bounty_access(request.user, self.workspace, pk, execution=True)
         bounty = locked_bounty(bounty.id)
-        require_lead(request.user, bounty.stage.project)
+        require_bounty_manager(request.user, bounty)
         if bounty.status == "deleted":
             raise ValidationError("悬赏已删除")
         kind = request.data.get("kind")
@@ -210,7 +210,7 @@ class BountyMaterialDetailView(LabView):
     @transaction.atomic
     def delete(self, request, slug, pk, material_id):
         bounty = bounty_access(request.user, self.workspace, pk, execution=True)
-        require_lead(request.user, bounty.stage.project)
+        require_bounty_manager(request.user, bounty)
         material = get_object_or_404(BountyMaterial.objects.select_for_update(), bounty=bounty, id=material_id)
         if not material.revoked_at:
             material.revoked_at = timezone.now()

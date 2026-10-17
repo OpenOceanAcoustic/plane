@@ -13,7 +13,7 @@ from django.db import close_old_connections
 from plane.db.models import Project, ProjectMember, Workspace, WorkspaceMember
 from plane.lab import bounty_budgets
 from plane.lab.models import Audit, Bounty, Stage
-from .test_bounty_project_budget import budgets, publication, task
+from .test_bounty_project_budget import assign, budgets, publication, task
 
 pytestmark = [pytest.mark.django_db(transaction=True), pytest.mark.contract]
 
@@ -38,6 +38,7 @@ def test_successful_budget_replay_preserves_bounty_reservation_and_single_source
     data = body(lab)
     first = create(lab, data)
     assert first.status_code == 201, first.content
+    assign(lab, "20")
     client = lab["client"](lab["lead"])
     assert (
         client.put(

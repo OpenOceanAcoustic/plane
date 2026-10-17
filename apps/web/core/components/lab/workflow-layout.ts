@@ -15,6 +15,7 @@ const mainSequence = [
   "publication",
   "publication_review",
   "claim",
+  "quote_review",
   "confirm",
   "active",
   "submit",

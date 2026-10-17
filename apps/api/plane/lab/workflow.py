@@ -7,7 +7,7 @@ from rest_framework.response import Response
 
 from . import bounties
 from .models import Audit
-from .permissions import require_lead
+from .permissions import require_bounty_manager
 from .planning_views import LabView
 from .bounty_access import access_level, bounty_access, planning_issue_access
 
@@ -58,6 +58,8 @@ EDGES = (
     ("done", "deleted"),
 )
 AUDIT_LABELS = {
+    "bounty.vc_reserved": "冻结悬赏 VC",
+    "bounty.vc_released": "退回未用 VC",
     "bounty.published": "发布团队任务",
     "bounty.publication_review": "重大发布复核通过",
     "bounty.claim": "申请认领",
@@ -120,7 +122,7 @@ def actions_for(bounty, user, allocations, ledger):
             }
         )
 
-    lead = permitted(lambda: require_lead(user, bounty.stage.project))
+    lead = permitted(lambda: require_bounty_manager(user, bounty))
     editable = bool(bounty.issue_id) and permitted(
         lambda: planning_issue_access(user, bounty.stage.workspace, bounty.issue_id)
     )
@@ -135,6 +137,7 @@ def actions_for(bounty, user, allocations, ledger):
             and bounty.issue_id
             and not bounty.issue.archived_at
             and user.id not in (bounty.reviewer_id, bounty.independent_reviewer_id)
+            and not (bounty.member_funded and bounty.funding.owner_id_snapshot == user.id)
             and bounties.claim_available(bounty) > 0
         ):
             add("claim", "申请认领", "claim")
@@ -283,6 +286,65 @@ class BountyWorkflowView(LabView):
             and not (bounty.major and (source, target) == ("publication", "claim"))
             and not (bounty.major and source == "acceptance" and target in ("done", "partial", "rework", "rejected"))
         ]
+        if request.query_params.get("quotes") == "1":
+            from .quotes import visible_quotes
+            from .quote_views import LABELS
+
+            private_quotes = visible_quotes(request.user, bounty)
+            quote_events = Audit.objects.filter(
+                object_id__in=[row.id for row in private_quotes], action__in=LABELS
+            ).order_by("created_at", "id")
+            has_review = any(row.action == "bounty.quote_review_requested" for row in quote_events)
+            quote_pending_review = any(row.status == "pending_review" for row in private_quotes)
+            if not any(not hasattr(row, "quote") for row in allocations):
+                nodes = [node for node in nodes if node["id"] != "confirm"]
+                edges = [edge for edge in edges if "confirm" not in (edge["source"], edge["target"])]
+                edges.append({"id": "claim-active", "source": "claim", "target": "active"})
+                if current == "confirm":
+                    current = "active"
+            for node in nodes:
+                if node["id"] == "claim":
+                    node["label"] = "申请报价与审批"
+            if has_review:
+                nodes.append(
+                    {
+                        "id": "quote_review",
+                        "label": "加价复核",
+                        "x": 750,
+                        "y": 0,
+                        "state": "current" if quote_pending_review else "completed",
+                    }
+                )
+                edges.extend(
+                    [
+                        {"id": "claim-quote-review", "source": "claim", "target": "quote_review"},
+                        {"id": "quote-review-active", "source": "quote_review", "target": "active"},
+                    ]
+                )
+                if quote_pending_review and bounty.status == "open":
+                    current = "quote_review"
+            for event in quote_events:
+                history.append(
+                    {
+                        "id": str(event.id),
+                        "label": LABELS[event.action],
+                        "node_id": "quote_review"
+                        if event.action in ("bounty.quote_review_requested", "bounty.quote_returned")
+                        else "claim",
+                        "actor": event.actor_name,
+                        "created_at": event.created_at.isoformat(),
+                        "reason": event.details.get("reason", ""),
+                        "result": None,
+                    }
+                )
+            history.sort(key=lambda row: (row["created_at"], row["id"]))
+            for node in nodes:
+                if node["id"] == current:
+                    node["state"] = "current"
+                elif node["state"] == "current":
+                    node["state"] = (
+                        "completed" if any(event["node_id"] == node["id"] for event in history) else "upcoming"
+                    )
         return Response(
             {
                 "bounty_id": str(bounty.id),
