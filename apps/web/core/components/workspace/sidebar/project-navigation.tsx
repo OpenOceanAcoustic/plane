@@ -4,6 +4,7 @@
  * See the LICENSE file for details.
  */
 
+import { MessageSquare } from "lucide-react";
 import React, { useCallback, useMemo } from "react";
 import { observer } from "mobx-react";
 import Link from "next/link";
@@ -175,6 +176,23 @@ export const ProjectNavigation = observer(function ProjectNavigation(props: TPro
 
   return (
     <>
+      {(allowPermissions(
+        [EUserPermissions.ADMIN, EUserPermissions.MEMBER],
+        EUserPermissionsLevel.PROJECT,
+        workspaceSlug,
+        projectId
+      ) ||
+        (project.guest_view_all_features &&
+          allowPermissions([EUserPermissions.GUEST], EUserPermissionsLevel.PROJECT, workspaceSlug, projectId))) && (
+        <Link href={`/${workspaceSlug}/lab/chat?project=${projectId}`} onClick={handleProjectClick}>
+          <SidebarNavItem>
+            <div className="flex items-center gap-1.5 py-[1px]">
+              <MessageSquare className="size-4 flex-shrink-0 stroke-[1.5]" />
+              <span className="text-11 font-medium">项目聊天</span>
+            </div>
+          </SidebarNavItem>
+        </Link>
+      )}
       {navigationItemsMemo.map((item) => {
         if (!item.shouldRender) return;
 

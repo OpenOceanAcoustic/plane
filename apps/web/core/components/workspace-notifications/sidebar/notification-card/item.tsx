@@ -6,6 +6,7 @@
 
 import { useState } from "react";
 import { observer } from "mobx-react";
+import { useNavigate } from "react-router";
 import { Clock } from "lucide-react";
 // plane imports
 import { Avatar, Row } from "@plane/ui";
@@ -26,6 +27,7 @@ type TNotificationItem = {
 
 export const NotificationItem = observer(function NotificationItem(props: TNotificationItem) {
   const { workspaceSlug, notificationId } = props;
+  const navigate = useNavigate();
   // hooks
   const { currentSelectedNotificationId, setCurrentSelectedNotificationId } = useWorkspaceNotifications();
   const { asJson: notification, markNotificationAsRead } = useNotification(notificationId);
@@ -40,10 +42,20 @@ export const NotificationItem = observer(function NotificationItem(props: TNotif
   const issueId = notification?.data?.issue?.id || undefined;
   const workspace = getWorkspaceBySlug(workspaceSlug);
 
-  const notificationField = notification?.data?.issue_activity.field || undefined;
+  const chat = notification.entity_name === "chat" ? notification.data?.chat : undefined;
+  const notificationField = notification?.data?.issue_activity?.field || (chat ? "chat" : undefined);
   const notificationTriggeredBy = notification.triggered_by_details || undefined;
 
   const handleNotificationIssuePeekOverview = async () => {
+    if (chat && !isSnoozeStateModalOpen && !customSnoozeModal) {
+      try {
+        await markNotificationAsRead(workspaceSlug);
+      } catch (error) {
+        console.error(error);
+      }
+      navigate(`/${workspaceSlug}/lab/chat?thread=${chat.thread_id}&message=${chat.message_id}`);
+      return;
+    }
     if (workspaceSlug && projectId && issueId && !isSnoozeStateModalOpen && !customSnoozeModal) {
       setPeekIssue(undefined);
       setCurrentSelectedNotificationId(notificationId);
@@ -65,7 +77,14 @@ export const NotificationItem = observer(function NotificationItem(props: TNotif
     }
   };
 
-  if (!workspaceSlug || !notificationId || !notification?.id || !notificationField || !workspace?.id || !projectId)
+  if (
+    !workspaceSlug ||
+    !notificationId ||
+    !notification?.id ||
+    !notificationField ||
+    !workspace?.id ||
+    (!chat && !projectId)
+  )
     return <></>;
 
   return (
@@ -99,12 +118,16 @@ export const NotificationItem = observer(function NotificationItem(props: TNotif
         <div className="-mt-2 w-full space-y-1">
           <div className="relative flex h-8 items-center gap-3">
             <div className="line-clamp-1 w-full truncate overflow-hidden text-body-xs-medium break-all whitespace-normal text-primary">
-              <NotificationContent
-                notification={notification}
-                workspaceId={workspace.id}
-                workspaceSlug={workspaceSlug}
-                projectId={projectId}
-              />
+              {chat ? (
+                <>{notificationTriggeredBy?.display_name} 在聊天中提及了你</>
+              ) : (
+                <NotificationContent
+                  notification={notification}
+                  workspaceId={workspace.id}
+                  workspaceSlug={workspaceSlug}
+                  projectId={projectId!}
+                />
+              )}
             </div>
             <NotificationOption
               workspaceSlug={workspaceSlug}
@@ -118,8 +141,14 @@ export const NotificationItem = observer(function NotificationItem(props: TNotif
 
           <div className="relative flex items-center gap-3 text-caption-sm-regular text-secondary">
             <div className="line-clamp-1 w-full truncate overflow-hidden break-words whitespace-normal">
-              {notification?.data?.issue?.identifier}-{notification?.data?.issue?.sequence_id}&nbsp;
-              {notification?.data?.issue?.name}
+              {chat ? (
+                "聊天"
+              ) : (
+                <>
+                  {notification?.data?.issue?.identifier}-{notification?.data?.issue?.sequence_id}&nbsp;
+                  {notification?.data?.issue?.name}
+                </>
+              )}
             </div>
             <div className="flex-shrink-0">
               {notification?.snoozed_till ? (

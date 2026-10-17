@@ -17,6 +17,7 @@ import { LabPlanningWorkbench } from "./planner-workbench";
 import { LabTaskTable } from "./task-table";
 import { LabContributions } from "./contributions";
 import type { LabOpenProjectIssue } from "./item-details";
+import { LabChat } from "./chat";
 import { labSections } from "./sections";
 // oxlint-disable-next-line import/no-unassigned-import -- scoped lab page accents
 import "./theme.css";
@@ -33,14 +34,14 @@ export const LabPanel = observer(function LabPanel({
   const [refreshKey, setRefreshKey] = useState(0);
   const previousDetailsOpen = useRef(projectDetailsOpen);
   useEffect(() => {
-    if (previousDetailsOpen.current && !projectDetailsOpen) {
+    if (previousDetailsOpen.current && !projectDetailsOpen && section !== "chat") {
       if (section === "contributions") setRefreshKey((value) => value + 1);
       else void store.execute(store.loadPlanner);
     }
     previousDetailsOpen.current = projectDetailsOpen;
   }, [projectDetailsOpen, section, store]);
   useEffect(() => {
-    if (section === "contributions") return;
+    if (section === "contributions" || section === "chat") return;
     void store.execute(store.loadPlanner);
     const refresh = () => {
       if (document.visibilityState === "visible") void store.execute(store.loadPlanner);
@@ -52,6 +53,7 @@ export const LabPanel = observer(function LabPanel({
       window.clearInterval(timer);
     };
   }, [section, store]);
+  if (section === "chat") return <LabChat openProjectIssue={openProjectIssue} />;
   const currentSection = labSections.find((entry) => entry.key === section) ?? labSections[0];
   const SectionIcon = currentSection.Icon;
   return (

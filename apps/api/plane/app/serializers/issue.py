@@ -699,6 +699,7 @@ class IssueCommentSerializer(BaseSerializer):
         model = IssueComment
         fields = "__all__"
         read_only_fields = [
+            "actor",
             "workspace",
             "project",
             "issue",

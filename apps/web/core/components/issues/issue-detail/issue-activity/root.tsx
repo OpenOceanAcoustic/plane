@@ -4,7 +4,7 @@
  * See the LICENSE file for details.
  */
 
-import { useMemo } from "react";
+import { useEffect, useMemo } from "react";
 import uniq from "lodash-es/uniq";
 import { observer } from "mobx-react";
 // plane package imports
@@ -17,8 +17,10 @@ import { useTranslation } from "@plane/i18n";
 import type { TFileSignedURLResponse, TIssueComment } from "@plane/types";
 // components
 import { CommentCreate } from "@/components/comments/comment-create";
+import { WorkItemCommentContext } from "@/components/comments/work-item-context";
 // hooks
 import { useProject } from "@/hooks/store/use-project";
+import { useIssueDetail } from "@/hooks/store/use-issue-detail";
 // local imports
 import { IssueActivityCommentRoot } from "./activity-comment-root";
 import { useWorkItemCommentOperations } from "./helper";
@@ -52,6 +54,29 @@ export const IssueActivity = observer(function IssueActivity(props: TIssueActivi
   const { setValue: setSortOrder, storedValue: sortOrder } = useLocalStorage("activity_sort_order", E_SORT_ORDER.ASC);
 
   const { getProjectById } = useProject();
+  const { comment } = useIssueDetail();
+  useEffect(() => {
+    if (isIntakeIssue) return;
+    let fetching = false;
+    const refresh = async () => {
+      if (fetching || document.visibilityState !== "visible") return;
+      fetching = true;
+      try {
+        await comment.fetchComments(workspaceSlug, projectId, issueId, "sync");
+      } catch (error) {
+        console.error("Comment synchronization failed", error);
+      } finally {
+        fetching = false;
+      }
+    };
+    const timer = window.setInterval(() => void refresh(), 3000);
+    const focus = () => void refresh();
+    window.addEventListener("focus", focus);
+    return () => {
+      window.clearInterval(timer);
+      window.removeEventListener("focus", focus);
+    };
+  }, [workspaceSlug, projectId, issueId, comment, isIntakeIssue]);
 
   // toggle filter
   const toggleFilter = (filter: TActivityFilters) => {
@@ -90,41 +115,43 @@ export const IssueActivity = observer(function IssueActivity(props: TIssueActivi
   if (!project) return <></>;
 
   return (
-    <div className="space-y-4">
-      {/* header */}
-      <div className="flex items-center justify-between">
-        <div className="text-h5-medium text-primary">{t("common.activity")}</div>
-        <div className="flex items-center gap-2">
-          <ActivitySortRoot sortOrder={sortOrder || E_SORT_ORDER.ASC} toggleSort={toggleSortOrder} />
-          <ActivityFilterRoot
-            selectedFilters={selectedFilters || defaultActivityFilters}
-            toggleFilter={toggleFilter}
-            isIntakeIssue={isIntakeIssue}
-            projectId={projectId}
-          />
-        </div>
-      </div>
-
-      {/* rendering activity */}
-      <div className="space-y-3">
-        <div className="min-h-[200px]">
-          <div className="space-y-3">
-            {!disabled && sortOrder === E_SORT_ORDER.DESC && renderCommentCreationBox}
-            <IssueActivityCommentRoot
-              projectId={projectId}
-              workspaceSlug={workspaceSlug}
-              isIntakeIssue={isIntakeIssue}
-              issueId={issueId}
+    <WorkItemCommentContext workspaceSlug={workspaceSlug} issueId={issueId} enabled={!isIntakeIssue}>
+      <div className="space-y-4">
+        {/* header */}
+        <div className="flex items-center justify-between">
+          <div className="text-h5-medium text-primary">{t("common.activity")}</div>
+          <div className="flex items-center gap-2">
+            <ActivitySortRoot sortOrder={sortOrder || E_SORT_ORDER.ASC} toggleSort={toggleSortOrder} />
+            <ActivityFilterRoot
               selectedFilters={selectedFilters || defaultActivityFilters}
-              activityOperations={activityOperations}
-              showAccessSpecifier={!!project.anchor}
-              disabled={disabled}
-              sortOrder={sortOrder || E_SORT_ORDER.ASC}
+              toggleFilter={toggleFilter}
+              isIntakeIssue={isIntakeIssue}
+              projectId={projectId}
             />
-            {!disabled && sortOrder === E_SORT_ORDER.ASC && renderCommentCreationBox}
+          </div>
+        </div>
+
+        {/* rendering activity */}
+        <div className="space-y-3">
+          <div className="min-h-[200px]">
+            <div className="space-y-3">
+              {!disabled && sortOrder === E_SORT_ORDER.DESC && renderCommentCreationBox}
+              <IssueActivityCommentRoot
+                projectId={projectId}
+                workspaceSlug={workspaceSlug}
+                isIntakeIssue={isIntakeIssue}
+                issueId={issueId}
+                selectedFilters={selectedFilters || defaultActivityFilters}
+                activityOperations={activityOperations}
+                showAccessSpecifier={!!project.anchor}
+                disabled={disabled}
+                sortOrder={sortOrder || E_SORT_ORDER.ASC}
+              />
+              {!disabled && sortOrder === E_SORT_ORDER.ASC && renderCommentCreationBox}
+            </div>
           </div>
         </div>
       </div>
-    </div>
+    </WorkItemCommentContext>
   );
 });

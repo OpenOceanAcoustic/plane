@@ -13,7 +13,7 @@ import { IssueCommentService } from "@/services/issue";
 // types
 import type { IIssueDetail } from "./root.store";
 
-export type TCommentLoader = "fetch" | "create" | "update" | "delete" | "mutate" | undefined;
+export type TCommentLoader = "fetch" | "create" | "update" | "delete" | "mutate" | "sync" | undefined;
 
 export interface IIssueCommentStoreActions {
   fetchComments: (
@@ -95,11 +95,11 @@ export class IssueCommentStore implements IIssueCommentStore {
     issueId: string,
     loaderType: TCommentLoader = "fetch"
   ) => {
-    this.loader = loaderType;
+    if (loaderType !== "sync") this.loader = loaderType;
 
     let props = {};
     const _commentIds = this.getCommentsByIssueId(issueId);
-    if (_commentIds && _commentIds.length > 0) {
+    if (loaderType !== "sync" && _commentIds && _commentIds.length > 0) {
       const _comment = this.getCommentById(_commentIds[_commentIds.length - 1]);
       if (_comment) props = { created_at__gt: _comment.created_at };
     }
@@ -108,6 +108,12 @@ export class IssueCommentStore implements IIssueCommentStore {
 
     const commentIds = comments.map((comment) => comment.id);
     runInAction(() => {
+      if (loaderType === "sync") {
+        for (const id of this.comments[issueId] ?? []) {
+          if (!commentIds.includes(id)) delete this.commentMap[id];
+        }
+        this.comments[issueId] = commentIds;
+      }
       update(this.comments, issueId, (_commentIds) => {
         if (!_commentIds) return commentIds;
         return uniq(concat(_commentIds, commentIds));

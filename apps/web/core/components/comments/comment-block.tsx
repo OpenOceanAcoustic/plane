@@ -9,12 +9,12 @@ import { useRef } from "react";
 import { observer } from "mobx-react";
 // plane imports
 import { CommentReplyIcon } from "@plane/propel/icons";
-import type { TIssueComment } from "@plane/types";
+import type { TComment } from "@plane/types";
 import { cn } from "@plane/utils";
 // hooks
 
 type TCommentBlock = {
-  comment: TIssueComment;
+  comment: TComment;
   ends: "top" | "bottom" | undefined;
   children: ReactNode;
 };

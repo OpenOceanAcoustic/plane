@@ -21,6 +21,7 @@ from plane.db.models import (
     Notification,
     UserNotificationPreference,
     WorkspaceMember,
+    Workspace,
 )
 from plane.utils.paginator import BasePaginator
 from plane.utils.order_queryset import NOTIFICATION_ORDER_BY_ALLOWLIST, sanitize_order_by
@@ -28,6 +29,7 @@ from plane.app.permissions import allow_permission, ROLE
 
 # Module imports
 from ..base import BaseAPIView, BaseViewSet
+from plane.lab.chat import visible_chat_notifications
 
 
 class NotificationViewSet(BaseViewSet, BasePaginator):
@@ -35,7 +37,7 @@ class NotificationViewSet(BaseViewSet, BasePaginator):
     serializer_class = NotificationSerializer
 
     def get_queryset(self):
-        return (
+        rows = (
             super()
             .get_queryset()
             .filter(
@@ -44,6 +46,8 @@ class NotificationViewSet(BaseViewSet, BasePaginator):
             )
             .select_related("workspace", "project", "triggered_by", "receiver")
         )
+        workspace = Workspace.objects.filter(slug=self.kwargs.get("slug")).first()
+        return visible_chat_notifications(rows, self.request.user, workspace) if workspace else rows.none()
 
     @allow_permission(allowed_roles=[ROLE.ADMIN, ROLE.MEMBER, ROLE.GUEST], level="WORKSPACE")
     def list(self, request, slug):
@@ -63,7 +67,7 @@ class NotificationViewSet(BaseViewSet, BasePaginator):
 
         notifications = (
             Notification.objects.filter(workspace__slug=slug, receiver_id=request.user.id)
-            .filter(entity_name="issue")
+            .filter(entity_name__in=["issue", "chat"])
             .annotate(is_inbox_issue=Exists(intake_issue))
             .annotate(is_intake_issue=Exists(intake_issue))
             .annotate(
@@ -76,6 +80,8 @@ class NotificationViewSet(BaseViewSet, BasePaginator):
             .select_related("workspace", "project", "triggered_by", "receiver")
             .order_by("snoozed_till", "-created_at")
         )
+
+        notifications = visible_chat_notifications(notifications, request.user, Workspace.objects.get(slug=slug))
 
         # Filters based on query parameters
         snoozed_filters = {
@@ -203,27 +209,19 @@ class UnreadNotificationEndpoint(BaseAPIView):
 
     @allow_permission(allowed_roles=[ROLE.ADMIN, ROLE.MEMBER, ROLE.GUEST], level="WORKSPACE")
     def get(self, request, slug):
-        # Watching Issues Count
-        unread_notifications_count = (
+        rows = visible_chat_notifications(
             Notification.objects.filter(
                 workspace__slug=slug,
-                receiver_id=request.user.id,
+                receiver=request.user,
                 read_at__isnull=True,
                 archived_at__isnull=True,
                 snoozed_till__isnull=True,
-            )
-            .exclude(sender__icontains="mentioned")
-            .count()
+            ),
+            request.user,
+            Workspace.objects.get(slug=slug),
         )
-
-        mention_notifications_count = Notification.objects.filter(
-            workspace__slug=slug,
-            receiver_id=request.user.id,
-            read_at__isnull=True,
-            archived_at__isnull=True,
-            snoozed_till__isnull=True,
-            sender__icontains="mentioned",
-        ).count()
+        unread_notifications_count = rows.exclude(sender__icontains="mentioned").count()
+        mention_notifications_count = rows.filter(sender__icontains="mentioned").count()
 
         return Response(
             {

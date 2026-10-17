@@ -8,7 +8,7 @@ import { useRef, useState } from "react";
 import { observer } from "mobx-react";
 // plane imports
 import type { EditorRefApi } from "@plane/editor";
-import type { TIssueComment, TCommentsOperations } from "@plane/types";
+import type { TComment, TCommentOperations } from "@plane/types";
 // local imports
 import { CommentQuickActions } from "../quick-actions";
 import { CommentBlock } from "../comment-block";
@@ -17,8 +17,8 @@ import { CommentCardDisplay } from "./display";
 type TCommentCard = {
   workspaceSlug: string;
   entityId: string;
-  comment: TIssueComment | undefined;
-  activityOperations: TCommentsOperations;
+  comment: TComment | undefined;
+  activityOperations: TCommentOperations;
   ends: "top" | "bottom" | undefined;
   showAccessSpecifier: boolean;
   showCopyLinkOption: boolean;

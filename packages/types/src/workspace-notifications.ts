@@ -28,6 +28,7 @@ export type TNotificationIssueLite = {
 };
 
 export type TNotificationData = {
+  chat?: { thread_id: string; message_id: string };
   issue: TNotificationIssueLite | undefined;
   issue_activity: {
     id: string | undefined;

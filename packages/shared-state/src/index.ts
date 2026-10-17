@@ -10,3 +10,4 @@ export * from "./lab.store";
 export * from "./lab-analytics.store";
 export * from "./lab-fields.store";
 export * from "./lab-contributions.store";
+export * from "./chat.store";

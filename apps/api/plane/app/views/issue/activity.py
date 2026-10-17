@@ -19,6 +19,8 @@ from .. import BaseAPIView
 from plane.app.serializers import IssueActivitySerializer, IssueCommentSerializer
 from plane.app.permissions import ProjectEntityPermission, allow_permission, ROLE
 from plane.db.models import IssueActivity, IssueComment, CommentReaction, IntakeIssue
+from plane.lab.permissions import workspace_member, issue_access
+from rest_framework.exceptions import NotFound
 
 
 class IssueActivityEndpoint(BaseAPIView):
@@ -28,6 +30,9 @@ class IssueActivityEndpoint(BaseAPIView):
     @method_decorator(gzip_page)
     @allow_permission([ROLE.ADMIN, ROLE.MEMBER, ROLE.GUEST])
     def get(self, request, slug, project_id, issue_id):
+        issue = issue_access(request.user, workspace_member(request.user, slug).workspace, issue_id)
+        if str(issue.project_id) != str(project_id):
+            raise NotFound("工作项不可访问")
         filters = {}
         if request.GET.get("created_at__gt", None) is not None:
             filters = {"created_at__gt": request.GET.get("created_at__gt")}
