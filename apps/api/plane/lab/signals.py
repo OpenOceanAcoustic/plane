@@ -39,5 +39,8 @@ def backfill_workspace_policies(sender, using, apps=None, **kwargs):
 
 
 def register_signals(app_config):
+    from .chat import after_issue_comment_save
+
+    post_save.connect(after_issue_comment_save, sender="db.IssueComment", dispatch_uid="lab.chat.comment")
     post_save.connect(workspace_policy_on_create, sender="db.Workspace", dispatch_uid="lab.workspace_policy.create")
     post_migrate.connect(backfill_workspace_policies, sender=app_config, dispatch_uid="lab.workspace_policy.backfill")

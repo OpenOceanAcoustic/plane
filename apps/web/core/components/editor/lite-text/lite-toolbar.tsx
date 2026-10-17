@@ -11,22 +11,31 @@ import type { ToolbarMenuItem } from "@plane/editor";
 import { IMAGE_ITEM } from "@plane/editor";
 
 type LiteToolbarProps = {
+  allowUploads?: boolean;
   onSubmit: (e: React.KeyboardEvent<HTMLDivElement> | React.MouseEvent<HTMLButtonElement>) => void;
   isSubmitting: boolean;
   isEmpty: boolean;
   executeCommand: (item: ToolbarMenuItem) => void;
 };
 
-export function LiteToolbar({ onSubmit, isSubmitting, isEmpty, executeCommand }: LiteToolbarProps) {
+export function LiteToolbar({
+  onSubmit,
+  isSubmitting,
+  isEmpty,
+  executeCommand,
+  allowUploads = true,
+}: LiteToolbarProps) {
   return (
     <div className="flex items-center gap-2 pb-1">
-      <button
-        onClick={() => executeCommand(IMAGE_ITEM)}
-        type="button"
-        className="p-1 text-tertiary transition-colors hover:text-secondary"
-      >
-        <Paperclip className="size-3" />
-      </button>
+      {allowUploads && (
+        <button
+          onClick={() => executeCommand(IMAGE_ITEM)}
+          type="button"
+          className="p-1 text-tertiary transition-colors hover:text-secondary"
+        >
+          <Paperclip className="size-3" />
+        </button>
+      )}
       <button
         type="button"
         onClick={(e) => onSubmit(e)}

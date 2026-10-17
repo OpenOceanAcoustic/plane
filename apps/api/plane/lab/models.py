@@ -284,6 +284,7 @@ class WIPException(Record):
 from .document_models import DocumentFileVersion, TaskDocumentLink  # noqa: E402,F401
 from .field_models import FieldDefinition, IssueFieldValue, ProjectField  # noqa: E402,F401
 from .bounty_models import BountyMaterial, BountyPublication, BountyTaskAccess  # noqa: E402,F401
+from .chat_models import ChatThread, ChatMessage, ChatReadState, ChatSubmission, ChatMention  # noqa: E402,F401
 from .finance_models import (  # noqa: E402,F401
     CashBatch,
     CommitmentCancellation,

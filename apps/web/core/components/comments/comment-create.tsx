@@ -10,7 +10,7 @@ import { useForm, Controller } from "react-hook-form";
 // plane imports
 import { EIssueCommentAccessSpecifier } from "@plane/constants";
 import type { EditorRefApi } from "@plane/editor";
-import type { TIssueComment, TCommentsOperations } from "@plane/types";
+import type { TComment, TCommentOperations } from "@plane/types";
 import { cn, isCommentEmpty } from "@plane/utils";
 // components
 import { LiteTextEditor } from "@/components/editor/lite-text";
@@ -18,11 +18,12 @@ import { LiteTextEditor } from "@/components/editor/lite-text";
 import { useWorkspace } from "@/hooks/store/use-workspace";
 // services
 import { FileService } from "@/services/file.service";
+import { useCommentContext } from "./context";
 
 type TCommentCreate = {
   entityId: string;
   workspaceSlug: string;
-  activityOperations: TCommentsOperations;
+  activityOperations: TCommentOperations;
   showToolbarInitially?: boolean;
   projectId?: string;
   onSubmitCallback?: (elementId: string) => void;
@@ -42,6 +43,8 @@ export const CommentCreate = observer(function CommentCreate(props: TCommentCrea
   } = props;
   // states
   const [uploadedAssetIds, setUploadedAssetIds] = useState<string[]>([]);
+  const [errorMessage, setError] = useState("");
+  const context = useCommentContext();
   // refs
   const editorRef = useRef<EditorRefApi>(null);
   // store hooks
@@ -55,15 +58,17 @@ export const CommentCreate = observer(function CommentCreate(props: TCommentCrea
     watch,
     formState: { isSubmitting },
     reset,
-  } = useForm<Partial<TIssueComment>>({
+  } = useForm<Partial<TComment>>({
     defaultValues: {
-      comment_html: "<p></p>",
+      comment_html: context.draft ?? "<p></p>",
     },
   });
 
-  const onSubmit = async (formData: Partial<TIssueComment>) => {
+  const onSubmit = async (formData: Partial<TComment>) => {
     try {
+      setError("");
       const comment = await activityOperations.createComment(formData);
+      if (!comment?.id) throw new Error("消息发送失败，请重试");
       if (comment?.id) onSubmitCallback?.(comment.id);
       if (uploadedAssetIds.length > 0) {
         if (projectId) {
@@ -77,13 +82,13 @@ export const CommentCreate = observer(function CommentCreate(props: TCommentCrea
         }
         setUploadedAssetIds([]);
       }
-    } catch (error) {
-      console.error(error);
-    } finally {
       reset({
         comment_html: "<p></p>",
       });
       editorRef.current?.clearEditor();
+      context.onDraftChange?.("<p></p>");
+    } catch (error) {
+      setError(error instanceof Error ? error.message : "消息发送失败，请重试");
     }
   };
 
@@ -96,6 +101,8 @@ export const CommentCreate = observer(function CommentCreate(props: TCommentCrea
       onKeyDown={(e) => {
         if (
           e.key === "Enter" &&
+          !e.defaultPrevented &&
+          !e?.nativeEvent?.isComposing &&
           !e.shiftKey &&
           !e.ctrlKey &&
           !e.metaKey &&
@@ -106,6 +113,11 @@ export const CommentCreate = observer(function CommentCreate(props: TCommentCrea
           handleSubmit(onSubmit)(e);
       }}
     >
+      {errorMessage && (
+        <p role="alert" className="mb-2 text-13 text-danger-primary">
+          {errorMessage}
+        </p>
+      )}
       <Controller
         name="access"
         control={control}
@@ -118,31 +130,45 @@ export const CommentCreate = observer(function CommentCreate(props: TCommentCrea
                 editable
                 workspaceId={workspaceId}
                 id={"add_comment_" + entityId}
-                value={"<p></p>"}
+                value={null}
                 workspaceSlug={workspaceSlug}
                 projectId={projectId}
                 onEnterKeyPress={(e) => {
-                  if (!isEmpty && !isSubmitting) {
+                  if (!e?.nativeEvent?.isComposing && !isEmpty && !isSubmitting) {
                     handleSubmit(onSubmit)(e);
                   }
                 }}
                 ref={editorRef}
                 initialValue={value ?? "<p></p>"}
                 containerClassName="min-h-min"
-                onChange={(comment_json, comment_html) => onChange(comment_html)}
+                onChange={(_comment_json, comment_html) => {
+                  onChange(comment_html);
+                  context.onDraftChange?.(comment_html);
+                }}
                 accessSpecifier={accessValue ?? EIssueCommentAccessSpecifier.INTERNAL}
                 handleAccessChange={onAccessChange}
                 isSubmitting={isSubmitting}
-                uploadFile={async (blockId, file) => {
-                  const { asset_id } = await activityOperations.uploadCommentAsset(blockId, file);
-                  setUploadedAssetIds((prev) => [...prev, asset_id]);
-                  return asset_id;
-                }}
-                duplicateFile={async (assetId: string) => {
-                  const { asset_id } = await activityOperations.duplicateCommentAsset(assetId);
-                  setUploadedAssetIds((prev) => [...prev, asset_id]);
-                  return asset_id;
-                }}
+                uploadFile={
+                  activityOperations.uploadCommentAsset
+                    ? async (blockId, file) => {
+                        if (!activityOperations.uploadCommentAsset) throw new Error("此会话不支持上传");
+                        const { asset_id } = await activityOperations.uploadCommentAsset(blockId, file);
+                        setUploadedAssetIds((prev) => [...prev, asset_id]);
+                        return asset_id;
+                      }
+                    : undefined
+                }
+                duplicateFile={
+                  activityOperations.duplicateCommentAsset
+                    ? async (assetId: string) => {
+                        if (!activityOperations.duplicateCommentAsset) throw new Error("此会话不支持上传");
+                        const { asset_id } = await activityOperations.duplicateCommentAsset(assetId);
+                        setUploadedAssetIds((prev) => [...prev, asset_id]);
+                        return asset_id;
+                      }
+                    : undefined
+                }
+                submitButtonText={context.submitLabel}
                 showToolbarInitially={showToolbarInitially}
                 parentClassName="p-2"
                 displayConfig={{

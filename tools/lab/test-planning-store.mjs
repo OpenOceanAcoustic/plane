@@ -9,7 +9,7 @@ const require = createRequire(new URL("../../apps/web/package.json", import.meta
 const { build } = createRequire(require.resolve("vite"))("esbuild");
 const directory = mkdtempSync(join(tmpdir(), "plane-lab-planning-store-"));
 try {
-  const sources = ["lab.store.test", "lab-contributions.store.test"];
+  const sources = ["lab.store.test", "lab-contributions.store.test", "chat.store.test"];
   await build({
     entryPoints: sources.map((source) =>
       fileURLToPath(new URL(`../../packages/shared-state/src/${source}.ts`, import.meta.url))

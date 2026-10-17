@@ -10,6 +10,7 @@ from django.utils import timezone
 from django.db.models import Exists
 from django.core.serializers.json import DjangoJSONEncoder
 from django.db import IntegrityError
+from rest_framework.exceptions import NotFound
 
 # Third Party imports
 from rest_framework.response import Response
@@ -19,9 +20,10 @@ from rest_framework import status
 from .. import BaseViewSet
 from plane.app.serializers import IssueCommentSerializer, CommentReactionSerializer
 from plane.app.permissions import allow_permission, ROLE
-from plane.db.models import IssueComment, ProjectMember, CommentReaction, Project, Issue
+from plane.db.models import IssueComment, ProjectMember, CommentReaction
 from plane.bgtasks.issue_activities_task import issue_activity
 from plane.utils.host import base_host
+from plane.lab.permissions import workspace_member, issue_access
 from plane.bgtasks.webhook_task import model_activity
 
 
@@ -31,6 +33,13 @@ class IssueCommentViewSet(BaseViewSet):
     webhook_event = "issue_comment"
 
     filterset_fields = ["issue__id", "workspace__id"]
+
+    def accessible_issue(self, request, slug, project_id, issue_id):
+        workspace = workspace_member(request.user, slug).workspace
+        issue = issue_access(request.user, workspace, issue_id, edit=True)
+        if str(issue.project_id) != str(project_id):
+            raise NotFound("工作项不可访问")
+        return issue
 
     def get_queryset(self):
         return self.filter_queryset(
@@ -62,8 +71,8 @@ class IssueCommentViewSet(BaseViewSet):
 
     @allow_permission([ROLE.ADMIN, ROLE.MEMBER, ROLE.GUEST])
     def create(self, request, slug, project_id, issue_id):
-        project = Project.objects.get(pk=project_id)
-        issue = Issue.objects.get(pk=issue_id)
+        issue = self.accessible_issue(request, slug, project_id, issue_id)
+        project = issue.project
         if (
             ProjectMember.objects.filter(
                 workspace__slug=slug,
@@ -108,6 +117,7 @@ class IssueCommentViewSet(BaseViewSet):
 
     @allow_permission(allowed_roles=[ROLE.ADMIN], creator=True, model=IssueComment)
     def partial_update(self, request, slug, project_id, issue_id, pk):
+        self.accessible_issue(request, slug, project_id, issue_id)
         issue_comment = IssueComment.objects.get(workspace__slug=slug, project_id=project_id, issue_id=issue_id, pk=pk)
         requested_data = json.dumps(self.request.data, cls=DjangoJSONEncoder)
         current_instance = json.dumps(IssueCommentSerializer(issue_comment).data, cls=DjangoJSONEncoder)
@@ -143,9 +153,11 @@ class IssueCommentViewSet(BaseViewSet):
 
     @allow_permission(allowed_roles=[ROLE.ADMIN], creator=True, model=IssueComment)
     def destroy(self, request, slug, project_id, issue_id, pk):
+        self.accessible_issue(request, slug, project_id, issue_id)
         issue_comment = IssueComment.objects.get(workspace__slug=slug, project_id=project_id, issue_id=issue_id, pk=pk)
         current_instance = json.dumps(IssueCommentSerializer(issue_comment).data, cls=DjangoJSONEncoder)
-        issue_comment.delete()
+        issue_comment.deleted_at = timezone.now()
+        issue_comment.save(update_fields=["deleted_at"])
         issue_activity.delay(
             type="comment.activity.deleted",
             requested_data=json.dumps({"comment_id": str(pk)}),

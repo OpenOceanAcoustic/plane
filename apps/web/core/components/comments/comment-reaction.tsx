@@ -10,14 +10,14 @@ import { observer } from "mobx-react";
 import { stringToEmoji } from "@plane/propel/emoji-icon-picker";
 import { EmojiReactionGroup, EmojiReactionPicker } from "@plane/propel/emoji-reaction";
 import type { EmojiReactionType } from "@plane/propel/emoji-reaction";
-import type { TCommentsOperations, TIssueComment } from "@plane/types";
+import type { TCommentOperations, TComment } from "@plane/types";
 // helpers
 // local imports
 
 export type TProps = {
-  comment: TIssueComment;
+  comment: TComment;
   disabled?: boolean;
-  activityOperations: TCommentsOperations;
+  activityOperations: TCommentOperations;
 };
 
 export const CommentReactions = observer(function CommentReactions(props: TProps) {
@@ -25,8 +25,8 @@ export const CommentReactions = observer(function CommentReactions(props: TProps
   // state
   const [isPickerOpen, setIsPickerOpen] = useState(false);
 
-  const userReactions = activityOperations.userReactions(comment.id);
-  const reactionIds = activityOperations.reactionIds(comment.id);
+  const userReactions = activityOperations.userReactions?.(comment.id);
+  const reactionIds = activityOperations.reactionIds?.(comment.id);
 
   // Transform reactions data to Propel EmojiReactionType format
   const reactions: EmojiReactionType[] = useMemo(() => {
@@ -36,7 +36,7 @@ export const CommentReactions = observer(function CommentReactions(props: TProps
       .filter((reaction) => reactionIds[reaction]?.length > 0)
       .map((reaction) => {
         // Get user names for this reaction
-        const tooltipContent = activityOperations.getReactionUsers(reaction, reactionIds);
+        const tooltipContent = activityOperations.getReactionUsers?.(reaction, reactionIds);
         // Parse the tooltip content string to extract user names
         const users = tooltipContent ? tooltipContent.split(", ") : [];
 
@@ -54,13 +54,13 @@ export const CommentReactions = observer(function CommentReactions(props: TProps
     // Convert emoji back to decimal string format for the API
     const emojiCodePoints = Array.from(emoji).map((char) => char.codePointAt(0));
     const reactionString = emojiCodePoints.join("-");
-    activityOperations.react(comment.id, reactionString, userReactions);
+    activityOperations.react?.(comment.id, reactionString, userReactions);
   };
 
   const handleEmojiSelect = (emoji: string) => {
     if (!userReactions) return;
     // emoji is already in decimal string format from EmojiReactionPicker
-    activityOperations.react(comment.id, emoji, userReactions);
+    activityOperations.react?.(comment.id, emoji, userReactions);
   };
 
   if (!userReactions) return null;

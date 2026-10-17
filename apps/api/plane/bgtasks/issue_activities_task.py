@@ -1583,7 +1583,7 @@ def issue_activity(
         # Save all the values to database
         issue_activities_created = IssueActivity.objects.bulk_create(issue_activities)
 
-        if notification:
+        if notification and not type.startswith("comment.activity."):
             notifications.delay(
                 type=type,
                 issue_id=issue_id,

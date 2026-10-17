@@ -12,16 +12,18 @@ import { EIssueCommentAccessSpecifier } from "@plane/constants";
 import { useTranslation } from "@plane/i18n";
 import { IconButton } from "@plane/propel/icon-button";
 import { LinkIcon, GlobeIcon, LockIcon, EditIcon, TrashIcon } from "@plane/propel/icons";
-import type { TIssueComment, TCommentsOperations } from "@plane/types";
+import type { TComment, TCommentOperations } from "@plane/types";
 import type { TContextMenuItem } from "@plane/ui";
 import { CustomMenu } from "@plane/ui";
 import { cn } from "@plane/utils";
 // hooks
 import { useUser } from "@/hooks/store/user";
+import { useCommentContext } from "./context";
+import { MessageSquare } from "lucide-react";
 
 type TCommentCard = {
-  activityOperations: TCommentsOperations;
-  comment: TIssueComment;
+  activityOperations: TCommentOperations;
+  comment: TComment;
   setEditMode: () => void;
   showAccessSpecifier: boolean;
   showCopyLinkOption: boolean;
@@ -33,14 +35,16 @@ export const CommentQuickActions = observer(function CommentQuickActions(props: 
   const { data: currentUser } = useUser();
   // derived values
   const isAuthor = currentUser?.id === comment.actor;
-  const canEdit = isAuthor;
-  const canDelete = isAuthor;
+  const canEdit = comment.can_edit ?? isAuthor;
+  const canDelete = comment.can_delete ?? isAuthor;
+  const { onReply } = useCommentContext();
   // translation
   const { t } = useTranslation();
 
   const MENU_ITEMS = useMemo(
     function MENU_ITEMS(): TContextMenuItem[] {
       return [
+        { key: "reply", action: () => onReply?.(comment), title: "回复", icon: MessageSquare, shouldRender: !!onReply },
         {
           key: "edit",
           action: setEditMode,
@@ -80,7 +84,7 @@ export const CommentQuickActions = observer(function CommentQuickActions(props: 
         },
       ].filter((item) => item.shouldRender !== false);
     },
-    [t, setEditMode, canEdit, showCopyLinkOption, activityOperations, comment, showAccessSpecifier, canDelete]
+    [t, setEditMode, canEdit, showCopyLinkOption, activityOperations, comment, showAccessSpecifier, canDelete, onReply]
   );
 
   if (MENU_ITEMS.length === 0) return null;

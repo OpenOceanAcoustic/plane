@@ -65,3 +65,4 @@ export * from "./lab-analytics";
 export * from "./lab-fields";
 export * from "./lab-finance";
 export * from "./lab-contributions";
+export * from "./chat";

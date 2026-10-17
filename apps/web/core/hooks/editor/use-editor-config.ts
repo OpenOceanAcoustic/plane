@@ -19,8 +19,8 @@ const fileService = new FileService();
 
 type TArgs = {
   projectId?: string;
-  uploadFile: TFileHandler["upload"];
-  duplicateFile: TFileHandler["duplicate"];
+  uploadFile?: TFileHandler["upload"];
+  duplicateFile?: TFileHandler["duplicate"];
   workspaceId: string;
   workspaceSlug: string;
 };
@@ -91,8 +91,16 @@ export const useEditorConfig = () => {
             await fileService.restoreNewAsset(workspaceSlug, src);
           }
         },
-        upload: uploadFile,
-        duplicate: duplicateFile,
+        upload:
+          uploadFile ??
+          (async () => {
+            throw new Error("当前编辑器不支持上传");
+          }),
+        duplicate:
+          duplicateFile ??
+          (async () => {
+            throw new Error("当前编辑器不支持复制附件");
+          }),
         validation: {
           maxFileSize,
         },

@@ -1,8 +1,18 @@
 /** Copyright (c) 2026 OpenOceanAcoustic and contributors. SPDX-License-Identifier: AGPL-3.0-only */
 
-import { BarChart3, CalendarDays, Coins, FolderKanban, TableProperties, Target, Wallet } from "lucide-react";
+import {
+  MessageSquare,
+  BarChart3,
+  CalendarDays,
+  Coins,
+  FolderKanban,
+  TableProperties,
+  Target,
+  Wallet,
+} from "lucide-react";
 
 export const labSections = [
+  { key: "chat", name: "聊天", Icon: MessageSquare },
   { key: "planner", name: "个人规划", Icon: FolderKanban },
   { key: "contributions", name: "我的项目与 VC", Icon: Coins },
   { key: "team", name: "团队排期", Icon: CalendarDays },

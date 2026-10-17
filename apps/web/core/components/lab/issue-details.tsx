@@ -78,6 +78,9 @@ export const LabIssueDetails = observer(function LabIssueDetails({
   }
   return (
     <>
+      <Link to={`/${workspaceSlug}/lab/chat?issue=${issueId}`} className="text-13 text-accent-primary">
+        打开工作项聊天
+      </Link>
       {(canPublish || (deletionAllowed && !isValidating)) && (
         <div className="flex justify-end gap-2">
           {canPublish && (

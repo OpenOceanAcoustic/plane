@@ -13,7 +13,7 @@ import type { EditorRefApi } from "@plane/editor";
 import { useHashScroll } from "@plane/hooks";
 import { GlobeIcon, LockIcon } from "@plane/propel/icons";
 import { EIssueCommentAccessSpecifier } from "@plane/types";
-import type { TCommentsOperations, TIssueComment } from "@plane/types";
+import type { TCommentOperations, TComment } from "@plane/types";
 import { calculateTimeAgo, cn, getFileURL, renderFormattedDate, renderFormattedTime } from "@plane/utils";
 // components
 import { LiteTextEditor } from "@/components/editor/lite-text";
@@ -25,8 +25,8 @@ import { Avatar, Tooltip } from "@plane/ui";
 import { useMember } from "@/hooks/store/use-member";
 
 export type TCommentCardDisplayProps = {
-  activityOperations: TCommentsOperations;
-  comment: TIssueComment;
+  activityOperations: TCommentOperations;
+  comment: TComment;
   disabled: boolean;
   entityId: string;
   projectId?: string;
@@ -68,14 +68,14 @@ export const CommentCardDisplay = observer(function CommentCardDisplay(props: TC
     : (userDetails?.display_name ?? comment?.actor_detail?.display_name);
   const avatarUrl = userDetails?.avatar_url ?? comment?.actor_detail?.avatar_url;
 
-  const userReactions = activityOperations.userReactions(comment.id);
+  const userReactions = activityOperations.userReactions?.(comment.id);
 
   // navigation
   const pathname = usePathname();
   // derived values
   const commentBlockId = `comment-${comment?.id}`;
   // Check if there are any reactions to determine if we should render the footer
-  const reactionIds = activityOperations.reactionIds(comment.id);
+  const reactionIds = activityOperations.reactionIds?.(comment.id);
   const hasReactions = reactionIds && Object.keys(reactionIds).some((key) => reactionIds[key]?.length > 0);
 
   // scroll to comment
@@ -98,7 +98,7 @@ export const CommentCardDisplay = observer(function CommentCardDisplay(props: TC
     (emoji: string) => {
       if (!userReactions) return;
       // emoji is already in decimal string format from EmojiReactionPicker
-      void activityOperations.react(comment.id, emoji, userReactions);
+      void activityOperations.react?.(comment.id, emoji, userReactions);
     },
     [activityOperations, comment.id, userReactions]
   );
@@ -135,14 +135,16 @@ export const CommentCardDisplay = observer(function CommentCardDisplay(props: TC
         </div>
         {!disabled && (
           <div className="flex shrink-0 items-center gap-1">
-            <EmojiReactionPicker
-              isOpen={isPickerOpen}
-              handleToggle={setIsPickerOpen}
-              onChange={handleEmojiSelect}
-              disabled={disabled}
-              label={<EmojiReactionButton onAddReaction={() => setIsPickerOpen(true)} />}
-              placement="bottom-start"
-            />
+            {activityOperations.react && (
+              <EmojiReactionPicker
+                isOpen={isPickerOpen}
+                handleToggle={setIsPickerOpen}
+                onChange={handleEmojiSelect}
+                disabled={disabled}
+                label={<EmojiReactionButton onAddReaction={() => setIsPickerOpen(true)} />}
+                placement="bottom-start"
+              />
+            )}
             {renderQuickActions ? renderQuickActions() : null}
           </div>
         )}
@@ -165,6 +167,7 @@ export const CommentCardDisplay = observer(function CommentCardDisplay(props: TC
             ref={readOnlyEditorRef}
             id={comment.id}
             initialValue={comment.comment_html ?? ""}
+            value={comment.comment_html ?? ""}
             workspaceId={workspaceId}
             workspaceSlug={workspaceSlug}
             containerClassName={cn("!py-1 transition-[border-color] duration-500", highlightClassName)}

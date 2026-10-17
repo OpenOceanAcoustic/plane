@@ -25,6 +25,7 @@ import { useEditorFlagging } from "@/hooks/use-editor-flagging";
 // plane web service
 import { WorkspaceService } from "@/services/workspace.service";
 import { LiteToolbar } from "./lite-toolbar";
+import { useCommentContext } from "@/components/comments/context";
 const workspaceService = new WorkspaceService();
 
 type LiteTextEditorWrapperProps = MakeOptional<
@@ -51,8 +52,8 @@ type LiteTextEditorWrapperProps = MakeOptional<
       }
     | {
         editable: true;
-        uploadFile: TFileHandler["upload"];
-        duplicateFile: TFileHandler["duplicate"];
+        uploadFile?: TFileHandler["upload"];
+        duplicateFile?: TFileHandler["duplicate"];
       }
   );
 
@@ -61,6 +62,7 @@ export const LiteTextEditor = React.forwardRef(function LiteTextEditor(
   ref: React.ForwardedRef<EditorRefApi>
 ) {
   const { t } = useTranslation();
+  const commentContext = useCommentContext();
   const {
     containerClassName,
     editable,
@@ -127,7 +129,10 @@ export const LiteTextEditor = React.forwardRef(function LiteTextEditor(
         parentClassName
       )}
       onFocus={() => isFullVariant && !showToolbarInitially && setIsFocused(true)}
-      onBlur={() => isFullVariant && !showToolbarInitially && setIsFocused(false)}
+      onBlur={(event) => {
+        if (isFullVariant && !showToolbarInitially && !event.currentTarget.contains(event.relatedTarget))
+          setIsFocused(false);
+      }}
     >
       {/* Wrapper for lite toolbar layout */}
       <div className={cn(isLiteVariant && editable ? "flex items-end gap-1" : "")}>
@@ -135,13 +140,17 @@ export const LiteTextEditor = React.forwardRef(function LiteTextEditor(
         <div className={cn(isLiteVariant && editable ? "min-w-0 flex-1" : "")}>
           <LiteTextEditorWithRef
             ref={ref}
-            disabledExtensions={[...liteTextEditorExtensions.disabled, ...additionalDisabledExtensions]}
+            disabledExtensions={[
+              ...liteTextEditorExtensions.disabled,
+              ...additionalDisabledExtensions,
+              ...(editable && commentContext.uploads === false ? ["image" as const] : []),
+            ]}
             editable={editable}
             flaggedExtensions={liteTextEditorExtensions.flagged}
             fileHandler={getEditorFileHandlers({
               projectId,
-              uploadFile: editable ? props.uploadFile : async () => "",
-              duplicateFile: editable ? props.duplicateFile : async () => "",
+              uploadFile: editable ? props.uploadFile : undefined,
+              duplicateFile: editable ? props.duplicateFile : undefined,
               workspaceId,
               workspaceSlug,
             })}
@@ -151,17 +160,19 @@ export const LiteTextEditor = React.forwardRef(function LiteTextEditor(
                 setEditorRef(isMutableRefObject<EditorRefApi>(ref) ? ref.current : null);
               }
             }}
-            mentionHandler={{
-              searchCallback: async (query) => {
-                const res = await fetchMentions(query);
-                if (!res) throw new Error("Failed in fetching mentions");
-                return res;
-              },
-              renderComponent: EditorMentionsRoot,
-              getMentionedEntityDetails: (id) => ({
-                display_name: getUserDetails(id)?.display_name ?? "",
-              }),
-            }}
+            mentionHandler={
+              commentContext.mentionHandler ?? {
+                searchCallback: async (query) => {
+                  const res = await fetchMentions(query);
+                  if (!res) throw new Error("Failed in fetching mentions");
+                  return res;
+                },
+                renderComponent: EditorMentionsRoot,
+                getMentionedEntityDetails: (id) => ({
+                  display_name: getUserDetails(id)?.display_name ?? "",
+                }),
+              }
+            }
             placeholder={placeholder}
             showPlaceholderOnEmpty={showPlaceholderOnEmpty}
             containerClassName={cn(containerClassName, "relative", {
@@ -176,6 +187,7 @@ export const LiteTextEditor = React.forwardRef(function LiteTextEditor(
         {/* Lite Toolbar - conditionally rendered */}
         {isLiteVariant && editable && (
           <LiteToolbar
+            allowUploads={commentContext.uploads !== false}
             executeCommand={(item) => {
               // TODO: update this while toolbar homogenization
               // @ts-expect-error type mismatch here
@@ -200,6 +212,7 @@ export const LiteTextEditor = React.forwardRef(function LiteTextEditor(
           )}
         >
           <IssueCommentToolbar
+            allowUploads={commentContext.uploads !== false}
             accessSpecifier={accessSpecifier}
             executeCommand={(item) => {
               // TODO: update this while toolbar homogenization

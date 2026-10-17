@@ -495,6 +495,9 @@ class IssueComment(ChangeTrackerMixin, ProjectBaseModel):
         single atomic transaction to ensure data consistency.
         """
 
+        from plane.lab.chat import before_issue_comment_save
+
+        before_issue_comment_save(type(self), self)
         self.comment_stripped = strip_tags(self.comment_html) if self.comment_html != "" else ""
         is_creating = self._state.adding
 

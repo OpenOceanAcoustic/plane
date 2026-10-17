@@ -24,6 +24,7 @@ import { TOOLBAR_ITEMS } from "@plane/editor";
 // helpers
 
 type Props = {
+  allowUploads?: boolean;
   accessSpecifier?: EIssueCommentAccessSpecifier;
   executeCommand: (item: ToolbarMenuItem) => void;
   handleAccessChange?: (accessKey: EIssueCommentAccessSpecifier) => void;
@@ -60,6 +61,7 @@ const toolbarItems = TOOLBAR_ITEMS.lite;
 export function IssueCommentToolbar(props: Props) {
   const { t } = useTranslation();
   const {
+    allowUploads = true,
     accessSpecifier,
     executeCommand,
     handleAccessChange,
@@ -139,39 +141,41 @@ export function IssueCommentToolbar(props: Props) {
                 "pl-0": index === 0,
               })}
             >
-              {toolbarItems[key].map((item) => {
-                const isItemActive = activeStates[item.renderKey];
+              {toolbarItems[key]
+                .filter((item) => allowUploads || item.itemKey !== "image")
+                .map((item) => {
+                  const isItemActive = activeStates[item.renderKey];
 
-                return (
-                  <Tooltip
-                    key={item.renderKey}
-                    tooltipContent={
-                      <p className="flex flex-col gap-1 text-center text-11">
-                        <span className="font-medium">{item.name}</span>
-                        {item.shortcut && <kbd className="text-placeholder">{item.shortcut.join(" + ")}</kbd>}
-                      </p>
-                    }
-                  >
-                    <button
-                      type="button"
-                      onClick={() => executeCommand(item)}
-                      className={cn(
-                        "grid aspect-square place-items-center rounded-xs p-0.5 text-placeholder hover:bg-layer-1",
-                        {
-                          "bg-layer-1 text-primary": isItemActive,
-                        }
-                      )}
+                  return (
+                    <Tooltip
+                      key={item.renderKey}
+                      tooltipContent={
+                        <p className="flex flex-col gap-1 text-center text-11">
+                          <span className="font-medium">{item.name}</span>
+                          {item.shortcut && <kbd className="text-placeholder">{item.shortcut.join(" + ")}</kbd>}
+                        </p>
+                      }
                     >
-                      <item.icon
-                        className={cn("h-3.5 w-3.5", {
-                          "text-primary": isItemActive,
-                        })}
-                        strokeWidth={2.5}
-                      />
-                    </button>
-                  </Tooltip>
-                );
-              })}
+                      <button
+                        type="button"
+                        onClick={() => executeCommand(item)}
+                        className={cn(
+                          "grid aspect-square place-items-center rounded-xs p-0.5 text-placeholder hover:bg-layer-1",
+                          {
+                            "bg-layer-1 text-primary": isItemActive,
+                          }
+                        )}
+                      >
+                        <item.icon
+                          className={cn("h-3.5 w-3.5", {
+                            "text-primary": isItemActive,
+                          })}
+                          strokeWidth={2.5}
+                        />
+                      </button>
+                    </Tooltip>
+                  );
+                })}
             </div>
           ))}
         </div>
