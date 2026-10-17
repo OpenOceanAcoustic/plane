@@ -71,6 +71,16 @@ def require_lead(user, project):
         raise PermissionDenied("负责人需要有效项目成员权限")
 
 
+def require_bounty_manager(user, bounty):
+    if not bounty.member_funded:
+        return require_lead(user, bounty.stage.project)
+    from .vc import require_member
+
+    require_member(user, bounty.stage.project)
+    if bounty.funding.owner_id_snapshot != user.id:
+        raise PermissionDenied("仅悬赏发布人可以办理")
+
+
 def can_view_team(user, membership):
     current_projects = ProjectMember.objects.filter(
         workspace=membership.workspace, member=user, is_active=True, role__gte=15

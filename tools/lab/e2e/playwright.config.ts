@@ -17,6 +17,9 @@ export default defineConfig({
     baseURL: process.env.LAB_E2E_BASE_URL ?? "http://localhost:8080",
     viewport: { width: 1920, height: 1080 },
     browserName: "chromium",
+    connectOptions: process.env.LAB_BROWSER_WS_ENDPOINT
+      ? { wsEndpoint: process.env.LAB_BROWSER_WS_ENDPOINT }
+      : undefined,
     actionTimeout: 30000,
     navigationTimeout: 30000,
     trace: "off",

@@ -262,7 +262,7 @@ def test_backfill_preserves_old_comments_and_starts_them_read(laboratory):
     )
     IssueComment.objects.filter(id=comment.id).update(created_at=timezone.now() - timedelta(days=2))
     ChatThread.objects.filter(issue=target).delete()
-    migrate = import_module("plane.lab.migrations.0018_chat_conversations").backfill_comment_threads
+    migrate = import_module("plane.lab.migrations.0020_chat_conversations").backfill_comment_threads
     with connection.schema_editor() as editor:
         migrate(apps, editor)
         migrate(apps, editor)

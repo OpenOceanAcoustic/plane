@@ -4,8 +4,16 @@
 from django.urls import path
 from .bounty_views import BountyBudgetView, BountyDetailView, TaskCardMetadataView
 from .bounty_materials import BountyMaterialDetailView, BountyMaterialFileView, BountyMaterialsView
+from .quote_views import BountyQuoteDecisionView, BountyQuotesView
+from .quote_files import BountyQuoteDownloadView, BountyQuoteUploadView
+from .vc_views import VCQuotaView
 
 bounty_patterns = [
+    path("bounties/quotas/<uuid:project_id>/", VCQuotaView.as_view()),
+    path("bounties/<uuid:pk>/quote-attachments/", BountyQuoteUploadView.as_view()),
+    path("bounties/<uuid:pk>/quote-attachments/<uuid:attachment_id>/", BountyQuoteDownloadView.as_view()),
+    path("bounties/<uuid:pk>/quotes/", BountyQuotesView.as_view()),
+    path("bounties/<uuid:pk>/quotes/<uuid:quote_id>/<str:action>/", BountyQuoteDecisionView.as_view()),
     path("task-card-metadata/", TaskCardMetadataView.as_view()),
     path("bounties/budgets/", BountyBudgetView.as_view()),
     path("bounties/<uuid:pk>/detail/", BountyDetailView.as_view()),

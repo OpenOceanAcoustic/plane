@@ -125,6 +125,17 @@ async function mount(page: import("@playwright/test").Page, configure?: () => Pr
   await page.route("**/lab/**", (route) => route.fulfill({ json: [] }));
   await page.route("**/lab/planner/", (route) => route.fulfill({ json: planner }));
   await page.route("**/lab/bounties/budgets/", (route) => route.fulfill({ json: budgets }));
+  await page.route("**/lab/bounties/*/quotes/", (route) =>
+    route.fulfill({
+      json: {
+        quotes: [],
+        can_apply: true,
+        available: "5.00",
+        reviewers: [],
+        file_size_limit: 5242880,
+      },
+    })
+  );
   await page.route("**/lab/bounties/*/materials/**", (route) => route.fulfill({ json: { materials: [] } }));
   await page.route("**/lab/tasks/**", (route) => {
     const request = new URL(route.request().url());
@@ -149,6 +160,137 @@ function deferred() {
   });
   return { promise, complete: () => complete() };
 }
+
+const wallet = (project = "6.00", earned = "4.00") => ({
+  project_available: project,
+  earned_available: earned,
+  earned_debt: "0.00",
+  available: (Number(project) + Number(earned)).toFixed(2),
+  project_granted: project,
+  earned_total: earned,
+  project_committed: "0.00",
+  earned_committed: "0.00",
+});
+
+test("ordinary project member publishes using a combination of personal quota and earned VC", async ({ page }) => {
+  let publication: Record<string, unknown> | undefined;
+  const ordinaryPlanner = {
+    ...planner,
+    projects: planner.projects.map((row) => Object.assign({}, row, { lead: false })),
+  };
+  await mount(page, async () => {
+    await page.addInitScript((value) => Object.assign(window, { labPlanner: value }), ordinaryPlanner);
+    await page.route("**/lab/planner/", (route) => route.fulfill({ json: ordinaryPlanner }));
+    await page.route("**/lab/bounties/budgets/", (route) =>
+      route.fulfill({ json: [{ ...budgets[0], wallet: wallet(), can_allocate: false }] })
+    );
+    await page.route("**/lab/bounties/", (route) => {
+      if (route.request().method() === "POST") publication = route.request().postDataJSON() as Record<string, unknown>;
+      return route.fulfill({ json: route.request().method() === "POST" ? { id: "new-bounty" } : [] });
+    });
+  });
+  const dialog = await openPublication(page);
+  await expect(dialog.getByLabel("我的可用 VC")).toContainText("项目分配可用 VC6.00");
+  await dialog.getByLabel("工作项", { exact: true }).selectOption(issueId);
+  await dialog.getByLabel("VC配额", { exact: true }).fill("10");
+  await expect(dialog.getByLabel("项目额度支付 VC", { exact: true })).toHaveValue("6.00");
+  await expect(dialog.getByLabel("悬赏收入支付 VC", { exact: true })).toHaveText("4.00");
+  await dialog.getByLabel("任务资料", { exact: true }).fill("声学资料");
+  await dialog.getByLabel("交付要求", { exact: true }).fill("分析报告");
+  await dialog.getByLabel("验收标准", { exact: true }).fill("结果可复现");
+  await dialog.getByLabel("验收人", { exact: true }).selectOption(reviewerId);
+  await dialog.getByRole("button", { name: "发布", exact: true }).click();
+  await expect(dialog).toHaveCount(0);
+  expect(publication).toMatchObject({ project_id: projectId, budget: "10", project_vc: "6.00", earned_vc: "4.00" });
+  expect(publication?.request_key).toMatch(/^[0-9a-f-]{36}$/);
+});
+
+test("publication validates each VC source as well as the combined personal balance", async ({ page }) => {
+  await mount(page, async () => {
+    await page.route("**/lab/bounties/budgets/", (route) =>
+      route.fulfill({ json: [{ ...budgets[0], wallet: wallet(), can_allocate: false }] })
+    );
+  });
+  const dialog = await openPublication(page);
+  await expect(dialog.getByRole("alert")).toHaveCount(0);
+  await dialog.getByLabel("工作项", { exact: true }).selectOption(issueId);
+  await dialog.getByLabel("VC配额", { exact: true }).fill("10");
+  await dialog.getByLabel("项目额度支付 VC", { exact: true }).fill("3");
+  await expect(dialog.getByLabel("悬赏收入支付 VC", { exact: true })).toHaveText("7.00");
+  await expect(dialog.getByRole("button", { name: "发布", exact: true })).toBeDisabled();
+  await dialog.getByLabel("项目额度支付 VC", { exact: true }).fill("");
+  await expect(dialog.getByLabel("项目额度支付 VC", { exact: true })).toHaveValue("");
+  await dialog.getByLabel("项目额度支付 VC", { exact: true }).fill("6");
+  await expect(dialog.getByRole("button", { name: "发布", exact: true })).toBeEnabled();
+  await dialog.getByLabel("VC配额", { exact: true }).fill("11");
+  await expect(dialog.getByRole("button", { name: "发布", exact: true })).toBeDisabled();
+});
+
+test("member sees own balances without requesting administrator quota data", async ({ page }) => {
+  let quotaReads = 0;
+  await mount(page, async () => {
+    await page.route("**/lab/bounties/budgets/", (route) =>
+      route.fulfill({ json: [{ ...budgets[0], wallet: wallet(), can_allocate: false }] })
+    );
+    await page.route("**/lab/bounties/quotas/**", (route) => {
+      quotaReads++;
+      return route.fulfill({ status: 403, json: {} });
+    });
+  });
+  await page.getByRole("button", { name: "我的 VC", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "我的 VC", exact: true });
+  await expect(dialog.getByLabel("我的 VC 余额")).toContainText("合计可用 VC10.00");
+  await expect(dialog.getByRole("button", { name: "分配额度", exact: true })).toHaveCount(0);
+  expect(quotaReads).toBe(0);
+});
+
+test("administrator allocates project quota and refreshes member and project balances", async ({ page }) => {
+  let assigned = false;
+  let request: Record<string, unknown> | undefined;
+  await mount(page, async () => {
+    await page.route("**/lab/bounties/budgets/", (route) =>
+      route.fulfill({
+        json: [
+          {
+            ...budgets[0],
+            available: assigned ? "75.00" : "80.00",
+            wallet: wallet("0.00", "0.00"),
+            can_allocate: true,
+          },
+        ],
+      })
+    );
+    await page.route(`**/lab/bounties/quotas/${projectId}/`, (route) => {
+      if (route.request().method() === "POST") {
+        request = route.request().postDataJSON() as Record<string, unknown>;
+        assigned = true;
+        return route.fulfill({ status: 201, json: { id: "grant-record" } });
+      }
+      return route.fulfill({
+        json: {
+          members: [{ id: reviewerId, name: "验收人", wallet: wallet(assigned ? "5.00" : "0.00", "0.00") }],
+          history: [],
+        },
+      });
+    });
+  });
+  await page.getByRole("button", { name: "我的 VC", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "我的 VC", exact: true });
+  await dialog.getByLabel("成员", { exact: true }).selectOption(reviewerId);
+  await dialog.getByLabel("额度 VC", { exact: true }).fill("5");
+  await dialog.getByLabel("原因", { exact: true }).fill("数据处理任务额度");
+  await dialog.getByRole("button", { name: "分配额度", exact: true }).click();
+  await expect(dialog.getByText("额度已分配", { exact: true })).toBeVisible();
+  await expect(dialog.getByText("项目未分配 VC：75.00", { exact: true })).toBeVisible();
+  await expect(dialog.getByText("成员项目额度余额：5.00 VC", { exact: true })).toBeVisible();
+  expect(request).toMatchObject({
+    user_id: reviewerId,
+    stage_id: "stage-a",
+    amount: "5",
+    kind: "grant",
+    reason: "数据处理任务额度",
+  });
+});
 
 test("bounty hall exposes a single publication entry without separate frozen B or WIP controls", async ({ page }) => {
   await mount(page);
@@ -207,6 +349,7 @@ test("publication loads project work items without searching and sends a single 
   );
   await dialog.getByRole("button", { name: "发布", exact: true }).click();
   expect((await publication).postDataJSON()).toEqual({
+    request_key: expect.any(String),
     project_id: projectId,
     issue_id: issueId,
     budget: "10",
@@ -274,6 +417,12 @@ test("VC quota warns while typing and updates when switching project budgets", a
   await expect(dialog.getByRole("alert")).toContainText("80");
   await expect(dialog.getByRole("button", { name: "发布", exact: true })).toBeDisabled();
   expect(publications).toBe(0);
+  await dialog.getByLabel("工作项", { exact: true }).selectOption(issueId);
+  await dialog.getByLabel("任务资料", { exact: true }).fill("任务资料");
+  await dialog.getByLabel("交付要求", { exact: true }).fill("交付要求");
+  await dialog.getByLabel("验收标准", { exact: true }).fill("验收标准");
+  await dialog.getByLabel("验收人", { exact: true }).selectOption(reviewerId);
+  await dialog.getByLabel("复核人", { exact: true }).selectOption(independentId);
   await quota.fill("80.00");
   await expect(quota).not.toHaveAttribute("aria-invalid", "true");
   await expect(dialog.getByRole("alert")).toHaveCount(0);
@@ -401,8 +550,7 @@ test("a project without a budget shows the finance entry and cannot publish", as
   await dialog.getByLabel("交付要求", { exact: true }).fill("交付");
   await dialog.getByLabel("验收标准", { exact: true }).fill("标准");
   await dialog.getByLabel("验收人", { exact: true }).selectOption(reviewerId);
-  await dialog.getByRole("button", { name: "发布", exact: true }).click();
-  await expect(dialog.getByRole("alert")).toHaveText("项目尚未配置 VC 预算");
+  await expect(dialog.getByRole("button", { name: "发布", exact: true })).toBeDisabled();
   expect(publications).toBe(0);
 });
 
@@ -471,61 +619,24 @@ const bountyRecord = {
   acceptances: [],
 };
 
-test("claim VC validates the authoritative remaining plan budget while typing", async ({ page }) => {
-  let claims = 0;
+test("hall opens the shared fixed-price application and negotiation forms", async ({ page }) => {
   await mount(page, async () => {
     await page.route("**/lab/bounties/", (route) => route.fulfill({ json: [bountyRecord] }));
     await page.route("**/lab/bounties/bounty-a/detail/", (route) => route.fulfill({ json: bountyRecord }));
-    await page.route("**/lab/bounties/bounty-a/claim/", (route) => {
-      claims++;
-      return route.fulfill({ json: {} });
-    });
   });
   await page.getByRole("button", { name: "查看悬赏 标注声学样本", exact: true }).click();
-  await page.getByRole("button", { name: "申请认领", exact: true }).click();
-  const dialog = page.getByRole("dialog", { name: "申请团队分工", exact: true });
-  const planned = dialog.getByLabel("计划 VC", { exact: true });
-  await planned.fill("5.01");
-  await expect(planned).toHaveAttribute("aria-invalid", "true");
-  await expect(dialog.getByRole("alert")).toContainText("5.00 VC");
-  await expect(dialog.getByRole("button", { name: "保存", exact: true })).toBeDisabled();
-  await planned.fill("5.00");
-  await expect(dialog.getByRole("alert")).toHaveCount(0);
-  await expect(dialog.getByRole("button", { name: "保存", exact: true })).toBeEnabled();
-  expect(claims).toBe(0);
-});
-
-test("claim rejection refreshes remaining VC without discarding delivery text", async ({ page }) => {
-  let claims = 0;
-  let planned: string | undefined;
-  await mount(page, async () => {
-    await page.route("**/lab/bounties/", (route) => route.fulfill({ json: [bountyRecord] }));
-    await page.route("**/lab/bounties/bounty-a/detail/", (route) =>
-      route.fulfill({ json: { ...bountyRecord, claim_available: claims ? "2.00" : "5.00" } })
-    );
-    await page.route("**/lab/bounties/bounty-a/claim/", (route) => {
-      claims++;
-      planned = (route.request().postDataJSON() as { planned: string }).planned;
-      return claims === 1
-        ? route.fulfill({ status: 400, json: { detail: "可认领 VC 不足" } })
-        : route.fulfill({ json: {} });
-    });
-  });
-  await page.getByRole("button", { name: "查看悬赏 标注声学样本", exact: true }).click();
-  await page.getByRole("button", { name: "申请认领", exact: true }).click();
-  const dialog = page.getByRole("dialog", { name: "申请团队分工", exact: true });
-  await dialog.getByLabel("本人交付物", { exact: true }).fill("保留个人交付说明");
-  await dialog.getByLabel("计划 VC", { exact: true }).fill("5");
-  await dialog.getByRole("button", { name: "保存", exact: true }).click();
-  await expect(dialog.getByRole("alert").filter({ hasText: "可认领 VC 不足" })).toBeVisible();
-  await expect(dialog.getByLabel("计划 VC", { exact: true })).toHaveAttribute("max", "2.00");
-  await expect(dialog.getByRole("button", { name: "保存", exact: true })).toBeDisabled();
-  await expect(dialog.getByLabel("本人交付物", { exact: true })).toHaveValue("保留个人交付说明");
-  await dialog.getByLabel("计划 VC", { exact: true }).fill("2");
-  await dialog.getByRole("button", { name: "保存", exact: true }).click();
-  await expect(dialog).toHaveCount(0);
-  expect(claims).toBe(2);
-  expect(planned).toBe("2");
+  await page.getByRole("button", { name: "按原价申请 · 5.00 VC", exact: true }).click();
+  let dialog = page.getByRole("dialog", { name: "按原价申请", exact: true });
+  await expect(dialog.getByLabel("原价（VC）")).toHaveValue("5.00");
+  await expect(dialog.getByLabel("原价（VC）")).toHaveAttribute("readonly", "");
+  await dialog.getByRole("button", { name: "取消", exact: true }).click();
+  await page.getByRole("button", { name: "议价申请", exact: true }).click();
+  dialog = page.getByRole("dialog", { name: "议价申请", exact: true });
+  await dialog.getByLabel("本人交付内容").fill("分工报告");
+  await dialog.getByLabel("报价（VC）").fill("8");
+  await expect(dialog.getByRole("button", { name: "提交申请" })).toBeDisabled();
+  await dialog.getByLabel("报价依据").fill("新增分析内容");
+  await expect(dialog.getByRole("button", { name: "提交申请" })).toBeEnabled();
 });
 
 test("acceptance cumulative VC warns above plan and below previously awarded contribution", async ({ page }) => {

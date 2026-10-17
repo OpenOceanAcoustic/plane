@@ -9,6 +9,7 @@ import pytest
 from django.db import IntegrityError, close_old_connections, transaction
 from plane.db.models import Issue, IssueAssignee
 from plane.lab.models import Allocation, Ledger
+from plane.lab.bounties import publish
 
 pytestmark = [pytest.mark.django_db(transaction=True), pytest.mark.contract]
 
@@ -40,9 +41,10 @@ def prepare(lab, budget="20", stage_budget="1000", title="Team task"):
         "reviewer_id": str(lab["reviewer"].id),
         "independent_reviewer_id": str(lab["independent"].id),
     }
-    published = lead.post(base + "bounties/", body, format="json")
-    assert published.status_code == 201, published.content
-    return published.json()["id"], issue, body
+    # Existing contracts exercise the historical project-funded workflow.
+    # New API publications and personal custody are covered by test_member_vc.
+    published = publish(lab["lead"], stage.json()["id"], body)
+    return str(published.id), issue, body
 
 
 def action(lab, user, bounty, verb, body=None):
@@ -188,6 +190,9 @@ def test_native_state_bulk_assignment_and_concurrency_cannot_bypass_wip(laborato
 def test_parallel_publications_cannot_exceed_frozen_stage_budget(laboratory):
     lab = laboratory
     bounty, issue, body = prepare(lab, budget="20", stage_budget="30")
+    from .test_bounty_project_budget import assign
+
+    assign(lab)
 
     def publish(index):
         close_old_connections()

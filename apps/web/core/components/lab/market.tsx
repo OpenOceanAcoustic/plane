@@ -12,18 +12,12 @@ import { useSWRConfig } from "swr";
 import { Button, LabBountyBadge, labBountyOutline } from "@plane/ui";
 import type { LabBounty } from "@plane/types";
 import type { LabStore } from "@plane/shared-state";
-import {
-  LabAmountInput,
-  LabDialog,
-  LabField,
-  labAmountError,
-  labDecimalText,
-  labDecimalUnits,
-  labInputClass,
-} from "@plane/ui";
+import { LabAmountInput, LabDialog, LabField, labAmountError, labInputClass } from "@plane/ui";
 import { LabBountyWorkflow } from "./workflow";
+import { LabBountyQuotesPanel } from "./bounty-quotes";
 import { LabBountyMaterials } from "./bounty-materials";
 import { LabBountyPublish } from "./bounty-publish";
+import { LabVCWallets } from "./vc-wallets";
 // oxlint-disable-next-line import/no-unassigned-import -- local financial and task surfaces
 import "./finance-market.css";
 
@@ -50,12 +44,11 @@ export const LabMarket = observer(function LabMarket({ store }: { store: LabStor
   const [searchParams, setSearchParams] = useSearchParams();
   const detailId = searchParams.get("bounty_id") ?? searchParams.get("bounty") ?? "";
   const [view, setView] = useState<"open" | "mine" | "all">("open");
-  const [mode, setMode] = useState<"publish" | "claim" | "submit" | "accept" | "public-summary">();
+  const [mode, setMode] = useState<"publish" | "submit" | "accept" | "public-summary">();
   const [chosen, setChosen] = useState<LabBounty>();
   const [projectFilter, setProjectFilter] = useState("");
   const [result, setResult] = useState("pass");
   const [acceptanceKey, setAcceptanceKey] = useState("");
-  const [plannedVc, setPlannedVc] = useState("");
   const [acceptanceTargets, setAcceptanceTargets] = useState<Record<string, string>>({});
   const [workflowIds, setWorkflowIds] = useState<Set<string>>(new Set());
   const [reasonAction, setReasonAction] = useState<{
@@ -64,6 +57,7 @@ export const LabMarket = observer(function LabMarket({ store }: { store: LabStor
     extra: Record<string, string>;
   }>();
   const [deleting, setDeleting] = useState<LabBounty>();
+  const [walletsOpen, setWalletsOpen] = useState(false);
   useEffect(() => {
     void store.execute(store.loadMarket);
   }, [store]);
@@ -86,19 +80,8 @@ export const LabMarket = observer(function LabMarket({ store }: { store: LabStor
   const close = () => {
     setMode(undefined);
     setChosen(undefined);
-    setPlannedVc("");
     setAcceptanceTargets({});
   };
-  const claimLimit = chosen
-    ? (chosen.claim_available ??
-      labDecimalText(
-        (labDecimalUnits(chosen.budget) ?? 0n) -
-          chosen.allocations
-            .filter((row) => row.approved)
-            .reduce((total, row) => total + (labDecimalUnits(row.planned) ?? 0n), 0n)
-      ))
-    : undefined;
-  const claimError = labAmountError(plannedVc, { limit: claimLimit, min: "0.01", unit: "VC" });
   const acceptanceInvalid =
     !["rework", "reject"].includes(result) &&
     !!chosen?.allocations.some(
@@ -145,8 +128,11 @@ export const LabMarket = observer(function LabMarket({ store }: { store: LabStor
   return (
     <div className="lab-market flex flex-col gap-5">
       <div className="flex flex-wrap items-center gap-2">
-        <Button disabled={!planner.projects.some((project) => project.lead)} onClick={() => setMode("publish")}>
+        <Button disabled={!planner.projects.length} onClick={() => setMode("publish")}>
           发布悬赏
+        </Button>
+        <Button variant="neutral-primary" onClick={() => setWalletsOpen(true)}>
+          我的 VC
         </Button>
         <select
           aria-label="按项目查看"
@@ -169,6 +155,7 @@ export const LabMarket = observer(function LabMarket({ store }: { store: LabStor
           ))}
         </select>
       </div>
+      {walletsOpen && <LabVCWallets store={store} onClose={() => setWalletsOpen(false)} />}
       {store.todos.length > 0 && (
         <section className="lab-market-todos rounded-lg border border-subtle bg-layer-1 p-4">
           <h2 className="mb-2 text-14 font-semibold">我的待办</h2>
@@ -213,7 +200,8 @@ export const LabMarket = observer(function LabMarket({ store }: { store: LabStor
               (!projectFilter || row.project_id === projectFilter) &&
               (view === "all" ||
                 (view === "open" && row.status === "open") ||
-                (view === "mine" && row.allocations.some((allocation) => allocation.user_id === planner.user_id)))
+                (view === "mine" &&
+                  (row.has_quote || row.allocations.some((allocation) => allocation.user_id === planner.user_id))))
           )
           .map((bounty) => (
             <button
@@ -401,19 +389,6 @@ export const LabMarket = observer(function LabMarket({ store }: { store: LabStor
                   >
                     {workflowIds.has(bounty.id) ? "收起流程" : "查看流程图"}
                   </Button>
-                  {(bounty.can_claim ??
-                    (bounty.status === "open" && !mine && !bounty.is_reviewer && !bounty.is_independent_reviewer)) && (
-                    <Button
-                      size="sm"
-                      onClick={() => {
-                        setChosen(bounty);
-                        setPlannedVc("");
-                        setMode("claim");
-                      }}
-                    >
-                      申请认领
-                    </Button>
-                  )}
                   {(bounty.can_confirm ?? (bounty.status === "open" && mine?.approved && !mine.confirmed)) && (
                     <Button size="sm" onClick={() => void act(bounty, "confirm")}>
                       确认交付约定
@@ -496,7 +471,8 @@ export const LabMarket = observer(function LabMarket({ store }: { store: LabStor
                   </details>
                 )}
                 {bounty.access_level !== "public" && <LabBountyMaterials store={store} bounty={bounty} />}
-                {workflowIds.has(bounty.id) && <LabBountyWorkflow store={store} bounty={bounty} />}
+                <LabBountyQuotesPanel store={store} bounty={bounty} />
+                {workflowIds.has(bounty.id) && <LabBountyWorkflow store={store} bounty={bounty} showQuotes={false} />}
               </article>
             );
           })}
@@ -613,43 +589,6 @@ export const LabMarket = observer(function LabMarket({ store }: { store: LabStor
           <LabField label="可见范围">组织内可见</LabField>
           <LabField label="修改依据">
             <textarea name="reason" className={labInputClass} required />
-          </LabField>
-        </LabDialog>
-      )}
-      {mode === "claim" && chosen && (
-        <LabDialog
-          title="申请团队分工"
-          busy={store.busy}
-          error={store.error}
-          submitDisabled={!!claimError}
-          onClose={close}
-          onSubmit={(data) =>
-            finish(() =>
-              refreshOnFailure(() =>
-                store.request(`bounties/${chosen.id}/claim/`, "POST", {
-                  deliverable: data.get("deliverable"),
-                  planned: data.get("planned"),
-                })
-              )
-            )
-          }
-        >
-          <LabField label="本人交付物">
-            <textarea name="deliverable" className={labInputClass} required />
-          </LabField>
-          <LabField label="计划 VC">
-            <LabAmountInput
-              aria-label="计划 VC"
-              name="planned"
-              min="0.01"
-              limit={claimLimit}
-              unit="VC"
-              value={plannedVc}
-              onValueChange={setPlannedVc}
-              step="0.01"
-              className={labInputClass}
-              required
-            />
           </LabField>
         </LabDialog>
       )}
