@@ -5,6 +5,20 @@
 
 export type LabStatus = "todo" | "active" | "review" | "done";
 export type LabPlanningVisibility = "private" | "organization" | "selected" | "leads" | "project";
+export type LabVCWallet = {
+  project_available: string;
+  earned_available: string;
+  earned_debt: string;
+  available: string;
+  project_granted: string;
+  earned_total: string;
+  project_committed: string;
+  earned_committed: string;
+};
+export type LabVCQuotas = {
+  members: { id: string; name: string; wallet: LabVCWallet; reclaimable?: string }[];
+  history: { id: string; user_id: string; name: string; delta: string; reason: string; created_at: string }[];
+};
 export type LabBountyBudget = {
   project_id: string;
   project: string;
@@ -19,6 +33,8 @@ export type LabBountyBudget = {
   can_delete?: boolean;
   delete_reason?: string | null;
   can_restore?: boolean;
+  wallet?: LabVCWallet;
+  can_allocate?: boolean;
 };
 export type LabAcceptanceResult = "pass" | "partial" | "rework" | "reject" | "negative";
 export type LabLedgerEntry = {
@@ -185,6 +201,9 @@ export type LabAcceptance = {
   approved_at: string | null;
 };
 export type LabBounty = {
+  member_funded?: boolean;
+  publisher_id?: string | null;
+  funding?: { project_vc: string; earned_vc: string } | null;
   visibility?: "organization";
   id: string;
   stage_id: string;

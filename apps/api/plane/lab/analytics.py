@@ -23,6 +23,7 @@ from .models import Bounty, ProjectFlow, Stage
 from .permissions import can_view_team, collaboration_projects, project_ids, readable_issues
 from .planning import calendar_events
 from .planning_views import LabView
+from .vc import stage_reserved
 
 SHANGHAI = ZoneInfo("Asia/Shanghai")
 STATUS_LABELS = {"todo": "待做", "active": "进行中", "review": "待验收", "done": "完成", "cancelled": "取消"}
@@ -416,13 +417,13 @@ def contribution_charts(data, user, workspace, scope):
             "阶段预算占用",
             "stack",
             "VC",
-            [("available", "未占用"), ("reserved", "占用未授予"), ("awarded", "已授予净额")],
+            [("available", "未分配"), ("reserved", "已分配及冻结"), ("awarded", "直接授予")],
             [
                 ("label", "阶段"),
                 ("budget", "预算 B"),
-                ("available", "未占用"),
-                ("reserved", "占用未授予"),
-                ("awarded", "已授予净额"),
+                ("available", "未分配"),
+                ("reserved", "已分配及冻结"),
+                ("awarded", "直接授予"),
             ],
             "项目当前预算，不受日期和人员筛选影响",
         )
@@ -483,8 +484,8 @@ def contribution_charts(data, user, workspace, scope):
     for bounty in bounties:
         entries = list(bounty.ledger.all())
         net = sum((entry.delta for entry in entries), Decimal(0))
-        by_stage[bounty.stage_id]["reserved"] += bounty.reserved
-        by_stage[bounty.stage_id]["awarded"] += net
+        if not bounty.member_funded:
+            by_stage[bounty.stage_id]["awarded"] += net
         url = (
             f"/{workspace.slug}/projects/{bounty.stage.project_id_snapshot}/issues/{bounty.issue_id}"
             if bounty.issue_id and not bounty.issue.deleted_at
@@ -572,7 +573,7 @@ def contribution_charts(data, user, workspace, scope):
                 },
             )
     for stage in stages:
-        reserved, awarded = by_stage[stage.id]["reserved"], by_stage[stage.id]["awarded"]
+        reserved, awarded = stage_reserved(stage), by_stage[stage.id]["awarded"]
         budget["rows"].append(
             {
                 "id": str(stage.id),

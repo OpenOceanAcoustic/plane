@@ -7,7 +7,7 @@ from rest_framework.response import Response
 
 from . import bounties
 from .models import Audit
-from .permissions import require_lead
+from .permissions import require_bounty_manager
 from .planning_views import LabView
 from .bounty_access import access_level, bounty_access, planning_issue_access
 
@@ -58,6 +58,8 @@ EDGES = (
     ("done", "deleted"),
 )
 AUDIT_LABELS = {
+    "bounty.vc_reserved": "冻结悬赏 VC",
+    "bounty.vc_released": "退回未用 VC",
     "bounty.published": "发布团队任务",
     "bounty.publication_review": "重大发布复核通过",
     "bounty.claim": "申请认领",
@@ -120,7 +122,7 @@ def actions_for(bounty, user, allocations, ledger):
             }
         )
 
-    lead = permitted(lambda: require_lead(user, bounty.stage.project))
+    lead = permitted(lambda: require_bounty_manager(user, bounty))
     editable = bool(bounty.issue_id) and permitted(
         lambda: planning_issue_access(user, bounty.stage.workspace, bounty.issue_id)
     )
@@ -135,6 +137,7 @@ def actions_for(bounty, user, allocations, ledger):
             and bounty.issue_id
             and not bounty.issue.archived_at
             and user.id not in (bounty.reviewer_id, bounty.independent_reviewer_id)
+            and not (bounty.member_funded and bounty.funding.owner_id_snapshot == user.id)
             and bounties.claim_available(bounty) > 0
         ):
             add("claim", "申请认领", "claim")

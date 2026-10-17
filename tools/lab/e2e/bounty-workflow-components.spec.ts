@@ -525,7 +525,7 @@ test("live quote approval completes through the browser and real Django API", as
     });
     await dialog.getByRole("button", { name: "提交申请", exact: true }).click();
     await expect(dialog).toHaveCount(0);
-    await expect(applicant.page.getByText(/第 1 次.*待负责人审批/)).toBeVisible();
+    await expect(applicant.page.getByText(/第 1 次.*待审批/)).toBeVisible();
 
     const lead = await open("lead");
     await lead.page.getByRole("button", { name: "审批报价", exact: true }).click();

@@ -16,7 +16,7 @@ from .auth import audit, lock
 from .bounty_access import access_level, grant_allocation
 from .finance_services import require_finance_open
 from .models import Allocation, Audit, Bounty, BountyQuote, BountyQuoteAttachment
-from .permissions import require_lead, workspace_member
+from .permissions import require_bounty_manager, workspace_member
 
 PENDING = ("pending", "pending_review")
 
@@ -37,7 +37,7 @@ def is_lead(user, bounty):
     if not user or not bounty.stage.project:
         return False
     try:
-        require_lead(user, bounty.stage.project)
+        require_bounty_manager(user, bounty)
         return True
     except APIException:
         return False
@@ -87,6 +87,8 @@ def require_open(bounty):
 def eligible_applicant(user, bounty):
     require_open(bounty)
     access_level(user, bounty)
+    if bounty.member_funded and bounty.funding.owner_id_snapshot == user.id:
+        raise ValidationError("不能承接自己出资发布的悬赏")
     if (
         user.id in (bounty.reviewer_id, bounty.independent_reviewer_id)
         or BountyQuote.objects.filter(bounty=bounty, reviewer=user, status="pending_review").exists()
@@ -105,15 +107,22 @@ def can_apply(user, bounty):
 
 
 def budget_snapshot(bounty):
+    from .vc import stage_reserved, wallet
+
     approved = list(Allocation.objects.filter(bounty=bounty, approved=True).order_by("id").values_list("id", "planned"))
-    source_available = bounty.stage.budget - bounties.total(Bounty.objects.filter(stage=bounty.stage), "reserved")
+    balance = wallet(bounty.funding.owner_id_snapshot, bounty.stage.project) if bounty.member_funded else None
+    if balance:
+        balance = {key: balance[key] for key in ("project_available", "earned_available", "earned_debt", "available")}
+    owner = bounty.funding.owner if bounty.member_funded else bounty.stage.project.project_lead
+    source_available = Decimal(balance["available"]) if balance else bounty.stage.budget - stage_reserved(bounty.stage)
     return {
         "budget": str(bounty.budget),
         "reserved": str(bounty.reserved),
         "stage_available": str(source_available),
         "major": bounty.major,
-        "lead_id": str(bounty.stage.project.project_lead_id),
-        "lead_eligible": is_lead(bounty.stage.project.project_lead, bounty),
+        "lead_id": str(owner.id) if owner else None,
+        "lead_eligible": is_lead(owner, bounty),
+        **({"funding": "member", "wallet": balance} if balance else {}),
         "allocations": [[str(key), str(value)] for key, value in approved],
     }
 
@@ -203,7 +212,11 @@ def finalize_quote(quote, actor, snapshot):
     if not change["funded"]:
         raise ValidationError("悬赏原属项目预算余额不足，无法追加 VC")
     additional = Decimal(change["additional"])
+    bounties.amount(bounty.budget + additional)
     if additional:
+        from .vc import reserve_additional
+
+        reserve_additional(bounty, additional, actor)
         bounty.budget += additional
         bounty.reserved += additional
         reasons = list(
@@ -244,7 +257,7 @@ def decide_quote(user, bounty_id, quote_id, action, data):
         if not is_quote_reviewer(user, quote):
             raise NotFound("报价不存在")
     else:
-        require_lead(user, bounty.stage.project)
+        require_bounty_manager(user, bounty)
     key = request_key(data.get("request_key"))
     snapshot = {
         "action": action,

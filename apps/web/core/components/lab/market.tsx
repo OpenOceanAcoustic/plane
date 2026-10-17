@@ -17,6 +17,7 @@ import { LabBountyWorkflow } from "./workflow";
 import { LabBountyQuotesPanel } from "./bounty-quotes";
 import { LabBountyMaterials } from "./bounty-materials";
 import { LabBountyPublish } from "./bounty-publish";
+import { LabVCWallets } from "./vc-wallets";
 // oxlint-disable-next-line import/no-unassigned-import -- local financial and task surfaces
 import "./finance-market.css";
 
@@ -56,6 +57,7 @@ export const LabMarket = observer(function LabMarket({ store }: { store: LabStor
     extra: Record<string, string>;
   }>();
   const [deleting, setDeleting] = useState<LabBounty>();
+  const [walletsOpen, setWalletsOpen] = useState(false);
   useEffect(() => {
     void store.execute(store.loadMarket);
   }, [store]);
@@ -126,8 +128,11 @@ export const LabMarket = observer(function LabMarket({ store }: { store: LabStor
   return (
     <div className="lab-market flex flex-col gap-5">
       <div className="flex flex-wrap items-center gap-2">
-        <Button disabled={!planner.projects.some((project) => project.lead)} onClick={() => setMode("publish")}>
+        <Button disabled={!planner.projects.length} onClick={() => setMode("publish")}>
           发布悬赏
+        </Button>
+        <Button variant="neutral-primary" onClick={() => setWalletsOpen(true)}>
+          我的 VC
         </Button>
         <select
           aria-label="按项目查看"
@@ -150,6 +155,7 @@ export const LabMarket = observer(function LabMarket({ store }: { store: LabStor
           ))}
         </select>
       </div>
+      {walletsOpen && <LabVCWallets store={store} onClose={() => setWalletsOpen(false)} />}
       {store.todos.length > 0 && (
         <section className="lab-market-todos rounded-lg border border-subtle bg-layer-1 p-4">
           <h2 className="mb-2 text-14 font-semibold">我的待办</h2>

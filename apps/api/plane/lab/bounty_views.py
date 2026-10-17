@@ -21,7 +21,7 @@ from plane.db.models import Project, ProjectMember, WorkspaceMember
 from . import bounties
 from .auth import audit
 from .models import Bounty, Ledger, PersonalCategory, PersonalItem, Stage, WIPException
-from .permissions import can_view_team, collaboration_projects as project_ids, readable_issues, require_lead
+from .permissions import can_view_team, collaboration_projects as project_ids, readable_issues, require_bounty_manager
 from .planning_views import LabView
 from .bounty_access import access_level, accessible_bounties, bounty_access, issue_capabilities
 from .bounty_models import BountyPublication
@@ -41,7 +41,7 @@ def bounty_data(row, user, reward_context=None):
     acceptances = list(row.acceptances.all().order_by("-created_at"))
     capabilities = issue_capabilities(user, row)
     try:
-        require_lead(user, row.stage.project)
+        require_bounty_manager(user, row)
         lead = True
     except APIException:
         lead = False
@@ -77,6 +77,7 @@ def bounty_data(row, user, reward_context=None):
             and row.issue_id
             and not row.issue.archived_at
             and user.id not in (row.reviewer_id, row.independent_reviewer_id)
+            and not (row.member_funded and row.funding.owner_id_snapshot == user.id)
             and claim_available > 0
         ),
         "can_confirm": bool(row.status == "open" and mine and mine.approved and not mine.confirmed and not public),
@@ -111,6 +112,13 @@ def bounty_data(row, user, reward_context=None):
         "due_at": row.due_at.isoformat() if row.due_at else None,
         "overdue": bool(row.due_at and row.due_at < timezone.now() and row.status in ("review", "acceptance_review")),
         "is_lead": lead,
+        "publisher_id": str(row.publisher_id) if row.publisher_id else None,
+        "member_funded": row.member_funded,
+        "funding": (
+            {"project_vc": str(row.funding.project_committed), "earned_vc": str(row.funding.earned_committed)}
+            if lead and row.member_funded
+            else None
+        ),
         "is_reviewer": not public and row.reviewer_id == user.id,
         "is_independent_reviewer": not public and row.independent_reviewer_id == user.id,
         "allocations": [
@@ -143,6 +151,8 @@ def bounty_data(row, user, reward_context=None):
 
 class StageView(LabView):
     def get(self, request, slug):
+        from .vc import stage_reserved
+
         rows = Stage.objects.filter(workspace=self.workspace, project_id__in=project_ids(request.user, self.workspace))
         return Response(
             [
@@ -152,7 +162,7 @@ class StageView(LabView):
                     "project": row.project_name,
                     "name": row.name,
                     "budget": str(row.budget),
-                    "reserved": str(bounties.total(row.bounties.all(), "reserved")),
+                    "reserved": str(stage_reserved(row)),
                     "frozen_at": row.frozen_at.isoformat(),
                 }
                 for row in rows
@@ -192,7 +202,9 @@ class BountyView(LabView):
             row = publish_from_project(request.user, self.workspace, request.data["project_id"], request.data)
         else:
             stage = get_object_or_404(Stage, id=request.data.get("stage_id"), workspace=self.workspace)
-            row = bounties.publish(request.user, stage.id, request.data)
+            row = publish_from_project(
+                request.user, self.workspace, stage.project_id, request.data, initialize_flow=False
+            )
         return Response({"id": str(row.id)}, status=201)
 
 
@@ -352,6 +364,7 @@ class LedgerView(LabView):
         )
         rows = (
             Ledger.objects.filter(scope, bounty__stage__workspace_id_snapshot=self.workspace.id)
+            .select_related("bounty__stage__project__workspace", "bounty__funding")
             .annotate(
                 permission_project_id=F("bounty__stage__project_id"),
                 already_reversed=Exists(Ledger.objects.filter(reverses_id=OuterRef("pk"))),
@@ -360,6 +373,17 @@ class LedgerView(LabView):
         )
         if request.query_params.get("project_id"):
             rows = rows.filter(bounty__stage__project_id_snapshot=request.query_params["project_id"])
+        manager_cache = {}
+
+        def funded_manager(row):
+            if row.bounty_id not in manager_cache:
+                try:
+                    require_bounty_manager(request.user, row.bounty)
+                    manager_cache[row.bounty_id] = True
+                except APIException:
+                    manager_cache[row.bounty_id] = False
+            return manager_cache[row.bounty_id]
+
         records = [
             {
                 "id": str(row.id),
@@ -373,7 +397,9 @@ class LedgerView(LabView):
                 "reason": row.reason,
                 "reverses": str(row.reverses_id) if row.reverses_id else None,
                 "can_reverse": row.delta > 0
-                and row.permission_project_id in lead_projects
+                and (
+                    row.permission_project_id in lead_projects if not row.bounty.member_funded else funded_manager(row)
+                )
                 and not row.already_reversed,
             }
             for row in rows
@@ -531,7 +557,7 @@ class InboxView(LabView):
             elif (
                 row.status == "open"
                 and row.stage.project
-                and row.stage.project.project_lead_id == request.user.id
+                and is_lead(request.user, row)
                 and row.allocations.filter(approved=False).exists()
             ):
                 reason = "审批认领"

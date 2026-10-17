@@ -32,6 +32,18 @@ def deletable_issue_ids(user, workspace, issues, *, bound_issue_ids=None):
             .exclude(status="deleted")
             .values_list("issue_id", flat=True)
         )
+    member_owners = set(
+        Bounty.objects.filter(
+            issue_id__in=[row.id for row in rows], member_funded=True, funding__owner_id_snapshot=user.id
+        )
+        .exclude(status="deleted")
+        .values_list("issue_id", flat=True)
+    )
+    member_bound = set(
+        Bounty.objects.filter(issue_id__in=[row.id for row in rows], member_funded=True)
+        .exclude(status="deleted")
+        .values_list("issue_id", flat=True)
+    )
     result = set()
     for row in rows:
         if row.deleted_at or row.project.deleted_at:
@@ -39,7 +51,12 @@ def deletable_issue_ids(user, workspace, issues, *, bound_issue_ids=None):
         role = roles.get(row.project_id)
         lead = row.project.project_lead_id == user.id and role is not None and role >= 15
         ordinary = role is not None and (row.created_by_id == user.id or role == 20 or membership.role == 20 or lead)
-        allowed = lead if row.id in bound_issue_ids else ordinary
+        manager = (
+            row.id in member_owners and role is not None and role >= 15 and not row.project.archived_at
+            if row.id in member_bound
+            else lead
+        )
+        allowed = manager if row.id in bound_issue_ids else ordinary
         if allowed:
             result.add(row.id)
     return result
@@ -55,9 +72,7 @@ def delete_issue(user, workspace, issue_id, *, project_id=None, reason=""):
         if cursor.fetchone()[0] is not None:
             cursor.execute("SELECT lab_wip_lock(%s)", [workspace.id])
     rows = (
-        Issue.all_objects.select_for_update(of=("self",))
-        .select_related("project", "state")
-        .filter(workspace=workspace)
+        Issue.all_objects.select_for_update(of=("self",)).select_related("project", "state").filter(workspace=workspace)
     )
     if project_id is not None:
         rows = rows.filter(project_id=project_id)
@@ -69,7 +84,7 @@ def delete_issue(user, workspace, issue_id, *, project_id=None, reason=""):
     allowed = issue.id in deletable_issue_ids(user, workspace, [issue])
     issue.deleted_at = deleted_at
     if not allowed:
-        raise PermissionDenied("无工作项删除权限；关联悬赏仅项目负责人可删除")
+        raise PermissionDenied("无工作项删除权限；关联悬赏须由当前办理人删除")
     if issue.deleted_at:
         return issue, False
     # The native worker cascades through child issues without lab callbacks.

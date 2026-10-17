@@ -8,7 +8,7 @@ import type { LabStore } from "@plane/shared-state";
 import { Button, LabAmountInput, LabDialog, LabField, labAmountError, labDecimalUnits, labInputClass } from "@plane/ui";
 
 const statuses: Record<LabBountyQuote["status"], string> = {
-  pending: "待负责人审批",
+  pending: "待审批",
   pending_review: "待加价复核",
   approved: "已承接",
   rejected: "已驳回",
@@ -328,9 +328,13 @@ export const LabBountyQuotesPanel = observer(function LabBountyQuotesPanel({ sto
               <dd>{selection.quote.adjustment.additional}</dd>
               <dt>追加后悬赏总 VC</dt>
               <dd>{selection.quote.adjustment.next_budget}</dd>
-              <dt>原属预算剩余 VC</dt>
+              <dt>{selection.quote.budget_snapshot?.funding === "member" ? "发布人可用 VC" : "原属预算剩余 VC"}</dt>
               <dd>{selection.quote.adjustment.source_available}</dd>
-              {!selection.quote.adjustment.funded && <dd role="alert">原属预算余额不足</dd>}
+              {!selection.quote.adjustment.funded && (
+                <dd role="alert">
+                  {selection.quote.budget_snapshot?.funding === "member" ? "个人可用 VC 不足" : "原属预算余额不足"}
+                </dd>
+              )}
             </dl>
           )}
           {needsReviewer && (

@@ -188,6 +188,7 @@ class Stage(Record):
 
 
 class Bounty(Record):
+    member_funded = models.BooleanField(default=False, db_default=False)
     stage = models.ForeignKey(Stage, on_delete=models.PROTECT, related_name="bounties")
     issue = models.OneToOneField("db.Issue", on_delete=models.SET_NULL, null=True)
     issue_id_snapshot = models.UUIDField()
@@ -285,6 +286,7 @@ from .document_models import DocumentFileVersion, TaskDocumentLink  # noqa: E402
 from .field_models import FieldDefinition, IssueFieldValue, ProjectField  # noqa: E402,F401
 from .bounty_models import BountyMaterial, BountyPublication, BountyTaskAccess  # noqa: E402,F401
 from .quote_models import BountyQuote, BountyQuoteAttachment  # noqa: E402,F401
+from .vc_models import BountyFunding, VCGrant  # noqa: E402,F401
 from .finance_models import (  # noqa: E402,F401
     CashBatch,
     CommitmentCancellation,

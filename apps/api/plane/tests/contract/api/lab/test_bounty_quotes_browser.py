@@ -17,9 +17,23 @@ pytestmark = [pytest.mark.django_db(transaction=True), pytest.mark.contract]
 
 
 @pytest.mark.skipif(not os.environ.get("LAB_QUOTE_BROWSER_TEST"), reason="Requires built web assets and Playwright")
-def test_live_quote_approval_through_browser_and_real_api(laboratory, live_server, settings, tmp_path):
+@pytest.mark.parametrize("member_funded", [False, True])
+def test_live_quote_approval_through_browser_and_real_api(laboratory, live_server, settings, tmp_path, member_funded):
     lab = laboratory
-    bounty_id, _, _ = prepare(lab)
+    roles = {role: lab[role] for role in ("member", "lead", "independent")}
+    if member_funded:
+        from .test_member_vc import body, grant, historical_award, issue, post, setup
+
+        stage = setup(lab)
+        historical_award(lab, stage, lab["member"])
+        assert grant(lab, "40").status_code == 201
+        response = post(lab, body(lab, issue(lab), "20", project_vc="12", earned_vc="8"))
+        assert response.status_code == 201, response.content
+        bounty_id = response.json()["id"]
+        # The ordinary member publishes; the original project lead is the applicant.
+        roles["lead"], roles["member"] = lab["member"], lab["lead"]
+    else:
+        bounty_id, _, _ = prepare(lab)
     settings.STORAGES = {
         **settings.STORAGES,
         "lab_quotes": {
@@ -28,11 +42,11 @@ def test_live_quote_approval_through_browser_and_real_api(laboratory, live_serve
         },
     }
     sessions = {}
-    for role in ("member", "lead", "independent"):
+    for role, user in roles.items():
         client = Client()
-        client.force_login(lab[role])
+        client.force_login(user)
         sessions[role] = {
-            "id": str(lab[role].id),
+            "id": str(user.id),
             "cookie": {
                 "name": settings.SESSION_COOKIE_NAME,
                 "value": client.cookies[settings.SESSION_COOKIE_NAME].value,
@@ -53,15 +67,16 @@ def test_live_quote_approval_through_browser_and_real_api(laboratory, live_serve
     repo = Path(__file__).resolve().parents[7]
     result = subprocess.run(
         [
-            "pnpm",
-            "exec",
-            "playwright",
+            "node",
+            str(repo / "node_modules" / "@playwright" / "test" / "cli.js"),
             "test",
             "-c",
             "tools/lab/e2e/playwright.config.ts",
             "bounty-workflow-components.spec.ts",
             "-g",
             "live quote approval",
+            "--output",
+            str(tmp_path / "browser-output"),
         ],
         cwd=repo,
         env={**os.environ, "LAB_QUOTES_LIVE_FIXTURE": str(fixture_path)},
@@ -70,3 +85,11 @@ def test_live_quote_approval_through_browser_and_real_api(laboratory, live_serve
         timeout=120,
     )
     assert result.returncode == 0, result.stdout + result.stderr
+    if member_funded:
+        from plane.lab.models import BountyFunding, Ledger
+        from plane.lab.vc import wallet
+
+        funding = BountyFunding.objects.get(bounty_id=bounty_id)
+        assert funding.project_committed == 37 and funding.earned_committed == 8
+        assert wallet(lab["member"].id, lab["project"])["available"] == "3.00"
+        assert Ledger.objects.count() == 1  # The historical award; quote approval creates no contribution.

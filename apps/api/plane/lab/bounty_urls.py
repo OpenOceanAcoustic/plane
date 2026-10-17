@@ -6,8 +6,10 @@ from .bounty_views import BountyBudgetView, BountyDetailView, TaskCardMetadataVi
 from .bounty_materials import BountyMaterialDetailView, BountyMaterialFileView, BountyMaterialsView
 from .quote_views import BountyQuoteDecisionView, BountyQuotesView
 from .quote_files import BountyQuoteDownloadView, BountyQuoteUploadView
+from .vc_views import VCQuotaView
 
 bounty_patterns = [
+    path("bounties/quotas/<uuid:project_id>/", VCQuotaView.as_view()),
     path("bounties/<uuid:pk>/quote-attachments/", BountyQuoteUploadView.as_view()),
     path("bounties/<uuid:pk>/quote-attachments/<uuid:attachment_id>/", BountyQuoteDownloadView.as_view()),
     path("bounties/<uuid:pk>/quotes/", BountyQuotesView.as_view()),

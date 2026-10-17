@@ -6,9 +6,18 @@
 import { useEffect, useState } from "react";
 import { observer } from "mobx-react";
 import { Link } from "react-router";
+import { v4 as uuidv4 } from "uuid";
 import type { LabBountyBudget, LabTask } from "@plane/types";
 import type { LabStore } from "@plane/shared-state";
-import { LabAmountInput, LabDialog, LabField, labAmountError, labDecimalUnits, labInputClass } from "@plane/ui";
+import {
+  LabAmountInput,
+  LabDialog,
+  LabField,
+  labAmountError,
+  labDecimalText as vcValue,
+  labDecimalUnits,
+  labInputClass,
+} from "@plane/ui";
 
 export const LabBountyPublish = observer(function LabBountyPublish({
   store,
@@ -29,6 +38,8 @@ export const LabBountyPublish = observer(function LabBountyPublish({
   const [selectedIssueId, setIssueId] = useState("");
   const [query, setQuery] = useState("");
   const [budget, setBudget] = useState("");
+  const [projectPayment, setProjectPayment] = useState<string | null>(null);
+  const [requestKey] = useState(() => uuidv4());
   const [reviewerId, setReviewerId] = useState("");
   const [cashCommitment, setCashCommitment] = useState("");
   const [personDays, setPersonDays] = useState("");
@@ -107,8 +118,21 @@ export const LabBountyPublish = observer(function LabBountyPublish({
   const project = store.planner?.projects.find((row) => row.id === projectId);
   const task = tasks.find((row) => row.id === issueId && row.project_id === projectId);
   const quota = labDecimalUnits(budget);
+  const paymentLimit = source?.wallet?.available ?? source?.available;
+  const projectAvailable = labDecimalUnits(source?.wallet?.project_available ?? "0") ?? 0n;
+  const defaultProjectPayment = quota !== null ? (quota < projectAvailable ? quota : projectAvailable) : 0n;
+  const projectUnits = projectPayment === null ? defaultProjectPayment : labDecimalUnits(projectPayment);
+  const earnedUnits = quota !== null && projectUnits !== null ? quota - projectUnits : null;
+  const earnedPayment = earnedUnits !== null && earnedUnits >= 0n ? vcValue(earnedUnits) : "";
+  const paymentError =
+    source?.wallet && budget.trim()
+      ? projectUnits === null || earnedUnits === null || earnedUnits < 0n
+        ? "项目额度支付不能超过悬赏配额"
+        : labAmountError(vcValue(projectUnits), { limit: source.wallet.project_available, unit: "VC" }) ||
+          labAmountError(earnedPayment, { limit: source.wallet.earned_available, unit: "VC" })
+      : "";
   const projectBudget = source?.budget ? labDecimalUnits(source.budget) : null;
-  const quotaError = labAmountError(budget, { limit: source?.available, min: "0.01", unit: "VC" });
+  const quotaError = labAmountError(budget, { limit: paymentLimit, min: "0.01", unit: "VC" });
   const major =
     (quota !== null && quota >= 4000n) ||
     (quota !== null && projectBudget !== null && quota * 5n > projectBudget) ||
@@ -122,7 +146,17 @@ export const LabBountyPublish = observer(function LabBountyPublish({
       title="发布悬赏"
       submitLabel="发布"
       busy={store.busy}
-      submitDisabled={!!quotaError || loadingBudgets || loadingTasks || !source?.configured || source.deleted || !task}
+      submitDisabled={
+        quota === null ||
+        quota <= 0n ||
+        !!quotaError ||
+        !!paymentError ||
+        loadingBudgets ||
+        loadingTasks ||
+        !source?.configured ||
+        source.deleted ||
+        !task
+      }
       error={
         store.error ||
         budgetError ||
@@ -138,7 +172,8 @@ export const LabBountyPublish = observer(function LabBountyPublish({
         if (!source?.configured) throw new Error("项目尚未配置 VC 预算");
         if (source.deleted) throw new Error("资金预算已删除，请先恢复");
         if (!task) throw new Error("请选择当前项目的工作项");
-        if (quota === null || quota <= 0n || quotaError) throw new Error("VC 配额须大于零且不超过项目剩余预算");
+        if (quota === null || quota <= 0n || quotaError || paymentError)
+          throw new Error("VC 配额须大于零且不超过个人可用余额");
         await store.execute(async () => {
           const deliverable = data.get("deliverable");
           const criteria = data.get("criteria");
@@ -147,6 +182,10 @@ export const LabBountyPublish = observer(function LabBountyPublish({
               project_id: projectId,
               issue_id: issueId,
               budget,
+              request_key: requestKey,
+              ...(source.wallet && projectUnits !== null
+                ? { project_vc: vcValue(projectUnits), earned_vc: earnedPayment }
+                : {}),
               public_summary: data.get("public_summary"),
               deliverable,
               public_deliverable: deliverable,
@@ -180,6 +219,7 @@ export const LabBountyPublish = observer(function LabBountyPublish({
           disabled={!!fixedTask || loadingBudgets}
           onChange={(event) => {
             setProjectId(event.target.value);
+            setProjectPayment(null);
             setTasks([]);
             setIssueId("");
             setQuery("");
@@ -206,6 +246,15 @@ export const LabBountyPublish = observer(function LabBountyPublish({
         <p role="status" className="text-13 text-secondary">
           正在加载项目预算
         </p>
+      ) : source?.configured && !source.deleted && source.wallet ? (
+        <dl className="grid grid-cols-2 gap-1 text-13" aria-label="我的可用 VC">
+          <dt>项目分配可用 VC</dt>
+          <dd>{source.wallet.project_available}</dd>
+          <dt>悬赏收入可用 VC</dt>
+          <dd>{source.wallet.earned_available}</dd>
+          <dt>合计可用 VC</dt>
+          <dd>{source.wallet.available}</dd>
+        </dl>
       ) : source?.configured && !source.deleted ? (
         <p className="text-13" aria-label="项目 VC 预算">
           VC预算 {source.budget} · 已占用 {source.reserved} · 剩余 {source.available}
@@ -219,7 +268,7 @@ export const LabBountyPublish = observer(function LabBountyPublish({
                 ? "当前项目不可发布悬赏"
                 : budgets.length
                   ? "项目尚未配置 VC 预算"
-                  : "暂无可管理项目"}
+                  : "暂无可发布项目"}
           </span>
           <Link to={financeUrl} className="text-accent-primary">
             资金与奖励
@@ -274,7 +323,7 @@ export const LabBountyPublish = observer(function LabBountyPublish({
           aria-label="VC配额"
           name="budget"
           min="0.01"
-          limit={source?.available}
+          limit={paymentLimit}
           unit="VC"
           step="0.01"
           className={labInputClass}
@@ -283,6 +332,31 @@ export const LabBountyPublish = observer(function LabBountyPublish({
           required
         />
       </LabField>
+      {source?.wallet && (
+        <>
+          <LabField label="项目额度支付 VC">
+            <LabAmountInput
+              aria-label="项目额度支付 VC"
+              min="0"
+              limit={source.wallet.project_available}
+              unit="VC"
+              step="0.01"
+              className={labInputClass}
+              value={projectUnits !== null ? vcValue(projectUnits) : (projectPayment ?? "")}
+              onValueChange={setProjectPayment}
+              required
+            />
+          </LabField>
+          <LabField label="悬赏收入支付 VC">
+            <output aria-label="悬赏收入支付 VC">{earnedPayment || "0.00"}</output>
+          </LabField>
+          {paymentError && (
+            <p role="alert" className="text-13 text-danger-primary">
+              {paymentError}
+            </p>
+          )}
+        </>
+      )}
       <LabField label="任务资料">
         <textarea name="public_summary" className={labInputClass} required rows={3} maxLength={4000} />
       </LabField>

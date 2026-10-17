@@ -15,7 +15,7 @@ from plane.db.models import Issue, State
 from plane.db.models.state import DEFAULT_STATES
 from plane.lab.bounty_flow import ensure_bounty_flow
 from plane.lab.models import Audit, Bounty, PersonalCategory, PersonalItem, ProjectFlow, Stage, TimeBlock
-from .test_bounty_project_budget import publication
+from .test_bounty_project_budget import assign, publication
 
 pytestmark = [pytest.mark.django_db(transaction=True), pytest.mark.contract]
 
@@ -37,6 +37,7 @@ def vc_budget(lab):
         format="json",
     )
     assert result.status_code == 201, result.content
+    assign(lab, "100")
     return result.json()["id"]
 
 
