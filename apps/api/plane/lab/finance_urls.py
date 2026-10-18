@@ -13,7 +13,10 @@ from .finance_views import (
     RewardPreviewView,
 )
 
+from .project_budgets import ProjectCostBudgetView
+
 finance_patterns = [
+    path("finance/project-budgets/<uuid:pk>/", ProjectCostBudgetView.as_view()),
     path("finance/permissions/", FinancePermissionView.as_view()),
     path("finance/overview/", FinanceOverviewView.as_view()),
     path("finance/entries/", FinanceEntriesView.as_view()),

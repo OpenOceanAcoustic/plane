@@ -313,3 +313,27 @@ export type LabStageAllocationRequest = {
   evidence?: string;
   occurred_at?: string;
 };
+
+export type LabProjectBudgetCategory = "labor" | "travel" | "outsourcing" | "equipment" | "other";
+export type LabProjectBudgetItem = {
+  category: LabProjectBudgetCategory;
+  name: string;
+  amount: string;
+  note: string;
+};
+export type LabProjectBudget = {
+  id: string;
+  project_id: string;
+  version: number;
+  items: LabProjectBudgetItem[];
+  total: string;
+  subtotals: Record<LabProjectBudgetCategory, string>;
+  reason: string;
+  actor: string;
+  created_at: string;
+};
+export type LabProjectBudgetReport = {
+  project_id: string;
+  can_edit: boolean;
+  versions: LabProjectBudget[];
+};

@@ -13,6 +13,7 @@ import { LabFinanceActionDialog, accountKindLabels, financeActionLabels } from "
 import type { LabFinanceChosenAction } from "./finance-form";
 import { LabForecastDialog, LabFormulaEditor } from "./finance-formula";
 import { FinancePermissionDialog } from "./finance-permissions";
+import { LabProjectBudget } from "./project-budget";
 import { LabVCBudgetAdjustment } from "./vc-budget-adjustment";
 import { LabLedger } from "./ledger";
 import { LabRecordWorkflowView } from "./record-workflow";
@@ -391,6 +392,7 @@ export const LabFinance = observer(function LabFinance({
       )}
       <nav aria-label="资金账视图" className="lab-finance-tabs flex flex-wrap gap-2">
         {[
+          { id: "project-budget", label: "项目启动预算" },
           { id: "accounts", label: "真实余额与到账" },
           { id: "forecasts", label: "预算与参考预测" },
           { id: "settlements", label: "核准与付款" },
@@ -419,6 +421,13 @@ export const LabFinance = observer(function LabFinance({
           {error instanceof Error ? error.message : "资金账加载失败"}
         </p>
       )}
+      {data &&
+        tab === "project-budget" &&
+        (projectId && selectedProject?.permissions?.includes("view") ? (
+          <LabProjectBudget key={projectId} store={store} projectId={projectId} />
+        ) : (
+          <p className="text-13 text-secondary">{projectId ? "无项目预算查看权限" : "请选择资金项目"}</p>
+        ))}
       {data && tab === "accounts" && (
         <>
           {!!data.public_summary?.length && (

@@ -131,3 +131,11 @@ Personal workload advice:
 
 - `GET me/workload/` returns only the authenticated member's current-workspace counts: `{active,major,active_limit,major_limit,overloaded,blocking:false,message}`. Counts share native `lab_work()` identities across projects; native assignment plus bounty participation count once. Query parameters never select another member. Default recommendations are 2 active and 1 major; current approved legacy exceptions can raise these recommendations. No task names, IDs or other members' workload are returned.
 - `0023_wip_reminders` replaces only `lab_wip_validate(uuid)` workload rejection with a no-op. Existing transaction locks, native workflow guards, budget checks and immutable accounting triggers remain. Counts above recommendations no longer reject native/API mutations, team start or reacceptance. The historical `wip-exceptions/` interface and approval permissions remain compatible and affect advice only.
+
+## 项目启动预算
+
+- `GET finance/project-budgets/<project_id>/`：返回 `project_id`、`can_edit` 和按版本降序排列的 `versions`。仅有该项目财务查看权限的有效成员可读取。
+- `POST finance/project-budgets/<project_id>/`：需登记资金权限，提交 `request_key`（UUID）、`expected_version`（首次为 0）、`reason`、`items`。每条明细为 `{category, name, amount, note}`；category 为 `labor / travel / outsourcing / equipment / other`，amount 为最多 12 位整数、2 位小数的非负十进制字符串。最多 100 条，合计不超过 999999999999.99 元。成功返回 201 和新版本；重试同一请求返回原版本；旧版本或重用请求内容变化返回 409。预算不产生现金、VC 或奖励记录。
+- `GET finance/project-budgets/<project_id>/?format=csv&version=1`：导出指定版本；不指定 version 时导出最新版本。权限与读取接口一致，文本字段转义电子表格公式，金额保留数值格式。
+
+版本包含 `id / project_id / version / items / total / subtotals / reason / actor / created_at`。每次修改追加不可覆盖的预算版本及审计记录；归档项目和已删除资金配置禁止编制新版本。

@@ -2054,3 +2054,118 @@ test("financial new budgets and opening balances do not inherit an unrelated acc
   await dialog.getByLabel("期初实际余额（元）").fill("1000000.00");
   await expect(dialog.getByRole("alert")).toHaveCount(0);
 });
+
+test("startup budget compiles expense rows with exact totals and retains historical versions", async ({ page }) => {
+  await common(page);
+  await page.route("**/lab/finance/overview/**", (route) => route.fulfill({ json: overview() }));
+  const versions: Record<string, unknown>[] = [];
+  let submitted: Record<string, unknown> | undefined;
+  await page.route("**/lab/finance/project-budgets/*/", async (route) => {
+    if (route.request().method() === "POST") {
+      submitted = route.request().postDataJSON() as Record<string, unknown>;
+      const row = {
+        ...submitted,
+        id: `budget-${versions.length + 1}`,
+        project_id: projectId,
+        version: versions.length + 1,
+        total: "0.30",
+        subtotals: {},
+        actor: "负责人",
+        created_at: "2026-10-18T08:00:00Z",
+      };
+      versions.unshift(row);
+      return route.fulfill({ status: 201, json: row });
+    }
+    return route.fulfill({ json: { project_id: projectId, can_edit: true, versions } });
+  });
+  await mount(page, "finance", `/test/lab/finance?project_id=${projectId}`);
+  await page.getByRole("button", { name: "项目启动预算", exact: true }).click();
+  await page.getByRole("button", { name: "编制预算", exact: true }).click();
+  await page.getByLabel("第1项预算金额", { exact: true }).fill("0.10");
+  await page.getByLabel("第2项预算金额", { exact: true }).fill("0.20");
+  await expect(page.getByLabel("预算合计", { exact: true })).toHaveText("0.30");
+  await page.getByLabel("编制／调整说明", { exact: true }).fill("项目启动费用");
+  await page.getByRole("button", { name: "保存预算", exact: true }).click();
+  await expect(page.getByRole("button", { name: "调整预算", exact: true })).toBeVisible();
+  expect(submitted).toMatchObject({ expected_version: 0, reason: "项目启动费用", request_key: expect.any(String) });
+  expect(submitted?.items).toHaveLength(4);
+  await page.getByRole("button", { name: "调整预算", exact: true }).click();
+  await page.getByLabel("第1项预算金额", { exact: true }).fill("-1");
+  await expect(page.getByRole("button", { name: "保存预算", exact: true })).toBeDisabled();
+  await page.getByLabel("第1项预算金额", { exact: true }).fill("1.001");
+  await expect(page.getByRole("button", { name: "保存预算", exact: true })).toBeDisabled();
+  await page.getByLabel("第1项预算金额", { exact: true }).fill("1.00");
+  await page.getByLabel("编制／调整说明", { exact: true }).fill("调整劳务费");
+  await page.getByRole("button", { name: "保存预算", exact: true }).click();
+  await page.getByLabel("预算版本", { exact: true }).selectOption("1");
+  await expect(page.getByLabel("预算合计", { exact: true })).toHaveText("0.30");
+  await expect(page.getByText("项目启动费用", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "调整预算", exact: true }).click();
+  await expect(page.getByLabel("第1项预算金额", { exact: true })).toHaveValue("1.00");
+});
+
+test("startup budget requires a project and respects read-only finance access", async ({ page }) => {
+  await common(page);
+  const data = overview();
+  data.projects[0]!.permissions = ["view"];
+  await page.route("**/lab/finance/overview/**", (route) => route.fulfill({ json: data }));
+  await page.route("**/lab/finance/project-budgets/*/", (route) =>
+    route.fulfill({
+      json: {
+        project_id: projectId,
+        can_edit: false,
+        versions: [],
+      },
+    })
+  );
+  await mount(page, "finance");
+  await page.getByRole("button", { name: "项目启动预算", exact: true }).click();
+  await expect(page.getByText("请选择资金项目", { exact: true })).toBeVisible();
+  await page.getByLabel("资金项目", { exact: true }).selectOption(projectId);
+  await expect(page.getByText("尚未编制项目启动预算", { exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "编制预算", exact: true })).toHaveCount(0);
+});
+
+test("startup budget preserves a conflicting draft until explicitly reloaded", async ({ page }) => {
+  await common(page);
+  await page.route("**/lab/finance/overview/**", (route) => route.fulfill({ json: overview() }));
+  let conflicting = false;
+  await page.route("**/lab/finance/project-budgets/*/", (route) => {
+    if (route.request().method() === "POST") {
+      conflicting = true;
+      return route.fulfill({ status: 409, json: { detail: "预算已有新版本，请刷新后重新编辑" } });
+    }
+    return route.fulfill({
+      json: {
+        project_id: projectId,
+        can_edit: true,
+        versions: conflicting
+          ? [
+              {
+                id: "other-budget",
+                project_id: projectId,
+                version: 1,
+                total: "50.00",
+                subtotals: {},
+                items: [{ category: "labor", name: "新预算", amount: "50.00", note: "" }],
+                reason: "他人编制",
+                actor: "负责人",
+                created_at: "2026-10-18T08:00:00Z",
+              },
+            ]
+          : [],
+      },
+    });
+  });
+  await mount(page, "finance", `/test/lab/finance?project_id=${projectId}`);
+  await page.getByRole("button", { name: "项目启动预算", exact: true }).click();
+  await page.getByRole("button", { name: "编制预算", exact: true }).click();
+  await page.getByLabel("第1项预算金额", { exact: true }).fill("100");
+  await page.getByLabel("编制／调整说明", { exact: true }).fill("本人草稿");
+  await page.getByRole("button", { name: "保存预算", exact: true }).click();
+  await expect(page.getByRole("button", { name: "重新载入最新预算", exact: true })).toBeVisible();
+  await expect(page.getByLabel("第1项预算金额", { exact: true })).toHaveValue("100");
+  await expect(page.getByRole("button", { name: "保存预算", exact: true })).toBeDisabled();
+  await page.getByRole("button", { name: "重新载入最新预算", exact: true }).click();
+  await expect(page.getByLabel("第1项预算金额", { exact: true })).toHaveValue("50.00");
+});

@@ -296,6 +296,7 @@ from .finance_models import (  # noqa: E402,F401
     FinancialOperation,
     FinancePolicy,
     ProjectFinancePermission,
+    ProjectCostBudget,
     OfflinePayment,
     PaymentCommitment,
     PublicDutyAward,

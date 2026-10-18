@@ -62,6 +62,27 @@ class RewardFormula(FinancialRecord):
         ]
 
 
+class ProjectCostBudget(FinancialRecord):
+    workspace = models.ForeignKey("db.Workspace", on_delete=models.PROTECT)
+    project = models.ForeignKey("db.Project", on_delete=models.SET_NULL, null=True)
+    project_id_snapshot = models.UUIDField()
+    version = models.PositiveIntegerField()
+    items = models.JSONField(default=list)
+    total = models.DecimalField(max_digits=14, decimal_places=2)
+    reason = models.TextField()
+    actor = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True)
+    actor_name = models.CharField(max_length=255)
+    request_key = models.UUIDField()
+    request_snapshot = models.JSONField()
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=["project_id_snapshot", "version"], name="lab_cost_budget_version_unique"),
+            models.UniqueConstraint(fields=["workspace", "request_key"], name="lab_cost_budget_request_unique"),
+            models.CheckConstraint(condition=models.Q(total__gte=0), name="lab_cost_budget_nonnegative"),
+        ]
+
+
 class StageBudget(FinancialRecord):
     stage = models.OneToOneField("lab.Stage", on_delete=models.PROTECT, related_name="cash_budget")
     E = models.DecimalField(max_digits=14, decimal_places=2)
