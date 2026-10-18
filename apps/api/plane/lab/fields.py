@@ -240,19 +240,32 @@ class IssueFieldsView(LabView):
 
 class TaskTableView(LabView):
     def get(self, request, slug):
+        from .issue_archiving import completion_date, filter_dates, manageable_projects
+
+        archived = request.query_params.get("archived", "0")
+        if archived not in ("0", "1"):
+            raise ValidationError("归档范围无效")
         rows = (
             readable_issues(request.user, self.workspace)
-            .filter(is_draft=False, archived_at__isnull=True, project__archived_at__isnull=True)
+            .filter(
+                is_draft=False,
+                archived_at__isnull=archived == "0",
+                project__deleted_at__isnull=True,
+            )
             .select_related("project", "state", "bounty")
             .order_by("project__name", "sequence_id")
         )
+        if archived == "0":
+            rows = rows.filter(project__archived_at__isnull=True)
         project_id = request.query_params.get("project")
         if project_id:
             rows = rows.filter(project_id=project_id)
+        rows = filter_dates(rows, request.query_params)
         tasks = list(rows)
         from .issue_deletion import deletable_issue_ids
 
         deletable_ids = deletable_issue_ids(request.user, self.workspace, tasks)
+        manageable = set(manageable_projects(request.user, self.workspace))
         enabled = set(
             ProjectField.objects.filter(project_id__in={r.project_id for r in tasks}, enabled=True).values_list(
                 "field_id", flat=True
@@ -279,9 +292,17 @@ class TaskTableView(LabView):
                 "priority": r.priority,
                 "start_date": r.start_date,
                 "target_date": r.target_date,
-                "editable": roles.get(r.project_id, 0) >= 15
-                or r.created_by_id == request.user.id
-                or r.project.guest_view_all_features,
+                "completed_at": r.completed_at,
+                "completed_date": completion_date(r),
+                "archived_at": r.archived_at,
+                "revision": r.updated_at.isoformat(),
+                "can_restore_issue": bool(r.archived_at and r.project_id in manageable),
+                "editable": not r.archived_at
+                and (
+                    roles.get(r.project_id, 0) >= 15
+                    or r.created_by_id == request.user.id
+                    or r.project.guest_view_all_features
+                ),
                 "values": values.get(str(r.id), {}),
                 "can_delete_issue": r.id in deletable_ids,
                 "bounty_id": str(r.bounty.id) if hasattr(r, "bounty") and r.bounty.status != "deleted" else None,
@@ -305,4 +326,10 @@ class TaskTableView(LabView):
             response = HttpResponse("\ufeff" + stream.getvalue(), content_type="text/csv; charset=utf-8")
             response["Content-Disposition"] = 'attachment; filename="tasks.csv"'
             return response
-        return Response({"tasks": data, "fields": [field_data(f) for f in fields]})
+        return Response(
+            {
+                "tasks": data,
+                "fields": [field_data(f) for f in fields],
+                "can_archive": UUID(project_id) in manageable if project_id else bool(manageable),
+            }
+        )
