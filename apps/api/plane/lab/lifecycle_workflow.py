@@ -38,6 +38,7 @@ OPERATION_LABELS = {
     "project-restore": "恢复资金项目",
     "transfer": "资金划拨",
     "expense": "登记实际支出",
+    "cost-recovery": "登记审计追回",
     "settlement": "确认最终执行奖励",
     "history-settlement": "核准历史孵化奖励",
     "commit": "批准支付安排",

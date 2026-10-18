@@ -184,7 +184,7 @@ test.beforeAll(async () => {
   directory = await mkdtemp(join(tmpdir(), "lab-finance-browser-"));
   const require = createRequire(resolve("apps/web/package.json"));
   const { build } = require("esbuild") as typeof import("esbuild");
-  const source = `import React from 'react'; import { createRoot } from 'react-dom/client'; import { MemoryRouter } from 'react-router'; import { observer } from 'mobx-react'; import { LabStore } from '${resolve("packages/shared-state/src/lab.store.ts")}'; import { LabFinance } from '${resolve("apps/web/core/components/lab/finance.tsx")}'; import { LabMarket } from '${resolve("apps/web/core/components/lab/market.tsx")}'; import { LabPlannerBoard } from '${resolve("apps/web/core/components/lab/planner.tsx")}'; import { LabLedger } from '${resolve("apps/web/core/components/lab/ledger.tsx")}'; import { LabBountyWorkflow } from '${resolve("apps/web/core/components/lab/workflow.tsx")}'; const config = window.labConfig; const store = new LabStore('', 'test'); store.planner = config.planner; store.bounties = config.bounties; const Count = observer(() => <output aria-label="规划事项数量">{store.planner?.items.length}</output>); const view = config.view; createRoot(document.getElementById('root')).render(<MemoryRouter initialEntries={[config.route || '/test/lab/bounties']}><Count />{view === 'market' ? <LabMarket store={store} /> : view === 'planner' ? <LabPlannerBoard store={store} schedule={() => {}} /> : view === 'ledger' ? <LabLedger store={store} projectId="" /> : view === 'workflow' ? <LabBountyWorkflow store={store} bounty={config.bounties[0]} /> : <LabFinance store={store} />}</MemoryRouter>);`;
+  const source = `import { LabProjectQuality } from '${resolve("apps/web/core/components/lab/project-quality.tsx")}'; import React from 'react'; import { createRoot } from 'react-dom/client'; import { MemoryRouter } from 'react-router'; import { observer } from 'mobx-react'; import { LabStore } from '${resolve("packages/shared-state/src/lab.store.ts")}'; import { LabFinance } from '${resolve("apps/web/core/components/lab/finance.tsx")}'; import { LabMarket } from '${resolve("apps/web/core/components/lab/market.tsx")}'; import { LabPlannerBoard } from '${resolve("apps/web/core/components/lab/planner.tsx")}'; import { LabLedger } from '${resolve("apps/web/core/components/lab/ledger.tsx")}'; import { LabBountyWorkflow } from '${resolve("apps/web/core/components/lab/workflow.tsx")}'; const config = window.labConfig; const store = new LabStore('', 'test'); store.planner = config.planner; store.bounties = config.bounties; const Count = observer(() => <output aria-label="规划事项数量">{store.planner?.items.length}</output>); const view = config.view; createRoot(document.getElementById('root')).render(<MemoryRouter initialEntries={[config.route || '/test/lab/bounties']}><Count />{view === 'quality' ? <LabProjectQuality store={store} refreshKey={0} /> : view === 'market' ? <LabMarket store={store} /> : view === 'planner' ? <LabPlannerBoard store={store} schedule={() => {}} /> : view === 'ledger' ? <LabLedger store={store} projectId="" /> : view === 'workflow' ? <LabBountyWorkflow store={store} bounty={config.bounties[0]} /> : <LabFinance store={store} />}</MemoryRouter>);`;
   await build({
     stdin: {
       contents: source,
@@ -2168,4 +2168,240 @@ test("startup budget preserves a conflicting draft until explicitly reloaded", a
   await expect(page.getByRole("button", { name: "保存预算", exact: true })).toBeDisabled();
   await page.getByRole("button", { name: "重新载入最新预算", exact: true }).click();
   await expect(page.getByLabel("第1项预算金额", { exact: true })).toHaveValue("50.00");
+});
+
+function managementFixture() {
+  return {
+    project_id: projectId,
+    funding_id: "99999999-1111-4111-8111-111111111111",
+    user_id: memberId,
+    can_view_finance: true,
+    can_record: true,
+    can_approve: true,
+    can_audit: true,
+    can_recover: true,
+    can_pay: true,
+    closed: false,
+    records: [] as Record<string, unknown>[],
+    members: [{ id: memberId, name: "成员甲" }],
+    accounts: [{ id: "project-account", label: "项目资金", available: "10.00" }],
+    summary: null,
+    categories: [],
+  };
+}
+
+test("management compiles contract funding and keeps actual receipts independent", async ({ page }) => {
+  await common(page);
+  const data = managementFixture();
+  await page.route("**/lab/finance/overview/**", (route) => route.fulfill({ json: overview() }));
+  let submitted: Record<string, unknown> | undefined;
+  await page.route("**/lab/projects/*/finance-management/", (route) => {
+    if (route.request().method() === "POST") {
+      submitted = route.request().postDataJSON() as Record<string, unknown>;
+      data.records = [
+        { id: data.funding_id, kind: "funding", version: 1, state: "confirmed", actor: "负责人", data: submitted.data },
+      ];
+      return route.fulfill({ status: 201, json: data.records[0] });
+    }
+    return route.fulfill({ json: data });
+  });
+  await mount(page, "finance", `/test/lab/finance?project_id=${projectId}`, planner, httpOrigin);
+  await page.getByRole("button", { name: "项目经费与成本", exact: true }).click();
+  await page.getByRole("button", { name: "核定项目经费", exact: true }).click();
+  const dialog = page.getByRole("dialog");
+  await dialog.getByLabel("项目类型", { exact: true }).selectOption("external");
+  await dialog.getByLabel("核定项目经费（元）", { exact: true }).fill("10000");
+  await dialog.getByLabel("核定预算（元）", { exact: true }).fill("8000");
+  await dialog.getByLabel("合同／内部决议依据", { exact: true }).fill("双方签订合同");
+  await dialog.getByLabel("操作说明", { exact: true }).fill("核定初始经费");
+  await dialog.getByRole("button", { name: "保存", exact: true }).click();
+  await expect(page.getByText("核定依据：双方签订合同", { exact: true })).toBeVisible();
+  expect(submitted).toMatchObject({
+    kind: "funding",
+    action: "save",
+    expected_version: 0,
+    request_key: expect.any(String),
+    data: { funding_amount: "10000", budget_amount: "8000", source_type: "external" },
+  });
+});
+
+test("management travel reimbursement adds actual spending and separately rounded allowances", async ({ page }) => {
+  await common(page);
+  await page.route("**/lab/finance/overview/**", (route) => route.fulfill({ json: overview() }));
+  const data = managementFixture();
+  let submitted: Record<string, unknown> | undefined;
+  await page.route("**/lab/projects/*/finance-management/", (route) => {
+    if (route.request().method() === "POST") {
+      submitted = route.request().postDataJSON();
+      return route.fulfill({ status: 201, json: {} });
+    }
+    return route.fulfill({ json: data });
+  });
+  await mount(page, "finance", `/test/lab/finance?project_id=${projectId}`);
+  await page.getByRole("button", { name: "项目经费与成本", exact: true }).click();
+  await page.getByRole("button", { name: "工资及报销", exact: true }).click();
+  await page.getByRole("button", { name: "申请报销", exact: true }).click();
+  const dialog = page.getByRole("dialog");
+  await expect(dialog.getByLabel("费用类别", { exact: true })).toHaveValue("travel");
+  await dialog.getByLabel("发生日期", { exact: true }).fill("2026-10-18");
+  await dialog.getByLabel("工作内容／费用事项", { exact: true }).fill("外场测试交通与食宿");
+  await dialog.getByLabel("实际费用（元）", { exact: true }).fill("200.10");
+  await dialog.getByLabel("出差天数", { exact: true }).fill("2");
+  await dialog.getByLabel("每日交通补助（元）", { exact: true }).fill("30");
+  await dialog.getByLabel("每日餐费补助（元）", { exact: true }).fill("50");
+  await expect(dialog.getByLabel("本次费用合计", { exact: true })).toHaveText("合计：360.10 元");
+  await dialog.getByLabel("费用凭证／依据", { exact: true }).fill("交通票据与出差审批单");
+  await dialog.getByLabel("操作说明", { exact: true }).fill("登记实际报销");
+  await dialog.getByRole("button", { name: "保存", exact: true }).click();
+  await expect(dialog).toHaveCount(0);
+  expect(submitted).toMatchObject({
+    kind: "cost",
+    data: {
+      category: "travel",
+      user_id: memberId,
+      actual_amount: "200.10",
+      days: "2",
+      transport_rate: "30",
+      meal_rate: "50",
+    },
+  });
+});
+
+test("management payroll prevents payment above the real project account balance", async ({ page }) => {
+  await common(page);
+  await page.route("**/lab/finance/overview/**", (route) => route.fulfill({ json: overview() }));
+  const data = managementFixture();
+  data.records = [
+    {
+      id: "payroll",
+      version_id: "payroll-v1",
+      version: 1,
+      kind: "payroll",
+      state: "ready",
+      actor: "负责人",
+      data: {
+        user_id: memberId,
+        user_name: "成员甲",
+        start: "2026-10-01",
+        end: "2026-10-31",
+        amount: "800.00",
+        hours: "8.00",
+        lines: [],
+      },
+    },
+  ];
+  await page.route("**/lab/projects/*/finance-management/", (route) => route.fulfill({ json: data }));
+  await mount(page, "finance", `/test/lab/finance?project_id=${projectId}`);
+  await page.getByRole("button", { name: "项目经费与成本", exact: true }).click();
+  await page.getByRole("button", { name: "工资及报销", exact: true }).click();
+  await page.getByRole("button", { name: "登记支付", exact: true }).click();
+  const dialog = page.getByRole("dialog");
+  await dialog.getByLabel("项目资金账户", { exact: true }).selectOption("project-account");
+  await expect(dialog.getByText("项目可用资金不足", { exact: true })).toBeVisible();
+  await expect(dialog.getByRole("button", { name: "保存", exact: true })).toBeDisabled();
+});
+
+function qualityFixture() {
+  return {
+    project_id: projectId,
+    plan_id: "quality-plan",
+    can_edit: true,
+    can_review: true,
+    members: [{ id: memberId, name: "成员甲" }],
+    records: [] as Record<string, unknown>[],
+    catalog: [
+      {
+        key: "requirements",
+        stage: "development",
+        label: "需求规格说明",
+        sections: ["功能需求", "性能指标", "验收条件"],
+      },
+      { key: "test-report", stage: "testing", label: "测试报告", sections: ["测试结果", "测试结论"] },
+    ],
+  };
+}
+
+test("quality project plan saves assignments dates requirements and technical route", async ({ page }) => {
+  await common(page);
+  const data = qualityFixture();
+  let submitted: Record<string, unknown> | undefined;
+  await page.route("**/lab/projects/*/quality/", (route) => {
+    if (route.request().method() === "POST") {
+      submitted = route.request().postDataJSON();
+      data.records = [
+        {
+          id: data.plan_id,
+          version: 1,
+          kind: "plan",
+          state: "draft",
+          actor: "负责人",
+          data: submitted!.data,
+          document_current: true,
+        },
+      ];
+      return route.fulfill({ status: 201, json: data.records[0] });
+    }
+    return route.fulfill({ json: data });
+  });
+  await mount(page, "quality", `/test/lab/quality?project_id=${projectId}`);
+  await page.getByRole("button", { name: "编制项目计划", exact: true }).click();
+  const dialog = page.getByRole("dialog");
+  await dialog.getByLabel("项目要求", { exact: true }).fill("完成声学样本处理与复核");
+  await dialog.getByLabel("技术路径", { exact: true }).fill("建模、实验、误差分析");
+  await dialog.getByLabel("第1项项目成员", { exact: true }).selectOption(memberId);
+  await dialog.getByLabel("第1项职责与分工", { exact: true }).fill("模型开发");
+  await dialog.getByLabel("第1项开始日期", { exact: true }).fill("2026-10-18");
+  await dialog.getByLabel("第1项结束日期", { exact: true }).fill("2026-11-01");
+  await dialog.getByLabel("操作说明", { exact: true }).fill("提交初始项目计划");
+  await dialog.getByRole("button", { name: "保存", exact: true }).click();
+  await expect(dialog).toHaveCount(0);
+  await expect(page.getByText("建模、实验、误差分析", { exact: true })).toBeVisible();
+  expect(submitted).toMatchObject({
+    kind: "plan",
+    data: {
+      requirements: "完成声学样本处理与复核",
+      technical_route: "建模、实验、误差分析",
+      assignments: [{ user_id: memberId, work: "模型开发", start: "2026-10-18", end: "2026-11-01" }],
+    },
+  });
+});
+
+test("quality requirement templates can be authored and changed approved documents require review", async ({
+  page,
+}) => {
+  await common(page);
+  const data = qualityFixture();
+  let submitted: Record<string, unknown> | undefined;
+  await page.route("**/lab/projects/*/quality/", (route) => {
+    if (route.request().method() === "POST") {
+      submitted = route.request().postDataJSON();
+      return route.fulfill({ status: 201, json: {} });
+    }
+    return route.fulfill({ json: data });
+  });
+  await mount(page, "quality", `/test/lab/quality?project_id=${projectId}`);
+  await page.getByRole("button", { name: "需求与开发", exact: true }).click();
+  await page.getByRole("button", { name: "新增资料", exact: true }).click();
+  const dialog = page.getByRole("dialog");
+  await expect(dialog.getByLabel("资料内容", { exact: true })).toContainText("功能需求");
+  await dialog.getByLabel("资料内容", { exact: true }).fill("功能：声学计算\n验收：误差低于约定指标");
+  await dialog.getByLabel("操作说明", { exact: true }).fill("编写需规初稿");
+  await dialog.getByRole("button", { name: "保存", exact: true }).click();
+  await expect(dialog).toHaveCount(0);
+  expect(submitted).toMatchObject({ kind: "artifact", data: { category: "requirements", title: "需求规格说明" } });
+  data.records = [
+    {
+      id: "requirements",
+      version: 2,
+      kind: "artifact",
+      state: "approved",
+      document_current: false,
+      actor: "负责人",
+      data: { category: "requirements", title: "需求规格说明" },
+    },
+  ];
+  await page.reload();
+  await page.getByRole("button", { name: "需求与开发", exact: true }).click();
+  await expect(page.getByText("文档已更新或不可用，待复审", { exact: true })).toBeVisible();
+  await expect(page.getByText("已通过资料类别：0 / 3", { exact: true })).toBeVisible();
 });

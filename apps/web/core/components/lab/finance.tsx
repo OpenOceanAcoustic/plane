@@ -14,6 +14,7 @@ import type { LabFinanceChosenAction } from "./finance-form";
 import { LabForecastDialog, LabFormulaEditor } from "./finance-formula";
 import { FinancePermissionDialog } from "./finance-permissions";
 import { LabProjectBudget } from "./project-budget";
+import { LabFinanceManagement } from "./finance-management";
 import { LabVCBudgetAdjustment } from "./vc-budget-adjustment";
 import { LabLedger } from "./ledger";
 import { LabRecordWorkflowView } from "./record-workflow";
@@ -190,30 +191,33 @@ export const LabFinance = observer(function LabFinance({
         />
       )}
       <div className="flex flex-wrap items-center gap-2">
-        <select
-          aria-label="资金项目"
-          value={projectId}
-          onChange={(event) => {
-            setProjectId(event.target.value);
-            setChosen(undefined);
-            setDeletion(undefined);
-            setFormulaOpen(false);
-            setForecastOpen(false);
-          }}
-          className={`${labInputClass} max-w-72`}
-        >
-          <option value="">全部可见资金与公共池</option>
-          {(
-            data?.projects.filter((project) => showDeleted || !project.deleted) ??
-            store.planner?.projects.map((project) => ({ ...project, is_lead: project.lead })) ??
-            []
-          ).map((project) => (
-            <option key={project.id} value={project.id}>
-              {project.name}
-              {"deleted" in project && project.deleted ? " · 已删除" : project.is_lead ? " · 负责人" : ""}
-            </option>
-          ))}
-        </select>
+        <label className="flex items-center gap-2 text-13">
+          <span className="whitespace-nowrap">资金项目</span>
+          <select
+            aria-label="资金项目"
+            value={projectId}
+            onChange={(event) => {
+              setProjectId(event.target.value);
+              setChosen(undefined);
+              setDeletion(undefined);
+              setFormulaOpen(false);
+              setForecastOpen(false);
+            }}
+            className={`${labInputClass} max-w-72`}
+          >
+            <option value="">全部可见资金与公共池</option>
+            {(
+              data?.projects.filter((project) => showDeleted || !project.deleted) ??
+              store.planner?.projects.map((project) => ({ ...project, is_lead: project.lead })) ??
+              []
+            ).map((project) => (
+              <option key={project.id} value={project.id}>
+                {project.name}
+                {"deleted" in project && project.deleted ? " · 已删除" : project.is_lead ? " · 负责人" : ""}
+              </option>
+            ))}
+          </select>
+        </label>
         {(projectId
           ? selectedProject?.can_manage_vc
           : data?.projects.some((project) => project.can_manage_vc && !project.deleted)) && (
@@ -393,6 +397,7 @@ export const LabFinance = observer(function LabFinance({
       <nav aria-label="资金账视图" className="lab-finance-tabs flex flex-wrap gap-2">
         {[
           { id: "project-budget", label: "项目启动预算" },
+          { id: "management", label: "项目经费与成本" },
           { id: "accounts", label: "真实余额与到账" },
           { id: "forecasts", label: "预算与参考预测" },
           { id: "settlements", label: "核准与付款" },
@@ -427,6 +432,18 @@ export const LabFinance = observer(function LabFinance({
           <LabProjectBudget key={projectId} store={store} projectId={projectId} />
         ) : (
           <p className="text-13 text-secondary">{projectId ? "无项目预算查看权限" : "请选择资金项目"}</p>
+        ))}
+      {data &&
+        tab === "management" &&
+        (projectId ? (
+          <LabFinanceManagement
+            key={projectId}
+            store={store}
+            projectId={projectId}
+            refreshKey={refreshKey + revision}
+          />
+        ) : (
+          <p className="text-13 text-secondary">请选择资金项目</p>
         ))}
       {data && tab === "accounts" && (
         <>

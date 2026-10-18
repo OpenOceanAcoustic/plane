@@ -77,3 +77,10 @@
   background: color-mix(in srgb, var(--label-emerald-bg) 45%, var(--background-color-surface-1));
   color: var(--label-emerald-text);
 }
+
+.lab-page[data-lab-section="quality"],
+.lab-navigation-item[data-lab-section="quality"] {
+  --lab-section-bg: var(--label-blue-bg);
+  --lab-section-text: var(--label-blue-text);
+  --lab-section-border: var(--label-blue-border);
+}

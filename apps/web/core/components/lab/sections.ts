@@ -9,6 +9,7 @@ import {
   TableProperties,
   Target,
   Wallet,
+  ClipboardCheck,
 } from "lucide-react";
 
 export const labSections = [
@@ -19,5 +20,6 @@ export const labSections = [
   { key: "tasks", name: "任务表格", Icon: TableProperties },
   { key: "bounties", name: "悬赏大厅", Icon: Target },
   { key: "finance", name: "资金与奖励", Icon: Wallet },
+  { key: "quality", name: "项目与质量", Icon: ClipboardCheck },
   { key: "analytics", name: "数据总览", Icon: BarChart3 },
 ] as const;

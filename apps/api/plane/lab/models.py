@@ -307,3 +307,4 @@ from .finance_models import (  # noqa: E402,F401
     RewardSettlement,
     StageBudget,
 )
+from .management_models import ProjectManagementRecord  # noqa: E402,F401

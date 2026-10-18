@@ -90,6 +90,23 @@ def require_finance_open(workspace, project_id, stage_id=None, state=None):
 
 
 def finance_obligation_reason(workspace, project_id, stage=None):
+    if stage is None:
+        from .management_models import latest_records
+        from .project_management import recognized_cost, paid_cost, recovered_cost
+
+        records = list(latest_records(project_id))
+        if any(row.kind == "payroll" and row.state == "ready" for row in records):
+            return "还有未支付的工资单，请先处理"
+        for row in records:
+            if row.kind != "cost":
+                continue
+            if row.state == "submitted":
+                return "还有待核准的工时或费用，请先处理"
+            if row.state == "approved" and recognized_cost(row, records) > paid_cost(row, records)[0]:
+                return "还有未支付的工资或报销，请先处理"
+            if paid_cost(row, records)[0] - recognized_cost(row, records) - recovered_cost(row, records) > ZERO:
+                return "还有审计待追回款项，请先处理"
+
     bounties = Bounty.objects.filter(stage__workspace_id_snapshot=workspace.id, stage__project_id_snapshot=project_id)
     budgets = StageBudget.objects.filter(
         stage__workspace_id_snapshot=workspace.id, stage__project_id_snapshot=project_id
@@ -837,6 +854,15 @@ def move_reserved(operation, user, workspace, data, action):
 
 def reversal_entries(workspace, original):
     """Validate real balances, commitments and source-specific downstream dependencies."""
+    from .management_models import latest_records
+
+    if (
+        original.project_id_snapshot
+        and latest_records(original.project_id_snapshot)
+        .filter(state__in=("paid", "received"), data__payment_operation_id=str(original.id))
+        .exists()
+    ):
+        raise ValidationError("工资与报销支付请在原记录办理冲正")
     entries = list(original.entries.select_related("account", "batch"))
     if not entries:
         raise ValidationError("该记录没有可冲正资金流水")

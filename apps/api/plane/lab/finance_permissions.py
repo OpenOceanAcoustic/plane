@@ -33,6 +33,7 @@ ACTION_PERMISSIONS = {
     "cancel-commit": "pay",
     "payment": "pay",
     "expense": "pay",
+    "cost-recovery": "record",
     "tax-remit": "pay",
 }
 

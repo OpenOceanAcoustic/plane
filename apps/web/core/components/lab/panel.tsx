@@ -13,6 +13,7 @@ import { LabCalendar } from "./calendar";
 import { LabAnalyticsPanel } from "./analytics";
 import { LabMarket } from "./market";
 import { LabFinance } from "./finance";
+import { LabProjectQuality } from "./project-quality";
 import { LabPlanningWorkbench } from "./planner-workbench";
 import { LabTaskTable } from "./task-table";
 import { LabContributions } from "./contributions";
@@ -124,6 +125,7 @@ export const LabPanel = observer(function LabPanel({
         {store.planner && section === "bounties" && <LabMarket store={store} />}
         {store.planner && section === "tasks" && <LabTaskTable store={store} refreshKey={refreshKey} />}
         {store.planner && section === "analytics" && <LabAnalyticsPanel store={store} refreshKey={refreshKey} />}
+        {store.planner && section === "quality" && <LabProjectQuality store={store} refreshKey={refreshKey} />}
         {store.planner && section === "finance" && <LabFinance store={store} refreshKey={refreshKey} />}
       </div>
     </main>
