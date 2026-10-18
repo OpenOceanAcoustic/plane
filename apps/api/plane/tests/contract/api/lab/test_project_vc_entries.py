@@ -181,8 +181,9 @@ def test_concurrent_reduction_and_issue_never_overcommit(laboratory, operation):
 def test_direct_project_topup_waits_for_review_and_never_uses_personal_credit(laboratory):
     lab = laboratory
     stage = setup(lab)
-    response = post(lab, body(lab, issue(lab), "20"), actor=lab["lead"])
+    response = post(lab, body(lab, issue(lab), "20", major=True), actor=lab["lead"])
     bounty = response.json()["id"]
+    assert action(lab, lab["independent"], bounty, "publication-review", {"reason": "发布复核"}).status_code == 200
     assert submit_quote(lab, bounty, kind="negotiated", vc="45", basis="额外交付范围").status_code == 201
     quote = quote_list(lab, bounty)["quotes"][0]
     assert decide(lab, bounty, quote, reviewer_id=str(lab["independent"].id)).status_code == 200
@@ -195,8 +196,9 @@ def test_direct_project_topup_waits_for_review_and_never_uses_personal_credit(la
 def test_pool_total_changes_invalidate_review_even_when_remaining_stays_equal(laboratory):
     lab = laboratory
     stage = setup(lab)
-    response = post(lab, body(lab, issue(lab), "20"), actor=lab["lead"])
+    response = post(lab, body(lab, issue(lab), "20", major=True), actor=lab["lead"])
     bounty = response.json()["id"]
+    assert action(lab, lab["independent"], bounty, "publication-review", {"reason": "发布复核"}).status_code == 200
     assert submit_quote(lab, bounty, kind="negotiated", vc="45", basis="额外分析").status_code == 201
     quote = quote_list(lab, bounty)["quotes"][0]
     assert decide(lab, bounty, quote, reviewer_id=str(lab["independent"].id)).status_code == 200

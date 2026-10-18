@@ -39,6 +39,12 @@ def decide(lab, bounty, quote, verb="approve", user=None, **extra):
     )
 
 
+def prepare_major(lab):
+    result = prepare(lab, major=True)
+    assert action(lab, lab["independent"], result[0], "publication-review", {"reason": "发布复核"}).status_code == 200
+    return result
+
+
 def test_original_quote_approval_grants_task_and_planning_without_confirmation(laboratory):
     lab = laboratory
     bounty, issue, _ = prepare(lab)
@@ -111,7 +117,7 @@ def test_additional_vc_uses_original_source_and_requests_are_idempotent(laborato
 
 def test_major_increase_is_unreserved_until_separate_review(laboratory):
     lab = laboratory
-    bounty, _, _ = prepare(lab)
+    bounty, _, _ = prepare_major(lab)
     assert submit_quote(lab, bounty, kind="negotiated", vc="45", basis="扩大分析范围").status_code == 201
     quote = quote_list(lab, bounty)["quotes"][0]
     response = decide(lab, bounty, quote, reviewer_id=str(lab["independent"].id))
@@ -126,7 +132,7 @@ def test_major_increase_is_unreserved_until_separate_review(laboratory):
     result = decide(lab, bounty, reviewed, "review", user=lab["independent"], decision="approve")
     assert result.status_code == 200, result.content
     detail = lab["client"](lab["lead"]).get(detail_url).json()
-    assert detail["budget"] == "45.00" and detail["major"] and "40VC" in detail["major_reasons"]
+    assert detail["budget"] == "45.00" and detail["major"] and "publisher" in detail["major_reasons"]
     assert detail["allocations"][0]["confirmed"]
     assert action(lab, lab["lead"], bounty, "start").status_code == 200
 
@@ -149,7 +155,7 @@ def test_stale_original_and_stale_approval_do_not_silently_change_price(laborato
 
 def test_review_returns_to_lead_when_budget_snapshot_changes(laboratory):
     lab = laboratory
-    bounty, _, _ = prepare(lab)
+    bounty, _, _ = prepare_major(lab)
     assert submit_quote(lab, bounty, kind="negotiated", vc="45", basis="完整工作").status_code == 201
     quote = quote_list(lab, bounty)["quotes"][0]
     assert decide(lab, bounty, quote, reviewer_id=str(lab["independent"].id)).status_code == 200
@@ -285,7 +291,7 @@ def test_concurrent_approvals_require_an_explicit_refresh_and_never_double_reser
 
 def test_web_workflow_and_inbox_show_private_review_but_legacy_workflow_stays_compatible(laboratory):
     lab = laboratory
-    bounty, _, _ = prepare(lab)
+    bounty, _, _ = prepare_major(lab)
     assert submit_quote(lab, bounty, kind="negotiated", vc="45", basis="秘密报价依据").status_code == 201
     inbox = lab["client"](lab["lead"]).get(lab["base"] + "inbox/").json()
     assert inbox[0]["action"] == "审批报价（网页）"
@@ -332,7 +338,7 @@ def test_upload_limits_and_revoked_review_permissions(laboratory, settings, tmp_
     from plane.db.models import ProjectMember
 
     lab = laboratory
-    bounty, _, _ = prepare(lab)
+    bounty, _, _ = prepare_major(lab)
     settings.FILE_SIZE_LIMIT = 10
     client = lab["client"](lab["member"])
     url = lab["base"] + f"bounties/{bounty}/quote-attachments/"
@@ -353,7 +359,7 @@ def test_revoking_lead_eligibility_invalidates_outstanding_major_approval(labora
     from plane.db.models import ProjectMember, WorkspaceMember
 
     lab = laboratory
-    bounty, _, _ = prepare(lab)
+    bounty, _, _ = prepare_major(lab)
     assert submit_quote(lab, bounty, kind="negotiated", vc="45", basis="重大分工").status_code == 201
     quote = quote_list(lab, bounty)["quotes"][0]
     assert decide(lab, bounty, quote, reviewer_id=str(lab["independent"].id)).status_code == 200

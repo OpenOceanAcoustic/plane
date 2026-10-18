@@ -41,9 +41,7 @@ export const LabBountyPublish = observer(function LabBountyPublish({
   const [projectPayment, setProjectPayment] = useState<string | null>(null);
   const [requestKey] = useState(() => uuidv4());
   const [reviewerId, setReviewerId] = useState("");
-  const [cashCommitment, setCashCommitment] = useState("");
-  const [personDays, setPersonDays] = useState("");
-  const [safety, setSafety] = useState(false);
+  const [major, setMajor] = useState(false);
   const [loadingBudgets, setLoadingBudgets] = useState(true);
   const [loadingTasks, setLoadingTasks] = useState(false);
   const [budgetError, setBudgetError] = useState("");
@@ -132,14 +130,7 @@ export const LabBountyPublish = observer(function LabBountyPublish({
         : labAmountError(vcValue(projectUnits), { limit: source.wallet.project_available, unit: "VC" }) ||
           labAmountError(earnedPayment, { limit: source.wallet.earned_available, unit: "VC" })
       : "";
-  const projectBudget = source?.budget ? labDecimalUnits(source.budget) : null;
   const quotaError = labAmountError(budget, { limit: paymentLimit, min: "0.01", unit: "VC" });
-  const major =
-    (quota !== null && quota >= 4000n) ||
-    (quota !== null && projectBudget !== null && quota * 5n > projectBudget) ||
-    Number(cashCommitment) >= 5000 ||
-    Number(personDays) > 10 ||
-    safety;
   const financeUrl = `/${store.slug}/lab/finance${projectId ? `?project_id=${encodeURIComponent(projectId)}` : ""}`;
 
   return (
@@ -194,9 +185,7 @@ export const LabBountyPublish = observer(function LabBountyPublish({
               public_criteria: criteria,
               reviewer_id: reviewerId,
               independent_reviewer_id: major ? data.get("independent_reviewer_id") : null,
-              cash_commitment: cashCommitment || 0,
-              person_days: personDays || 0,
-              route_or_safety: safety,
+              major,
             });
           } catch (failure) {
             try {
@@ -383,6 +372,16 @@ export const LabBountyPublish = observer(function LabBountyPublish({
           ))}
         </select>
       </LabField>
+      <LabField label="重要级别">
+        <select
+          className={labInputClass}
+          value={major ? "major" : "normal"}
+          onChange={(event) => setMajor(event.target.value === "major")}
+        >
+          <option value="normal">普通</option>
+          <option value="major">重大</option>
+        </select>
+      </LabField>
       {major && (
         <LabField label="复核人">
           <select name="independent_reviewer_id" className={labInputClass} required>
@@ -395,42 +394,6 @@ export const LabBountyPublish = observer(function LabBountyPublish({
           </select>
         </LabField>
       )}
-      <details className="rounded border border-subtle p-3">
-        <summary className="cursor-pointer text-13">更多设置</summary>
-        <div className="mt-3 flex flex-col gap-3">
-          <LabField label="现金承诺（元）">
-            <input
-              name="cash_commitment"
-              type="number"
-              min="0"
-              step="0.01"
-              className={labInputClass}
-              value={cashCommitment}
-              onChange={(event) => setCashCommitment(event.target.value)}
-            />
-          </LabField>
-          <LabField label="预计人日">
-            <input
-              name="person_days"
-              type="number"
-              min="0"
-              step="0.01"
-              className={labInputClass}
-              value={personDays}
-              onChange={(event) => setPersonDays(event.target.value)}
-            />
-          </LabField>
-          <label className="flex items-center gap-2 text-13">
-            <input
-              name="route_or_safety"
-              type="checkbox"
-              checked={safety}
-              onChange={(event) => setSafety(event.target.checked)}
-            />
-            重大路线或安全事项
-          </label>
-        </div>
-      </details>
     </LabDialog>
   );
 });

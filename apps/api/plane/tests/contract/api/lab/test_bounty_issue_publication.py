@@ -51,8 +51,8 @@ def test_native_work_item_can_publish_with_authoritative_identity_and_one_budget
     assert lead.get(lab["base"] + f"tasks/?publishable=1&issue_id={issue.id}").json() == []
 
 
-@pytest.mark.parametrize("budget", ["10", "40"])
-def test_started_work_item_upgrade_preserves_native_work_and_requires_bounty_flow(laboratory, budget):
+@pytest.mark.parametrize(("budget", "major"), [("10", False), ("40", True)])
+def test_started_work_item_upgrade_preserves_native_work_and_requires_bounty_flow(laboratory, budget, major):
     lab = laboratory
     configure(lab, budget="1000", cash=False)
     issue = task(lab, "已经进行的原工作项")
@@ -91,10 +91,12 @@ def test_started_work_item_upgrade_preserves_native_work_and_requires_bounty_flo
     assert [row["id"] for row in lead.get(lab["base"] + f"tasks/?publishable=1&issue_id={issue.id}").json()] == [
         str(issue.id)
     ]
-    response = lead.post(lab["base"] + "bounties/", publication(lab, issue, budget=budget), format="json")
+    response = lead.post(
+        lab["base"] + "bounties/", {**publication(lab, issue, budget=budget), "major": major}, format="json"
+    )
     assert response.status_code == 201, response.content
     bounty = Bounty.objects.get(pk=response.json()["id"])
-    assert bounty.status == ("publication_review" if budget == "40" else "open")
+    assert bounty.status == ("publication_review" if major else "open")
     assert bounty.issue_id == issue.id and bounty.reserved == Decimal(budget) and not bounty.allocations.exists()
     assert Issue.objects.values().get(pk=issue.id) == issue_fact
     assert list(IssueAssignee.objects.filter(issue=issue).order_by("id").values()) == assignees
@@ -103,7 +105,10 @@ def test_started_work_item_upgrade_preserves_native_work_and_requires_bounty_flo
     assert set(Issue.objects.values_list("id", flat=True)) == identities
     assert budgets(lab)[0]["available"] == f"{1000 - Decimal(budget):.2f}"
     assert (
-        lead.post(lab["base"] + "bounties/", publication(lab, issue, budget=budget), format="json").status_code == 400
+        lead.post(
+            lab["base"] + "bounties/", {**publication(lab, issue, budget=budget), "major": major}, format="json"
+        ).status_code
+        == 400
     )
     assert member.patch(lab["base"] + f"items/{item.id}/", {"status": "done"}, format="json").status_code == 400
     with pytest.raises(IntegrityError, match="lab_bounty_workflow"), transaction.atomic():
@@ -156,14 +161,20 @@ def test_started_work_item_upgrade_preserves_native_work_and_requires_bounty_flo
     assert budgets(lab)[0]["available"] == f"{1000 - Decimal(budget):.2f}"
 
 
-@pytest.mark.parametrize("status,budget", [("todo", "10"), ("active", "10"), ("active", "40")])
-def test_native_attributes_can_change_without_bypassing_unstarted_bounty_state_guards(laboratory, status, budget):
+@pytest.mark.parametrize(
+    "status,budget,major", [("todo", "10", False), ("active", "10", False), ("active", "40", True)]
+)
+def test_native_attributes_can_change_without_bypassing_unstarted_bounty_state_guards(
+    laboratory, status, budget, major
+):
     lab = laboratory
     configure(lab, budget="1000", cash=False)
     issue = task(lab, "发布时的原任务标题")
     Issue.objects.filter(pk=issue.id).update(state=lab["states"][status])
     lead = lab["client"](lab["lead"])
-    response = lead.post(lab["base"] + "bounties/", publication(lab, issue, budget=budget), format="json")
+    response = lead.post(
+        lab["base"] + "bounties/", {**publication(lab, issue, budget=budget), "major": major}, format="json"
+    )
     assert response.status_code == 201, response.content
     bounty = Bounty.objects.get(pk=response.json()["id"])
     assert (
@@ -173,9 +184,7 @@ def test_native_attributes_can_change_without_bypassing_unstarted_bounty_state_g
     issue.refresh_from_db()
     assert issue.state_id == lab["states"][status].id and issue.name == "更新原任务标题" and issue.priority == "medium"
     bounty.refresh_from_db()
-    assert bounty.title == "发布时的原任务标题" and bounty.status == (
-        "publication_review" if budget == "40" else "open"
-    )
+    assert bounty.title == "发布时的原任务标题" and bounty.status == ("publication_review" if major else "open")
     cancelled = State.objects.create(workspace=lab["workspace"], project=lab["project"], name="取消", group="cancelled")
     for state in (lab["states"]["review"], lab["states"]["done"], cancelled):
         with pytest.raises(IntegrityError, match="lab_bounty_workflow"), transaction.atomic():

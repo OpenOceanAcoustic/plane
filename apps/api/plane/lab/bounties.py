@@ -46,15 +46,6 @@ def claim_available(bounty):
     )
 
 
-def vc_major_reasons(budget, stage_budget):
-    reasons = []
-    if budget >= 40:
-        reasons.append("40VC")
-    if budget > stage_budget * Decimal("0.2"):
-        reasons.append("20%B")
-    return reasons
-
-
 def working_days(now, count):
     from zoneinfo import ZoneInfo
 
@@ -172,13 +163,13 @@ def publish(user, stage_id, data, *, member_payment=None):
     criteria = str(data.get("criteria", "")).strip()
     if not deliverable or not criteria:
         raise ValidationError("请填写交付要求和验收标准")
-    reasons = vc_major_reasons(budget, stage_budget(stage))
-    if amount(data.get("cash_commitment", 0)) >= 5000:
-        reasons.append("cash")
-    if amount(data.get("person_days", 0)) > 10:
-        reasons.append("person_days")
-    if data.get("route_or_safety") is True:
-        reasons.append("route_or_safety")
+    from .bounty_importance import selected_major
+
+    major = selected_major(data)
+    # Retain validation for older clients which still send these optional fields.
+    amount(data.get("cash_commitment", 0))
+    amount(data.get("person_days", 0))
+    reasons = ["publisher"] if major else []
     reviewer = valid_reviewer(data.get("reviewer_id"), stage.project)
     independent = valid_reviewer(data.get("independent_reviewer_id"), stage.project) if reasons else None
     flow = ProjectFlow.objects.filter(project=stage.project).first()

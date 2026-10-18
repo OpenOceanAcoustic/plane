@@ -25,6 +25,7 @@ import {
 } from "@plane/ui";
 import { acceptanceLabels, workflowActionBody } from "./workflow-types";
 import type { LabWorkflow, LabWorkflowAction } from "./workflow-types";
+import { LabBountyImportance } from "./bounty-importance";
 import { LabBountyQuotesPanel } from "./bounty-quotes";
 import { bountyWorkflowLayout } from "./workflow-layout";
 import type { BountyWorkflowNode } from "./workflow-layout";
@@ -90,7 +91,7 @@ export const LabBountyWorkflow = observer(function LabBountyWorkflow({
   requestedStatus?: LabStatus;
   onChanged?: () => Promise<void>;
 }) {
-  const revision = `${bounty.status}:${bounty.awarded}:${bounty.allocations.map((row) => `${row.id}-${row.approved}-${row.confirmed}-${row.closed}`).join(",")}:${bounty.acceptances.map((row) => `${row.id}-${row.approved_at}`).join(",")}`;
+  const revision = `${bounty.status}:${bounty.major}:${bounty.awarded}:${bounty.allocations.map((row) => `${row.id}-${row.approved}-${row.confirmed}-${row.closed}`).join(",")}:${bounty.acceptances.map((row) => `${row.id}-${row.approved_at}`).join(",")}`;
   const { data, error, mutate, isLoading, isValidating } = useSWR(
     ["lab-bounty-workflow", store.slug, bounty.id, revision],
     () => store.request<LabWorkflow>(`bounties/${bounty.id}/workflow/?quotes=1`),
@@ -205,6 +206,16 @@ export const LabBountyWorkflow = observer(function LabBountyWorkflow({
     >
       <div className="mb-2 flex flex-wrap items-center gap-2">
         <h3 className="mr-auto text-14 font-semibold">{compact ? "当前操作" : "团队悬赏流程"}</h3>
+        {showQuotes && (
+          <LabBountyImportance
+            store={store}
+            bounty={bounty}
+            onChanged={async () => {
+              await mutate();
+              await onChanged?.();
+            }}
+          />
+        )}
         {data && !compact && (
           <>
             <Button size="sm" variant="neutral-primary" onClick={() => setShowAllTransitions((value) => !value)}>

@@ -28,8 +28,8 @@ def review_publication(lab, bounty):
 
 def test_multiple_major_bounties_start_and_count_each_native_and_allocation_identity_once(laboratory):
     lab = laboratory
-    for index, price in enumerate(("40", "40", "20")):
-        bounty, _, _ = prepare(lab, budget=price, title=f"Parallel team {index}")
+    for index, (price, major) in enumerate((("40", True), ("40", True), ("20", False))):
+        bounty, _, _ = prepare(lab, budget=price, title=f"Parallel team {index}", major=major)
         review_publication(lab, bounty)
         start(lab, bounty, planned=price)
     response = lab["client"](lab["member"]).get(lab["base"] + "me/workload/")
