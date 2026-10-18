@@ -20,10 +20,12 @@ import type {
   VisibilityState,
 } from "@tanstack/react-table";
 import type { LabStore } from "@plane/shared-state";
+import type { LabTaskArchiveFilters } from "@plane/types";
 import { LabFieldsStore } from "@plane/shared-state";
 import { Button, labInputClass } from "@plane/ui";
 import { LabFieldEditor, LabFieldManager } from "./field-manager";
 import { LabIssueDeleteDialog } from "./issue-delete-dialog";
+import { LabTaskArchiveDialog, LabTaskRestoreDialog } from "./task-archive";
 import type { LabCustomField, LabTaskRow } from "./fields-types";
 import { csvText, downloadText, fieldValueText } from "./fields-types";
 // oxlint-disable-next-line import/no-unassigned-import -- local financial and task surfaces
@@ -48,11 +50,21 @@ export const LabTaskTable = observer(function LabTaskTable({
   const [configs, setConfigs] = useState<Record<string, Config>>({});
   const [manage, setManage] = useState(false);
   const [deleting, setDeleting] = useState<LabTaskRow>();
+  const [archiving, setArchiving] = useState(false);
+  const [restoring, setRestoring] = useState<LabTaskRow>();
+  const [archived, setArchived] = useState(false);
+  const [dateBasis, setDateBasis] = useState<"completed" | "archived">("archived");
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
+  const archiveFilters = useMemo<LabTaskArchiveFilters>(
+    () => (archived ? { archived: "1", [`${dateBasis}_from`]: dateFrom, [`${dateBasis}_to`]: dateTo } : {}),
+    [archived, dateBasis, dateFrom, dateTo]
+  );
   const loadGeneration = useRef(0);
   const load = useCallback(async () => {
     const generation = ++loadGeneration.current;
     setConfigs({});
-    const data = await fieldsStore.load(projectId);
+    const data = await fieldsStore.load(projectId, archiveFilters);
     if (!data || generation !== loadGeneration.current) return;
     const ids = [...new Set(data.tasks.map((task) => task.project_id))];
     try {
@@ -63,7 +75,7 @@ export const LabTaskTable = observer(function LabTaskTable({
     } catch (error) {
       if (generation === loadGeneration.current) throw error;
     }
-  }, [fieldsStore, projectId, store]);
+  }, [fieldsStore, projectId, store, archiveFilters]);
   useEffect(() => {
     void store.execute(load);
     return () => {
@@ -80,7 +92,7 @@ export const LabTaskTable = observer(function LabTaskTable({
         cell: ({ row, getValue }) => (
           <a
             className="text-accent-primary"
-            href={`/${store.slug}/projects/${row.original.project_id}/issues/${row.original.id}`}
+            href={`/${store.slug}/projects/${row.original.project_id}/${row.original.archived_at ? "archives/" : ""}issues/${row.original.id}`}
           >
             {String(getValue())}
           </a>
@@ -91,7 +103,7 @@ export const LabTaskTable = observer(function LabTaskTable({
         header: "任务",
         cell: ({ row, getValue }) => (
           <a
-            href={`/${store.slug}/projects/${row.original.project_id}/issues/${row.original.id}`}
+            href={`/${store.slug}/projects/${row.original.project_id}/${row.original.archived_at ? "archives/" : ""}issues/${row.original.id}`}
             className="hover:text-accent-primary"
           >
             {String(getValue())}
@@ -110,6 +122,8 @@ export const LabTaskTable = observer(function LabTaskTable({
       },
       { accessorKey: "start_date", header: "开始日期" },
       { accessorKey: "target_date", header: "截止日期" },
+      { accessorKey: "completed_date", header: "完成日期" },
+      { accessorKey: "archived_at", header: "归档日期" },
       {
         id: "actions",
         header: "操作",
@@ -117,7 +131,19 @@ export const LabTaskTable = observer(function LabTaskTable({
         enableColumnFilter: false,
         enableGrouping: false,
         cell: ({ row }) =>
-          row.original.can_delete_issue === true ? (
+          row.original.archived_at ? (
+            row.original.can_restore_issue === true ? (
+              <Button
+                size="sm"
+                variant="neutral-primary"
+                aria-label={`恢复工作项${row.original.title}`}
+                disabled={store.busy}
+                onClick={() => setRestoring(row.original)}
+              >
+                恢复
+              </Button>
+            ) : null
+          ) : row.original.can_delete_issue === true ? (
             <Button
               size="sm"
               variant="danger"
@@ -178,6 +204,29 @@ export const LabTaskTable = observer(function LabTaskTable({
   });
   return (
     <div className="lab-task-table flex flex-col gap-4">
+      {archiving && (
+        <LabTaskArchiveDialog
+          store={store}
+          projectId={projectId}
+          onClose={() => setArchiving(false)}
+          onChanged={async () => {
+            await load();
+            await store.loadPlanner();
+          }}
+        />
+      )}
+      {restoring && (
+        <LabTaskRestoreDialog
+          key={restoring.id}
+          store={store}
+          task={fieldsStore.tasks.find((task) => task.id === restoring.id) ?? restoring}
+          onClose={() => setRestoring(undefined)}
+          onChanged={async () => {
+            await load();
+            await store.loadPlanner();
+          }}
+        />
+      )}
       {deleting && (
         <LabIssueDeleteDialog
           key={deleting.id}
@@ -192,6 +241,15 @@ export const LabTaskTable = observer(function LabTaskTable({
       )}
       <div className="lab-task-toolbar flex flex-wrap items-center gap-3">
         <select
+          aria-label="工作项范围"
+          className={`${labInputClass} max-w-44`}
+          value={archived ? "archived" : "current"}
+          onChange={(event) => setArchived(event.target.value === "archived")}
+        >
+          <option value="current">当前工作项</option>
+          <option value="archived">归档记录</option>
+        </select>
+        <select
           aria-label="项目筛选"
           className={`${labInputClass} max-w-52`}
           value={projectId}
@@ -204,6 +262,38 @@ export const LabTaskTable = observer(function LabTaskTable({
             </option>
           ))}
         </select>
+        {!archived && fieldsStore.canArchive && (
+          <Button size="sm" variant="neutral-primary" disabled={store.busy} onClick={() => setArchiving(true)}>
+            按日期归档
+          </Button>
+        )}
+        {archived && (
+          <>
+            <select
+              aria-label="日期依据"
+              className={`${labInputClass} max-w-40`}
+              value={dateBasis}
+              onChange={(event) => setDateBasis(event.target.value as "completed" | "archived")}
+            >
+              <option value="archived">归档日期</option>
+              <option value="completed">完成日期</option>
+            </select>
+            <input
+              type="date"
+              aria-label="归档记录开始日期"
+              className={`${labInputClass} max-w-44`}
+              value={dateFrom}
+              onChange={(event) => setDateFrom(event.target.value)}
+            />
+            <input
+              type="date"
+              aria-label="归档记录结束日期"
+              className={`${labInputClass} max-w-44`}
+              value={dateTo}
+              onChange={(event) => setDateTo(event.target.value)}
+            />
+          </>
+        )}
         <input
           aria-label="搜索任务与字段"
           className={`${labInputClass} max-w-64`}
@@ -241,7 +331,7 @@ export const LabTaskTable = observer(function LabTaskTable({
             ))}
           </div>
         </details>
-        <Button size="sm" variant="neutral-primary" onClick={() => setManage(!manage)}>
+        <Button size="sm" variant="neutral-primary" disabled={archived} onClick={() => setManage(!manage)}>
           管理字段
         </Button>
         <Button
@@ -261,7 +351,9 @@ export const LabTaskTable = observer(function LabTaskTable({
           导出筛选结果
         </Button>
       </div>
-      {manage && <LabFieldManager store={store} projectId={projectId} changed={() => void store.execute(load)} />}
+      {manage && !archived && (
+        <LabFieldManager store={store} projectId={projectId} changed={() => void store.execute(load)} />
+      )}
       <div className="lab-task-table-surface overflow-auto rounded-lg border border-subtle">
         <table className="w-full border-collapse text-left text-13">
           <thead className="bg-layer-1">

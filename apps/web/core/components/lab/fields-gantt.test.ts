@@ -114,3 +114,24 @@ test("unmount cancellation prevents a pending response from applying", async () 
   resolve({ tasks: [], fields: [] });
   assert.equal(await pending, undefined);
 });
+
+test("changing the archive date range cancels stale rows and preserves the selected range", async () => {
+  type Data = { tasks: LabTaskRow[]; fields: []; can_archive: boolean };
+  const pending = new Map<string, (value: Data) => void>();
+  const transport = {
+    request: (path: string) => new Promise<Data>((done) => pending.set(path, done)),
+  } as unknown as LabStore;
+  const store = new LabFieldsStore(transport);
+  const current = store.load("A");
+  const archived = store.load("A", { archived: "1", completed_from: "2026-10-01", completed_to: "2026-10-15" });
+  pending.get("task-table/?project=A&archived=1&completed_from=2026-10-01&completed_to=2026-10-15")!({
+    tasks: [{ ...tableRow("A"), archived_at: "2026-10-18", editable: false }],
+    fields: [],
+    can_archive: true,
+  });
+  await archived;
+  pending.get("task-table/?project=A")!({ tasks: [tableRow("current")], fields: [], can_archive: false });
+  assert.equal(await current, undefined);
+  assert.equal(store.tasks[0]?.archived_at, "2026-10-18");
+  assert.equal(store.canArchive, true);
+});
