@@ -31,6 +31,12 @@ class BountyFunding(Record):
     bounty = models.OneToOneField("lab.Bounty", on_delete=models.PROTECT, related_name="funding")
     owner = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True)
     owner_id_snapshot = models.UUIDField()
+    source = models.CharField(
+        max_length=16,
+        choices=[("personal", "personal"), ("project", "project")],
+        default="personal",
+        db_default="personal",
+    )
     project_committed = models.DecimalField(max_digits=14, decimal_places=2)
     earned_committed = models.DecimalField(max_digits=14, decimal_places=2)
     request_key = models.UUIDField(unique=True, null=True)
@@ -39,8 +45,30 @@ class BountyFunding(Record):
     class Meta:
         constraints = [
             models.CheckConstraint(
+                condition=models.Q(source="personal") | models.Q(source="project", earned_committed=0),
+                name="lab_vc_funding_source",
+            ),
+            models.CheckConstraint(
                 condition=models.Q(project_committed__gte=0, earned_committed__gte=0),
                 name="lab_vc_funding_nonnegative",
-            )
+            ),
         ]
         indexes = [models.Index(fields=["owner_id_snapshot"], name="lab_vc_funding_owner")]
+
+
+class VCBudgetEntry(Record):
+    stage = models.ForeignKey("lab.Stage", on_delete=models.PROTECT, related_name="vc_budget_entries")
+    name = models.CharField(max_length=120)
+    initial_amount = models.DecimalField(max_digits=14, decimal_places=2)
+    amount = models.DecimalField(max_digits=14, decimal_places=2)
+    revision = models.PositiveIntegerField(default=1)
+    actor = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True)
+    request_key = models.UUIDField(unique=True, null=True)
+    request_snapshot = models.JSONField(default=dict)
+
+    class Meta:
+        constraints = [
+            models.CheckConstraint(
+                condition=models.Q(amount__gte=0, initial_amount__gte=0), name="lab_vc_budget_entry_nonnegative"
+            )
+        ]

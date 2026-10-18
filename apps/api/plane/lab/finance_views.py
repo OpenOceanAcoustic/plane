@@ -11,6 +11,7 @@ from rest_framework.exceptions import PermissionDenied, ValidationError
 from rest_framework.response import Response
 
 from plane.db.models import Project, WorkspaceMember
+from .vc import can_allocate
 from .export import csv_cell
 from .finance_formulas import TEMPLATES
 from .finance_models import (
@@ -467,6 +468,7 @@ def overview_data(workspace, user, project_id=None):
                 "id": str(row.id),
                 "name": row.name,
                 "is_lead": row.project_lead_id == user.id and manage,
+                "can_manage_vc": can_allocate(user, row) and not deleted,
                 "permissions": list(access.get(row.id, ((), False))[0]),
                 "can_manage_permissions": manage,
                 "allowed_actions": [kind for kind, permission in ACTION_PERMISSIONS.items() if can(row.id, permission)]

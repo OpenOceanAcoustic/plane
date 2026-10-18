@@ -106,7 +106,7 @@ def test_additional_vc_uses_original_source_and_requests_are_idempotent(laborato
     assert len(detail["allocations"]) == 1 and detail["allocations"][0]["planned"] == "30.00"
     assert detail["awarded"] == "0"
     current = lab["client"](lab["lead"]).get(lab["base"] + "bounties/budgets/").json()[0]
-    assert current["available"] == "1.00"
+    assert current["available"] == "971.00"
 
 
 def test_major_increase_is_unreserved_until_separate_review(laboratory):
@@ -230,15 +230,18 @@ def test_insufficient_original_budget_does_not_borrow_a_new_budget(laboratory):
     lab = laboratory
     bounty, _, _ = prepare(lab, stage_budget="100")
     assert submit_quote(lab, bounty, kind="negotiated", vc="101", basis="超预算分工").status_code == 201
-    assert (
-        lab["client"](lab["lead"])
-        .post(
-            lab["base"] + "stages/",
-            {"project_id": str(lab["project"].id), "name": "新预算", "budget": "1000"},
-            format="json",
-        )
-        .status_code
-        == 201
+    from django.utils import timezone
+    from plane.lab.models import Stage
+
+    Stage.objects.create(
+        workspace=lab["workspace"],
+        project=lab["project"],
+        workspace_id_snapshot=lab["workspace"].id,
+        project_id_snapshot=lab["project"].id,
+        project_name=lab["project"].name,
+        name="历史独立阶段",
+        budget="1000",
+        frozen_at=timezone.now(),
     )
     quote = quote_list(lab, bounty)["quotes"][0]
     assert not quote["adjustment"]["funded"]

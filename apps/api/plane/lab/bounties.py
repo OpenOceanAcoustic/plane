@@ -149,7 +149,7 @@ def publish(user, stage_id, data, *, member_payment=None):
     with connection.cursor() as cursor:
         cursor.execute("SELECT lab_wip_lock(%s)", [preliminary.workspace_id])
     stage = Stage.objects.select_for_update(of=("self",)).select_related("project", "workspace").get(id=stage_id)
-    from .vc import require_member, stage_reserved
+    from .vc import require_member, stage_budget, stage_reserved
 
     if member_payment is None:
         require_lead(user, stage.project)
@@ -166,13 +166,13 @@ def publish(user, stage_id, data, *, member_payment=None):
     ):
         raise ValidationError("请选择同项目未发布悬赏、未归档且尚未完成的顶层工作项")
     budget = amount(data.get("budget"))
-    if budget <= 0 or (member_payment is None and stage_reserved(stage) + budget > stage.budget):
+    if budget <= 0 or (member_payment is None and stage_reserved(stage) + budget > stage_budget(stage)):
         raise ValidationError("项目 VC 预算不足或悬赏 VC 配额无效")
     deliverable = str(data.get("deliverable", "")).strip()
     criteria = str(data.get("criteria", "")).strip()
     if not deliverable or not criteria:
         raise ValidationError("请填写交付要求和验收标准")
-    reasons = vc_major_reasons(budget, stage.budget)
+    reasons = vc_major_reasons(budget, stage_budget(stage))
     if amount(data.get("cash_commitment", 0)) >= 5000:
         reasons.append("cash")
     if amount(data.get("person_days", 0)) > 10:

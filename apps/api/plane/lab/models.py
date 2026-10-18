@@ -287,7 +287,7 @@ from .field_models import FieldDefinition, IssueFieldValue, ProjectField  # noqa
 from .bounty_models import BountyMaterial, BountyPublication, BountyTaskAccess  # noqa: E402,F401
 from .chat_models import ChatThread, ChatMessage, ChatReadState, ChatSubmission, ChatMention  # noqa: E402,F401
 from .quote_models import BountyQuote, BountyQuoteAttachment  # noqa: E402,F401
-from .vc_models import BountyFunding, VCGrant  # noqa: E402,F401
+from .vc_models import BountyFunding, VCBudgetEntry, VCGrant  # noqa: E402,F401
 from .finance_models import (  # noqa: E402,F401
     CashBatch,
     CommitmentCancellation,

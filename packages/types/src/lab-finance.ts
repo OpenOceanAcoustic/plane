@@ -196,6 +196,7 @@ export type LabFinanceOverview = {
     id: string;
     name: string;
     is_lead: boolean;
+    can_manage_vc?: boolean;
     permissions?: LabFinancePermission[];
     allowed_actions?: string[];
     can_manage_permissions?: boolean;

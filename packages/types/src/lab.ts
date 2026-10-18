@@ -35,6 +35,17 @@ export type LabBountyBudget = {
   can_restore?: boolean;
   wallet?: LabVCWallet;
   can_allocate?: boolean;
+  publication_source?: "project" | "personal";
+  entries?: LabVCBudgetEntry[];
+};
+export type LabVCBudgetEntry = {
+  id: string;
+  name: string;
+  initial_amount: string;
+  amount: string;
+  minimum: string;
+  revision: number;
+  created_at: string;
 };
 export type LabAcceptanceResult = "pass" | "partial" | "rework" | "reject" | "negative";
 export type LabLedgerEntry = {

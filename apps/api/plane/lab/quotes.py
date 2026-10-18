@@ -107,22 +107,28 @@ def can_apply(user, bounty):
 
 
 def budget_snapshot(bounty):
-    from .vc import stage_reserved, wallet
+    from .vc import stage_budget, stage_reserved, wallet
 
     approved = list(Allocation.objects.filter(bounty=bounty, approved=True).order_by("id").values_list("id", "planned"))
-    balance = wallet(bounty.funding.owner_id_snapshot, bounty.stage.project) if bounty.member_funded else None
+    funding = bounty.funding if bounty.member_funded else None
+    balance = (
+        wallet(funding.owner_id_snapshot, bounty.stage.project) if funding and funding.source == "personal" else None
+    )
     if balance:
         balance = {key: balance[key] for key in ("project_available", "earned_available", "earned_debt", "available")}
     owner = bounty.funding.owner if bounty.member_funded else bounty.stage.project.project_lead
-    source_available = Decimal(balance["available"]) if balance else bounty.stage.budget - stage_reserved(bounty.stage)
+    source_available = (
+        Decimal(balance["available"]) if balance else stage_budget(bounty.stage) - stage_reserved(bounty.stage)
+    )
     return {
         "budget": str(bounty.budget),
         "reserved": str(bounty.reserved),
         "stage_available": str(source_available),
+        "stage_budget": str(stage_budget(bounty.stage)),
         "major": bounty.major,
         "lead_id": str(owner.id) if owner else None,
         "lead_eligible": is_lead(owner, bounty),
-        **({"funding": "member", "wallet": balance} if balance else {}),
+        **({"funding": funding.source, "wallet": balance} if funding else {}),
         "allocations": [[str(key), str(value)] for key, value in approved],
     }
 
@@ -132,7 +138,7 @@ def adjustment(quote, snapshot):
     additional = max(Decimal("0.00"), approved + quote.vc - Decimal(snapshot["budget"]))
     next_budget = Decimal(snapshot["budget"]) + additional
     requires_review = additional > 0 and bool(
-        snapshot["major"] or bounties.vc_major_reasons(next_budget, quote.bounty.stage.budget)
+        snapshot["major"] or bounties.vc_major_reasons(next_budget, Decimal(snapshot["stage_budget"]))
     )
     return {
         "additional": str(additional),
@@ -220,7 +226,9 @@ def finalize_quote(quote, actor, snapshot):
         bounty.budget += additional
         bounty.reserved += additional
         reasons = list(
-            dict.fromkeys([*bounty.major_reasons, *bounties.vc_major_reasons(bounty.budget, bounty.stage.budget)])
+            dict.fromkeys(
+                [*bounty.major_reasons, *bounties.vc_major_reasons(bounty.budget, Decimal(snapshot["stage_budget"]))]
+            )
         )
         bounty.major = bounty.major or bool(reasons)
         bounty.major_reasons = reasons

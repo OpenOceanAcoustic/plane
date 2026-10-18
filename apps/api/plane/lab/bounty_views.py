@@ -25,7 +25,8 @@ from .permissions import can_view_team, collaboration_projects as project_ids, r
 from .planning_views import LabView
 from .bounty_access import access_level, accessible_bounties, bounty_access, issue_capabilities
 from .bounty_models import BountyPublication
-from .bounty_budgets import freeze_vc_budget, project_budgets, publish_from_project
+from .bounty_budgets import project_budgets, publish_from_project
+from .vc_budgets import add_budget as freeze_vc_budget
 from .categories import item_category_data
 from .finance_services import bounty_reward_projection, reward_projection_context
 
@@ -151,7 +152,7 @@ def bounty_data(row, user, reward_context=None):
 
 class StageView(LabView):
     def get(self, request, slug):
-        from .vc import stage_reserved
+        from .vc import stage_budget, stage_reserved
 
         rows = Stage.objects.filter(workspace=self.workspace, project_id__in=project_ids(request.user, self.workspace))
         return Response(
@@ -161,7 +162,7 @@ class StageView(LabView):
                     "project_id": str(row.project_id_snapshot),
                     "project": row.project_name,
                     "name": row.name,
-                    "budget": str(row.budget),
+                    "budget": str(stage_budget(row)),
                     "reserved": str(stage_reserved(row)),
                     "frozen_at": row.frozen_at.isoformat(),
                 }

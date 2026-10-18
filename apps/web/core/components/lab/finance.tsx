@@ -13,6 +13,7 @@ import { LabFinanceActionDialog, accountKindLabels, financeActionLabels } from "
 import type { LabFinanceChosenAction } from "./finance-form";
 import { LabForecastDialog, LabFormulaEditor } from "./finance-formula";
 import { FinancePermissionDialog } from "./finance-permissions";
+import { LabVCBudgetAdjustment } from "./vc-budget-adjustment";
 import { LabLedger } from "./ledger";
 import { LabRecordWorkflowView } from "./record-workflow";
 // oxlint-disable-next-line import/no-unassigned-import -- local financial and task surfaces
@@ -86,6 +87,7 @@ export const LabFinance = observer(function LabFinance({
   const [tab, setTab] = useState("accounts");
   const [chosen, setChosen] = useState<LabFinanceChosenAction>();
   const [permissionsOpen, setPermissionsOpen] = useState(false);
+  const [budgetAdjustment, setBudgetAdjustment] = useState<{ projectId: string; entryId: string }>();
   const [formulaOpen, setFormulaOpen] = useState(false);
   const [forecastOpen, setForecastOpen] = useState(false);
   const [deletion, setDeletion] = useState<LabFinanceDeletion>();
@@ -116,6 +118,9 @@ export const LabFinance = observer(function LabFinance({
     setRevision((value) => value + 1);
   };
   const selectedProject = data?.projects.find((project) => project.id === projectId);
+  const adjustingEntry = budgets
+    ?.find((row) => row.project_id === budgetAdjustment?.projectId)
+    ?.entries?.find((row) => row.id === budgetAdjustment?.entryId);
   const removedScope = (project: string | null, stage: string | null) =>
     data?.projects.some((row) => row.id === project && row.deleted) ||
     data?.stages.some((row) => row.stage_id === stage && row.deleted);
@@ -124,7 +129,6 @@ export const LabFinance = observer(function LabFinance({
     gross: totalMoney(activeBatches.map((batch) => batch.gross)),
     D: totalMoney(activeBatches.map((batch) => batch.D)),
   };
-  const lead = Boolean(selectedProject?.can_manage_permissions && !selectedProject.deleted);
   const allowedActions = new Set(data?.allowed_actions ?? []);
   const canManage = allowedActions.size > 0;
   const canApprove = projectId
@@ -166,6 +170,15 @@ export const LabFinance = observer(function LabFinance({
   ];
   return (
     <div className="lab-finance space-y-5">
+      {budgetAdjustment && adjustingEntry && (
+        <LabVCBudgetAdjustment
+          store={store}
+          projectId={budgetAdjustment.projectId}
+          entry={adjustingEntry}
+          onClose={() => setBudgetAdjustment(undefined)}
+          onRefresh={onSaved}
+        />
+      )}
       {permissionsOpen && selectedProject?.can_manage_permissions && (
         <FinancePermissionDialog
           key={projectId}
@@ -200,9 +213,13 @@ export const LabFinance = observer(function LabFinance({
             </option>
           ))}
         </select>
-        {(projectId ? lead : data?.projects.some((project) => project.is_lead && !project.deleted)) && (
+        {(projectId
+          ? selectedProject?.can_manage_vc
+          : data?.projects.some((project) => project.can_manage_vc && !project.deleted)) && (
           <Button variant="primary" size="sm" onClick={() => open("vc-stage")}>
-            设置 VC 预算
+            {projectId && budgets?.some((budget) => budget.project_id === projectId && budget.configured)
+              ? "追加 VC 预算"
+              : "设置 VC 预算"}
           </Button>
         )}
         {selectedProject?.can_manage_permissions && (
@@ -285,6 +302,15 @@ export const LabFinance = observer(function LabFinance({
               >
                 <div className="flex flex-wrap items-center gap-2">
                   <h3 className="mr-auto text-14 font-medium">{budget.project}</h3>
+                  {budget.can_allocate && !budget.deleted && budget.configured && !projectId && (
+                    <Button
+                      size="sm"
+                      variant="primary"
+                      onClick={() => open("vc-stage", { project_id: budget.project_id })}
+                    >
+                      追加 VC 预算
+                    </Button>
+                  )}
                   {budget.deleted && <span className="text-13 text-secondary">已删除</span>}
                   {budget.stage_id && !budget.deleted && (
                     <Button
@@ -332,6 +358,26 @@ export const LabFinance = observer(function LabFinance({
                   </>
                 ) : (
                   <p className="mt-2 text-13 text-secondary">尚未设置 VC 预算</p>
+                )}
+                {!!budget.entries?.length && (
+                  <div className="mt-3 space-y-2" aria-label={`${budget.project}预算明细`}>
+                    {budget.entries.map((entry) => (
+                      <div key={entry.id} className="flex items-center gap-3 text-13">
+                        <span className="mr-auto">{entry.name}</span>
+                        <span>{entry.amount} VC</span>
+                        {budget.can_allocate && !budget.deleted && (
+                          <Button
+                            size="sm"
+                            variant="neutral-primary"
+                            aria-label={`调整${entry.name}`}
+                            onClick={() => setBudgetAdjustment({ projectId: budget.project_id, entryId: entry.id })}
+                          >
+                            调整
+                          </Button>
+                        )}
+                      </div>
+                    ))}
+                  </div>
                 )}
               </article>
             ))}

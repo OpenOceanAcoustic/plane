@@ -23,7 +23,7 @@ from .models import Bounty, ProjectFlow, Stage
 from .permissions import can_view_team, collaboration_projects, project_ids, readable_issues
 from .planning import calendar_events
 from .planning_views import LabView
-from .vc import stage_reserved
+from .vc import stage_budget, stage_reserved
 
 SHANGHAI = ZoneInfo("Asia/Shanghai")
 STATUS_LABELS = {"todo": "待做", "active": "进行中", "review": "待验收", "done": "完成", "cancelled": "取消"}
@@ -578,8 +578,8 @@ def contribution_charts(data, user, workspace, scope):
             {
                 "id": str(stage.id),
                 "label": f"{stage.project_name} · {stage.name}",
-                "budget": float(stage.budget),
-                "available": float(stage.budget - reserved),
+                "budget": float(stage_budget(stage)),
+                "available": float(stage_budget(stage) - reserved),
                 "reserved": float(reserved - awarded),
                 "awarded": float(awarded),
             }

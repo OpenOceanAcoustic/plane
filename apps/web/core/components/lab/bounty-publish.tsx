@@ -118,14 +118,15 @@ export const LabBountyPublish = observer(function LabBountyPublish({
   const project = store.planner?.projects.find((row) => row.id === projectId);
   const task = tasks.find((row) => row.id === issueId && row.project_id === projectId);
   const quota = labDecimalUnits(budget);
-  const paymentLimit = source?.wallet?.available ?? source?.available;
+  const personalFunding = source?.publication_source !== "project";
+  const paymentLimit = personalFunding ? (source?.wallet?.available ?? source?.available) : source?.available;
   const projectAvailable = labDecimalUnits(source?.wallet?.project_available ?? "0") ?? 0n;
   const defaultProjectPayment = quota !== null ? (quota < projectAvailable ? quota : projectAvailable) : 0n;
   const projectUnits = projectPayment === null ? defaultProjectPayment : labDecimalUnits(projectPayment);
   const earnedUnits = quota !== null && projectUnits !== null ? quota - projectUnits : null;
   const earnedPayment = earnedUnits !== null && earnedUnits >= 0n ? vcValue(earnedUnits) : "";
   const paymentError =
-    source?.wallet && budget.trim()
+    personalFunding && source?.wallet && budget.trim()
       ? projectUnits === null || earnedUnits === null || earnedUnits < 0n
         ? "项目额度支付不能超过悬赏配额"
         : labAmountError(vcValue(projectUnits), { limit: source.wallet.project_available, unit: "VC" }) ||
@@ -183,7 +184,7 @@ export const LabBountyPublish = observer(function LabBountyPublish({
               issue_id: issueId,
               budget,
               request_key: requestKey,
-              ...(source.wallet && projectUnits !== null
+              ...(personalFunding && source.wallet && projectUnits !== null
                 ? { project_vc: vcValue(projectUnits), earned_vc: earnedPayment }
                 : {}),
               public_summary: data.get("public_summary"),
@@ -246,7 +247,7 @@ export const LabBountyPublish = observer(function LabBountyPublish({
         <p role="status" className="text-13 text-secondary">
           正在加载项目预算
         </p>
-      ) : source?.configured && !source.deleted && source.wallet ? (
+      ) : source?.configured && !source.deleted && source.wallet && personalFunding ? (
         <dl className="grid grid-cols-2 gap-1 text-13" aria-label="我的可用 VC">
           <dt>项目分配可用 VC</dt>
           <dd>{source.wallet.project_available}</dd>
@@ -332,7 +333,7 @@ export const LabBountyPublish = observer(function LabBountyPublish({
           required
         />
       </LabField>
-      {source?.wallet && (
+      {source?.wallet && personalFunding && (
         <>
           <LabField label="项目额度支付 VC">
             <LabAmountInput
