@@ -106,6 +106,24 @@ def can_apply(user, bounty):
         return False
 
 
+def application_budget(bounty):
+    """Public quote capacity includes this bounty's unassigned reservation once."""
+    from .vc import stage_budget, stage_reserved
+
+    available = bounties.claim_available(bounty)
+    personal = bounty.member_funded and bounty.funding.source == "personal"
+    # A member's private wallet is disclosed only to the existing approvers.
+    project_available = (
+        None if personal else max(Decimal("0.00"), stage_budget(bounty.stage) - stage_reserved(bounty.stage))
+    )
+    return {
+        "available": str(available),
+        "funding_source": "personal" if personal else "project",
+        "project_available": str(project_available) if project_available is not None else None,
+        "quote_limit": str(available + project_available) if project_available is not None else None,
+    }
+
+
 def budget_snapshot(bounty):
     from .vc import stage_budget, stage_reserved, wallet
 
@@ -149,6 +167,12 @@ def adjustment(quote, snapshot):
     }
 
 
+def require_funding(change, snapshot):
+    if not change["funded"]:
+        source = "发布人个人可用 VC" if snapshot.get("funding") == "personal" else "项目剩余 VC"
+        raise ValidationError(f"{source}不足，无法追加 VC")
+
+
 @transaction.atomic
 def submit_quote(user, bounty_id, data):
     bounty = bounties.locked_bounty(bounty_id)
@@ -183,6 +207,10 @@ def submit_quote(user, bounty_id, data):
     available = bounties.claim_available(bounty)
     if kind == "original" and (available <= 0 or vc != available):
         raise QuoteConflict("剩余 VC 已变化，请刷新并确认原价")
+    if kind == "negotiated":
+        limit = application_budget(bounty)["quote_limit"]
+        if limit is not None and vc > Decimal(limit):
+            raise QuoteConflict(f"报价超过当前可承接额度 {limit} VC，请刷新项目预算")
     files = BountyQuoteAttachment.objects.filter(id__in=attachment_ids, bounty=bounty, user=user, quote__isnull=True)
     if files.count() != len(attachment_ids):
         raise ValidationError("附件不存在、已使用或不属于本次申请")
@@ -215,8 +243,7 @@ def finalize_quote(quote, actor, snapshot):
     bounty = quote.bounty
     eligible_applicant(quote.user, bounty)
     change = adjustment(quote, snapshot)
-    if not change["funded"]:
-        raise ValidationError("悬赏原属项目预算余额不足，无法追加 VC")
+    require_funding(change, snapshot)
     additional = Decimal(change["additional"])
     bounties.amount(bounty.budget + additional)
     if additional:
@@ -305,8 +332,7 @@ def decide_quote(user, bounty_id, quote_id, action, data):
             raise QuoteConflict()
         eligible_applicant(quote.user, bounty)
         change = adjustment(quote, current)
-        if not change["funded"]:
-            raise ValidationError("悬赏原属项目预算余额不足，无法追加 VC")
+        require_funding(change, current)
         if change["requires_review"]:
             reviewer = bounties.valid_reviewer(
                 data.get("reviewer_id") or bounty.independent_reviewer_id, bounty.stage.project

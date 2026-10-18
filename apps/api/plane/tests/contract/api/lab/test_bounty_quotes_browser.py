@@ -11,7 +11,7 @@ import subprocess
 import pytest
 from django.test import Client
 
-from .test_bounties import prepare
+from .test_bounties import action, prepare
 
 pytestmark = [pytest.mark.django_db(transaction=True), pytest.mark.contract]
 
@@ -35,10 +35,13 @@ def test_live_quote_approval_through_browser_and_real_api(laboratory, live_serve
     elif funding_kind == "project":
         from .test_member_vc import body, issue, post, setup
 
-        stage = setup(lab)
-        response = post(lab, body(lab, issue(lab), "20"), actor=lab["lead"])
+        stage = setup(lab, "10000")
+        response = post(lab, body(lab, issue(lab), "5000"), actor=lab["lead"])
         assert response.status_code == 201, response.content
         bounty_id = response.json()["id"]
+        assert (
+            action(lab, lab["independent"], bounty_id, "publication-review", {"reason": "发布复核"}).status_code == 200
+        )
     else:
         bounty_id, _, _ = prepare(lab)
     settings.STORAGES = {
@@ -67,6 +70,9 @@ def test_live_quote_approval_through_browser_and_real_api(laboratory, live_serve
                 "base": lab["base"],
                 "bounty_id": bounty_id,
                 "sessions": sessions,
+                "original_vc": "5000.00" if funding_kind == "project" else "20.00",
+                "quote_vc": "6000.00" if funding_kind == "project" else "45.00",
+                "quote_limit": "10000.00" if funding_kind == "project" else None,
             }
         )
     )
@@ -105,7 +111,7 @@ def test_live_quote_approval_through_browser_and_real_api(laboratory, live_serve
         from plane.lab.vc import stage_reserved, wallet
 
         funding = BountyFunding.objects.get(bounty_id=bounty_id)
-        assert funding.source == "project" and funding.project_committed == 45 and funding.earned_committed == 0
-        assert stage_reserved(stage) == 45
+        assert funding.source == "project" and funding.project_committed == 6000 and funding.earned_committed == 0
+        assert stage_reserved(stage) == 6000
         assert wallet(lab["lead"].id, lab["project"])["available"] == "0.00"
         assert Ledger.objects.count() == 0

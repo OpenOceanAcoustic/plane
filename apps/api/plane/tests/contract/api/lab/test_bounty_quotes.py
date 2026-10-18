@@ -229,7 +229,11 @@ def test_original_submission_refreshes_price_and_zero_balance_still_allows_negot
 def test_insufficient_original_budget_does_not_borrow_a_new_budget(laboratory):
     lab = laboratory
     bounty, _, _ = prepare(lab, stage_budget="100")
-    assert submit_quote(lab, bounty, kind="negotiated", vc="101", basis="超预算分工").status_code == 201
+    assert submit_quote(lab, bounty, kind="negotiated", vc="101", basis="超预算分工").status_code == 409
+    assert submit_quote(lab, bounty, kind="negotiated", vc="100", basis="完整分工").status_code == 201
+    from .test_member_vc import grant
+
+    assert grant(lab, "1", target=lab["reviewer"]).status_code == 201
     from django.utils import timezone
     from plane.lab.models import Stage
 

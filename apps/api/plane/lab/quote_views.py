@@ -97,7 +97,7 @@ class BountyQuotesView(LabView):
                     )
                 ],
                 "can_apply": quotes.can_apply(request.user, bounty),
-                "available": str(quotes.bounties.claim_available(bounty)),
+                **quotes.application_budget(bounty),
                 "reviewers": reviewers,
                 "file_size_limit": settings.FILE_SIZE_LIMIT,
             }

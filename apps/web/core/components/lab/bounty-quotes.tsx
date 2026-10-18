@@ -44,7 +44,8 @@ function QuoteApplication({
   const [key] = useState(() => uuidv4());
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  const amountError = labAmountError(vc, { min: "0.01", unit: "VC" });
+  const quoteLimit = kind === "negotiated" ? data.quote_limit : undefined;
+  const amountError = labAmountError(vc, { min: "0.01", limit: quoteLimit, unit: "VC" });
   const fileError =
     files.length > 20
       ? "最多 20 个附件"
@@ -106,10 +107,28 @@ function QuoteApplication({
         />
       </LabField>
       <LabField label={kind === "original" ? "原价（VC）" : "报价（VC）"}>
-        <LabAmountInput value={vc} onValueChange={setVc} readOnly={kind === "original"} min="0.01" unit="VC" required />
+        <LabAmountInput
+          value={vc}
+          onValueChange={setVc}
+          readOnly={kind === "original"}
+          min="0.01"
+          limit={quoteLimit}
+          unit="VC"
+          required
+        />
       </LabField>
       {kind === "negotiated" && (
         <>
+          {data.quote_limit != null && (
+            <dl className="grid grid-cols-2 gap-2 text-13">
+              <dt>悬赏剩余 VC</dt>
+              <dd>{data.available}</dd>
+              <dt>项目可追加 VC</dt>
+              <dd>{data.project_available}</dd>
+              <dt>本次报价上限 VC</dt>
+              <dd>{data.quote_limit}</dd>
+            </dl>
+          )}
           <LabField label="报价依据">
             <textarea
               className={labInputClass}
@@ -328,11 +347,11 @@ export const LabBountyQuotesPanel = observer(function LabBountyQuotesPanel({ sto
               <dd>{selection.quote.adjustment.additional}</dd>
               <dt>追加后悬赏总 VC</dt>
               <dd>{selection.quote.adjustment.next_budget}</dd>
-              <dt>{selection.quote.budget_snapshot?.funding === "member" ? "发布人可用 VC" : "原属预算剩余 VC"}</dt>
+              <dt>{selection.quote.budget_snapshot?.funding === "personal" ? "发布人可用 VC" : "项目可追加 VC"}</dt>
               <dd>{selection.quote.adjustment.source_available}</dd>
               {!selection.quote.adjustment.funded && (
                 <dd role="alert">
-                  {selection.quote.budget_snapshot?.funding === "member" ? "个人可用 VC 不足" : "原属预算余额不足"}
+                  {selection.quote.budget_snapshot?.funding === "personal" ? "个人可用 VC 不足" : "项目剩余 VC 不足"}
                 </dd>
               )}
             </dl>
