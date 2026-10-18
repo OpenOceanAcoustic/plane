@@ -10,6 +10,7 @@ from django.db import IntegrityError, close_old_connections, transaction
 from plane.db.models import Issue, IssueAssignee
 from plane.lab.models import Allocation, Ledger
 from plane.lab.bounties import publish
+from plane.lab.workload import workload
 
 pytestmark = [pytest.mark.django_db(transaction=True), pytest.mark.contract]
 
@@ -140,7 +141,7 @@ def test_major_publication_and_acceptance_require_second_independent_review(labo
     assert sum(row.delta for row in Ledger.objects.all()) == 40
 
 
-def test_native_state_bulk_assignment_and_concurrency_cannot_bypass_wip(laboratory):
+def test_native_state_bulk_assignment_and_concurrency_only_raise_workload_advice(laboratory):
     lab = laboratory
     lead = lab["client"](lab["lead"])
     assert (
@@ -176,15 +177,15 @@ def test_native_state_bulk_assignment_and_concurrency_cannot_bypass_wip(laborato
 
     with ThreadPoolExecutor(max_workers=2) as pool:
         outcomes = list(pool.map(begin, (1, 2)))
-    assert sorted(outcomes) == [False, True]
-    assert Issue.objects.filter(state=lab["states"]["active"]).count() == 2
+    assert outcomes == [True, True]
+    assert Issue.objects.filter(state=lab["states"]["active"]).count() == 3
     third = Issue.objects.create(
         workspace=lab["workspace"], project=lab["project"], name="Imported started task", state=lab["states"]["active"]
     )
-    with pytest.raises(IntegrityError), transaction.atomic():
-        IssueAssignee.objects.bulk_create(
-            [IssueAssignee(workspace=lab["workspace"], project=lab["project"], issue=third, assignee=lab["member"])]
-        )
+    IssueAssignee.objects.bulk_create(
+        [IssueAssignee(workspace=lab["workspace"], project=lab["project"], issue=third, assignee=lab["member"])]
+    )
+    assert workload(lab["member"], lab["workspace"])["active"] == 4
 
 
 def test_parallel_publications_cannot_exceed_frozen_stage_budget(laboratory):
@@ -266,7 +267,7 @@ def test_stale_or_foreign_action_references_return_controlled_errors(laboratory)
     assert action(lab, lab["member"], bounty, "confirm").status_code == 404
 
 
-def test_one_major_task_per_person_and_revoked_participant_cannot_start(laboratory):
+def test_major_workload_is_advisory_but_revoked_participant_cannot_start(laboratory):
     from plane.db.models import ProjectMember
 
     lab = laboratory
@@ -279,10 +280,12 @@ def test_one_major_task_per_person_and_revoked_participant_cannot_start(laborato
     assert claim.status_code == 200
     assert action(lab, lab["lead"], second, "approve", {"allocation_id": claim.json()["id"]}).status_code == 200
     assert action(lab, lab["member"], second, "confirm").status_code == 200
-    assert action(lab, lab["lead"], second, "start").status_code == 409
-    assert Issue.objects.filter(state=lab["states"]["active"]).count() == 1
     ProjectMember.objects.filter(project=lab["project"], member=lab["member"]).update(is_active=False)
     assert action(lab, lab["lead"], second, "start").status_code == 404
+    ProjectMember.objects.filter(project=lab["project"], member=lab["member"]).update(is_active=True)
+    assert action(lab, lab["lead"], second, "start").status_code == 200
+    advice = workload(lab["member"], lab["workspace"])
+    assert advice["active"] == 2 and advice["major"] == 2 and advice["overloaded"]
 
 
 def assigned_task(lab, title, state="active", user=None):
@@ -296,7 +299,7 @@ def assigned_task(lab, title, state="active", user=None):
     return issue
 
 
-def test_expired_wip_exception_allows_finishing_and_unrelated_edits_but_no_new_work(laboratory):
+def test_expired_wip_exception_changes_advice_without_blocking_new_work(laboratory):
     from datetime import timedelta
     from django.utils import timezone
     from plane.lab.models import WIPException, WorkspacePolicy
@@ -318,13 +321,13 @@ def test_expired_wip_exception_allows_finishing_and_unrelated_edits_but_no_new_w
     unrelated = assigned_task(lab, "Other member", user=lab["reviewer"])
     Issue.objects.filter(id=unrelated.id).update(name="Still editable")
     Issue.objects.filter(id=tasks[0].id).update(state=lab["states"]["done"])
-    with pytest.raises(IntegrityError), transaction.atomic():
-        assigned_task(lab, "Cannot expand overage")
+    assigned_task(lab, "Additional work remains permitted")
     Issue.objects.filter(id=tasks[1].id).update(state=lab["states"]["done"])
-    with pytest.raises(IntegrityError), transaction.atomic():
-        assigned_task(lab, "Third remains prohibited")
+    assigned_task(lab, "Further work remains permitted")
     Issue.objects.filter(id=tasks[2].id).update(state=lab["states"]["done"])
-    assigned_task(lab, "Within ordinary quota again")
+    assigned_task(lab, "More parallel work")
+    advice = workload(lab["member"], lab["workspace"])
+    assert advice["active_limit"] == 2 and advice["active"] == 4 and advice["overloaded"]
 
 
 def test_rejection_closes_work_releases_unused_budget_and_preserves_partial_contribution(laboratory):
@@ -357,15 +360,15 @@ def test_rejection_closes_work_releases_unused_budget_and_preserves_partial_cont
     assert issue.state_id == lab["states"]["todo"].id
     assigned_task(lab, "Next 1")
     assigned_task(lab, "Next 2")
-    with pytest.raises(IntegrityError), transaction.atomic():
-        assigned_task(lab, "Next 3")
+    assigned_task(lab, "Next 3")
+    assert workload(lab["member"], lab["workspace"])["overloaded"]
 
 
 def total_awarded(bounty):
     return sum(row.delta for row in Ledger.objects.filter(bounty_id=bounty))
 
 
-def test_completed_bounty_reopening_cannot_bypass_native_wip(laboratory):
+def test_completed_bounty_native_state_edit_over_recommended_wip_does_not_change_accounting(laboratory):
     lab = laboratory
     bounty, issue, _ = prepare(lab)
     allocation = start(lab, bounty)
@@ -382,8 +385,9 @@ def test_completed_bounty_reopening_cannot_bypass_native_wip(laboratory):
     )
     assigned_task(lab, "Current 1")
     assigned_task(lab, "Current 2")
-    with pytest.raises(IntegrityError), transaction.atomic():
-        Issue.objects.filter(id=issue.id).update(state=lab["states"]["active"])
+    assert Issue.objects.filter(id=issue.id).update(state=lab["states"]["active"]) == 1
+    assert workload(lab["member"], lab["workspace"])["active"] == 3
+    assert total_awarded(bounty) == 20 and Allocation.objects.get(id=allocation).closed
 
 
 def test_native_edit_and_bounty_submission_do_not_deadlock(laboratory):
@@ -435,7 +439,7 @@ def test_full_wip_never_blocks_accounting_correction_and_reacceptance_adds_only_
         ).status_code
         == 200
     )
-    ongoing = assigned_task(lab, "Current 1")
+    assigned_task(lab, "Current 1")
     assigned_task(lab, "Current 2")
     entry = Ledger.objects.get(bounty_id=bounty)
     correction = {"request_key": str(uuid.uuid4()), "reason": "Accounting correction"}
@@ -447,9 +451,8 @@ def test_full_wip_never_blocks_accounting_correction_and_reacceptance_adds_only_
     )
     assert total_awarded(bounty) == 0
     assert Bounty.objects.get(id=bounty).status == "done" and Allocation.objects.get(id=allocation).closed
-    assert action(lab, lab["lead"], bounty, "reopen", {"reason": "Recheck corrected award"}).status_code == 409
-    Issue.objects.filter(id=ongoing.id).update(state=lab["states"]["done"])
     assert action(lab, lab["lead"], bounty, "reopen", {"reason": "Recheck corrected award"}).status_code == 200
+    assert workload(lab["member"], lab["workspace"])["active"] == 3
     verified = {
         "request_key": str(uuid.uuid4()),
         "result": "pass",

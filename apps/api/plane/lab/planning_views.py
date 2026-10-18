@@ -64,8 +64,6 @@ class LabView(APIView):
                     message = "悬赏尚未开工，请在悬赏详情完成认领批准和本人确认，再由负责人办理「团队开工」。"
                 else:
                     message = "悬赏须经独立验收才能完成，请在悬赏详情办理验收。"
-            elif "lab_wip_limit:" in detail:
-                message = "任务已达到并行上限（默认共2项，其中重大1项）。请先完成现有任务，或由负责人批准WIP例外。"
             elif "lab_ledger_immutable:" in detail:
                 message = "VC账目不能直接修改或删除，请追加冲正记录。"
             elif "lab_stage_frozen:" in detail:
