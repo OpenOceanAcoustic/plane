@@ -3,79 +3,20 @@
 
 """Resolve a project's current VC source without mixing frozen stages or cash."""
 
-import uuid
-
 from django.db import connection, transaction
 from django.shortcuts import get_object_or_404
-from django.utils import timezone
 from rest_framework.exceptions import ValidationError
 
 from plane.db.models import Project, ProjectMember
 from .auth import audit, lock
 from .bounties import amount, publish
 from .bounty_flow import ensure_bounty_flow
-from .models import Audit, BountyFunding, Stage, WorkspacePolicy
-from .permissions import require_lead
-from .vc import can_allocate, parse_key, payment, require_member, stage_reserved, wallet
+from .models import BountyFunding, Stage
+from .vc import can_allocate, parse_key, payment, require_member, stage_budget, stage_reserved, wallet
+from .vc_budgets import budget_entries
 
 
 STAGE_ORDER = ("-frozen_at", "-id")
-
-
-@transaction.atomic
-def freeze_vc_budget(user, workspace, project, data):
-    from .finance_services import require_finance_open
-
-    require_lead(user, project)
-    budget = amount(data.get("budget"))
-    name = str(data.get("name", "")).strip()
-    reason = str(data.get("reason", "")).strip()
-    if budget <= 0 or not name or len(name) > 120:
-        raise ValidationError("请填写预算名称和正数项目 VC 预算")
-    key = None
-    if "request_key" in data:
-        try:
-            key = str(uuid.UUID(str(data["request_key"])))
-        except (ValueError, TypeError, AttributeError):
-            raise ValidationError("项目 VC 预算 request_key 须为 UUID")
-    snapshot = {"project_id": str(project.id), "name": name, "budget": f"{budget:.2f}", "reason": reason}
-    lock(f"finance:{workspace.id}")
-    with connection.cursor() as cursor:
-        cursor.execute("SELECT lab_wip_lock(%s)", [workspace.id])
-    project = get_object_or_404(
-        Project.objects.select_for_update(of=("self",), no_key=True), id=project.id, workspace=workspace
-    )
-    require_lead(user, project)
-    require_finance_open(workspace, project.id)
-    if key:
-        previous = Audit.objects.filter(
-            action="stage.frozen", workspace_id_snapshot=workspace.id, details__request_key=key
-        ).first()
-        if previous:
-            if previous.actor_id != user.id or previous.details.get("request_snapshot") != snapshot:
-                raise ValidationError("请求键已用于其他预算或内容，请勿复用")
-            return get_object_or_404(Stage, id=previous.object_id, workspace=workspace, project=project)
-    stage = Stage.objects.create(
-        workspace=workspace,
-        project=project,
-        workspace_id_snapshot=workspace.id,
-        project_id_snapshot=project.id,
-        project_name=project.name,
-        name=name,
-        budget=budget,
-        frozen_at=timezone.now(),
-    )
-    WorkspacePolicy.objects.get_or_create(workspace=workspace)
-    audit(
-        "stage.frozen",
-        stage,
-        user,
-        workspace,
-        budget=str(budget),
-        **({"reason": reason} if reason else {}),
-        **({"request_key": key, "request_snapshot": snapshot} if key else {}),
-    )
-    return stage
 
 
 def project_budgets(user, workspace):
@@ -109,9 +50,9 @@ def project_budgets(user, workspace):
                 "project": project.name,
                 "stage_id": str(stage.id) if stage else None,
                 "stage_name": stage.name if stage else None,
-                "budget": f"{stage.budget:.2f}" if stage else None,
+                "budget": f"{stage_budget(stage):.2f}" if stage else None,
                 "reserved": f"{reserved:.2f}" if stage else None,
-                "available": f"{stage.budget - reserved:.2f}" if stage else None,
+                "available": f"{stage_budget(stage) - reserved:.2f}" if stage else None,
                 "configured": stage is not None,
                 "deleted": deleted,
                 "project_deleted": project_deleted,
@@ -120,6 +61,8 @@ def project_budgets(user, workspace):
                 "can_restore": bool(manages_stage and stage_deleted and not project_deleted),
                 "wallet": wallet(user.id, project),
                 "can_allocate": can_allocate(user, project),
+                "publication_source": "project" if can_allocate(user, project) else "personal",
+                "entries": budget_entries(stage) if stage else [],
             }
         )
     return rows
@@ -164,7 +107,13 @@ def publish_from_project(user, workspace, identifier, data, *, initialize_flow=T
                 raise ValidationError("请求键已用于其他悬赏或支付内容")
             return previous.bounty
     budget = amount(data.get("budget"))
-    project_vc, earned_vc = payment(user, project, budget, data)
+    source = "project" if can_allocate(user, project) else "personal"
+    if source == "project":
+        if budget <= 0 or budget > stage_budget(stage) - stage_reserved(stage):
+            raise ValidationError("项目未分配 VC 余额不足")
+        project_vc, earned_vc = budget, 0
+    else:
+        project_vc, earned_vc = payment(user, project, budget, data)
     if initialize_flow:
         ensure_bounty_flow(user, project, member_publication=True)
     # The legacy service owns validation, reservation, evidence and independent review.
@@ -174,6 +123,7 @@ def publish_from_project(user, workspace, identifier, data, *, initialize_flow=T
         bounty=bounty,
         owner=user,
         owner_id_snapshot=user.id,
+        source=source,
         project_committed=project_vc,
         earned_committed=earned_vc,
         request_key=key,

@@ -254,9 +254,9 @@ export function LabFinanceActionDialog({
       fields = [
         select(
           "project_id",
-          "负责项目",
+          "项目",
           data.projects
-            .filter((project) => project.is_lead && !project.deleted)
+            .filter((project) => project.can_manage_vc && !project.deleted)
             .map((project) => ({ value: project.id, label: project.name }))
         ),
         { key: "name", label: "预算名称", required: true, value: "当前预算" },
@@ -640,6 +640,7 @@ export function LabFinanceActionDialog({
           if (value && value !== "public") body[field.key] = value;
         }
         const occurredAt = text(form, "occurred_at");
+        if (action === "vc-stage") body.append = true;
         if (occurredAt) body.occurred_at = calendarInstant(occurredAt);
         if (action === "stage") {
           body.upgraded = upgraded;

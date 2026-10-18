@@ -16,7 +16,7 @@ from plane.lab.finance_models import CashBatch, FinancialEntry, FinancialOperati
 from plane.lab.finance_services import balance
 from plane.lab.models import Bounty, Ledger, Stage
 from .test_bounties import action, start
-from .test_bounty_project_budget import assign, budgets, configure, publication, task
+from .test_bounty_project_budget import budgets, configure, publication, task
 from .test_finance import act, cash, commit, overview, pay, receipt, settle
 
 pytestmark = [pytest.mark.django_db(transaction=True), pytest.mark.contract]
@@ -125,7 +125,6 @@ def test_closed_vc_source_blocks_both_publication_routes_and_restores_same_sourc
     assert choices.status_code == 200 and choices.json() == []
     assert not Bounty.objects.exists() and Stage.objects.filter(id=old).exists()
     assert act(lab, "stage-restore", {"stage_id": current}).status_code == 200
-    assign(lab)
     response = lab["client"](lab["lead"]).post(lab["base"] + "bounties/", publication(lab, issue), format="json")
     assert response.status_code == 201, response.content
     assert str(Bounty.objects.get(id=response.json()["id"]).stage_id) == current
@@ -156,7 +155,6 @@ def test_project_delete_blocks_new_vc_and_financial_configuration_until_restore(
 def test_unfinished_bounty_blocks_budget_deletion_but_earned_vc_history_does_not(laboratory):
     lab = laboratory
     stage = configure(lab, cash=False)
-    assign(lab)
     result = lab["client"](lab["lead"]).post(lab["base"] + "bounties/", publication(lab, task(lab)), format="json")
     assert result.status_code == 201, result.content
     bounty = result.json()["id"]

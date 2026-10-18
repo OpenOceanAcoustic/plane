@@ -100,6 +100,8 @@ def test_project_publication_uses_finance_budget_and_preserves_cash_and_vc_ledge
     row = budgets(lab)[0]
     assert row.pop("wallet")["available"] == "0.00"
     assert row.pop("can_allocate") is True
+    assert row.pop("publication_source") == "project"
+    assert len(row.pop("entries")) == 1
     assert row == {
         "project_id": str(lab["project"].id),
         "project": lab["project"].name,
@@ -116,7 +118,6 @@ def test_project_publication_uses_finance_budget_and_preserves_cash_and_vc_ledge
         "can_restore": False,
     }
     facts = (FinancialOperation.objects.count(), FinancialEntry.objects.count(), Ledger.objects.count())
-    assign(lab)
     result = lab["client"](lab["lead"]).post(lab["base"] + "bounties/", publication(lab, issue), format="json")
     assert result.status_code == 201, result.content
     bounty = Bounty.objects.get(id=result.json()["id"])
@@ -145,7 +146,6 @@ def test_project_publication_requires_explicit_vc_budget_and_personal_funds(labo
 def test_project_publication_uses_vc_budget_without_requiring_cash_budget(laboratory):
     lab = laboratory
     identifier = configure(lab, cash=False)
-    assign(lab)
     result = lab["client"](lab["lead"]).post(lab["base"] + "bounties/", publication(lab, task(lab)), format="json")
     assert result.status_code == 201, result.content
     assert str(Bounty.objects.get(id=result.json()["id"]).stage_id) == identifier
@@ -156,8 +156,18 @@ def test_project_publication_uses_vc_budget_without_requiring_cash_budget(labora
 def test_project_publication_uses_latest_stage_and_never_pools_or_trusts_stage_id(laboratory):
     lab = laboratory
     previous = configure(lab, budget="100", name="历史预算")
-    current = configure(lab, budget="10", name="当前预算", cash=False)
-    assign(lab, "2")
+    current = str(
+        Stage.objects.create(
+            workspace=lab["workspace"],
+            project=lab["project"],
+            workspace_id_snapshot=lab["workspace"].id,
+            project_id_snapshot=lab["project"].id,
+            project_name=lab["project"].name,
+            name="历史独立阶段",
+            budget="10",
+            frozen_at=timezone.now(),
+        ).id
+    )
     row = budgets(lab)[0]
     assert row["stage_id"] == current and row["budget"] == "10.00"
     issue = task(lab)
@@ -177,7 +187,6 @@ def test_project_publication_uses_latest_stage_and_never_pools_or_trusts_stage_i
 def test_parallel_project_publication_cannot_overspend_configured_vc_budget(laboratory):
     lab = laboratory
     identifier = configure(lab, budget="15")
-    assign(lab, "15")
     issues = [task(lab, f"并行发布{number}") for number in range(2)]
 
     def publish(issue):
@@ -195,14 +204,13 @@ def test_parallel_project_publication_cannot_overspend_configured_vc_budget(labo
         results = list(pool.map(publish, issues))
     assert sorted(results) == [201, 400]
     assert Bounty.objects.filter(stage_id=identifier).count() == 1
-    assert budgets(lab)[0]["available"] == "0.00"
-    assert budgets(lab)[0]["wallet"]["available"] == "5.00"
+    assert budgets(lab)[0]["available"] == "5.00"
+    assert budgets(lab)[0]["wallet"]["available"] == "0.00"
 
 
-def test_budget_query_includes_member_projects_and_stage_id_route_uses_personal_quota(laboratory):
+def test_budget_query_includes_member_projects_and_stage_id_route_uses_admin_pool(laboratory):
     lab = laboratory
     identifier = configure(lab, cash=False)
-    assign(lab)
     other = Project.objects.create(
         workspace=lab["workspace"], name="无权管理", identifier="OT", project_lead=lab["member"]
     )
@@ -220,27 +228,25 @@ def test_budget_query_includes_member_projects_and_stage_id_route_uses_personal_
 def test_failed_publication_does_not_consume_budget_and_delete_returns_unused_vc(laboratory):
     lab = laboratory
     configure(lab)
-    assign(lab, "25")
     issue = task(lab)
     client = lab["client"](lab["lead"])
     response = client.post(
         lab["base"] + "bounties/", publication(lab, issue, reviewer_id=str(uuid.uuid4()), budget="25"), format="json"
     )
-    assert response.status_code == 400 and budgets(lab)[0]["wallet"]["available"] == "25.00"
+    assert response.status_code == 400 and budgets(lab)[0]["available"] == "100.00"
     response = client.post(lab["base"] + "bounties/", publication(lab, issue), format="json")
     assert response.status_code == 201, response.content
     identifier = response.json()["id"]
-    assert budgets(lab)[0]["wallet"]["available"] == "15.00"
+    assert budgets(lab)[0]["available"] == "90.00"
     response = client.delete(lab["base"] + f"bounties/{identifier}/detail/", {"reason": "撤销发布"}, format="json")
-    assert response.status_code == 204 and budgets(lab)[0]["wallet"]["available"] == "25.00"
-    assert budgets(lab)[0]["available"] == "75.00"
+    assert response.status_code == 204 and budgets(lab)[0]["available"] == "100.00"
+    assert budgets(lab)[0]["available"] == "100.00"
     assert not FinancialEntry.objects.exists() and not Ledger.objects.exists()
 
 
 def test_duplicate_publication_and_other_project_issue_cannot_consume_budget(laboratory):
     lab = laboratory
     identifier = configure(lab, cash=False)
-    assign(lab, "20")
     issue = task(lab)
     client = lab["client"](lab["lead"])
     for expected in (201, 400):
@@ -252,17 +258,13 @@ def test_duplicate_publication_and_other_project_issue_cannot_consume_budget(lab
     foreign = Issue.objects.create(workspace=lab["workspace"], project=other, name="其他项目任务", state=state)
     response = client.post(lab["base"] + "bounties/", publication(lab, foreign), format="json")
     assert response.status_code == 400 and Bounty.objects.filter(stage_id=identifier).count() == 1
-    assert (
-        next(row for row in budgets(lab) if row["project_id"] == str(lab["project"].id))["wallet"]["available"]
-        == "10.00"
-    )
+    assert next(row for row in budgets(lab) if row["project_id"] == str(lab["project"].id))["available"] == "90.00"
     assert not FinancialEntry.objects.exists() and not Ledger.objects.exists()
 
 
 def test_publishable_task_search_filters_status_parent_and_existing_bounty(laboratory):
     lab = laboratory
     configure(lab, cash=False)
-    assign(lab)
     eligible = task(lab, "可发布顶层工作项")
     published = task(lab, "已有悬赏")
     response = lab["client"](lab["lead"]).post(lab["base"] + "bounties/", publication(lab, published), format="json")
@@ -288,7 +290,6 @@ def test_publishable_task_search_filters_status_parent_and_existing_bounty(labor
 def test_closing_partial_bounty_releases_only_unearned_project_vc(operation, laboratory):
     lab = laboratory
     configure(lab, cash=False)
-    assign(lab, "20")
     client = lab["client"](lab["lead"])
     response = client.post(lab["base"] + "bounties/", publication(lab, task(lab), budget="20"), format="json")
     assert response.status_code == 201, response.content
@@ -310,7 +311,7 @@ def test_closing_partial_bounty_releases_only_unearned_project_vc(operation, lab
     else:
         response = client.delete(lab["base"] + f"bounties/{identifier}/detail/", {"reason": "删除悬赏"}, format="json")
         assert response.status_code == 204, response.content
-    assert budgets(lab)[0]["reserved"] == "20.00" and budgets(lab)[0]["available"] == "80.00"
-    assert budgets(lab)[0]["wallet"]["project_available"] == "10.00"
+    assert budgets(lab)[0]["reserved"] == "10.00" and budgets(lab)[0]["available"] == "90.00"
+    assert budgets(lab)[0]["wallet"]["project_available"] == "0.00"
     assert Ledger.objects.get(bounty_id=identifier).delta == Decimal("10")
     assert not FinancialEntry.objects.exists() and not FinancialOperation.objects.exists()

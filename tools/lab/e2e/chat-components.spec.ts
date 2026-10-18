@@ -209,7 +209,7 @@ test.beforeAll(async () => {
           json({
             messages: rows
               .filter((row) => row.thread_id === active)
-              .map((row) => ({ ...row, can_edit: row.actor === user, can_delete: row.actor === user })),
+              .map((row) => Object.assign({}, row, { can_edit: row.actor === user, can_delete: row.actor === user })),
             next_cursor: null,
             sync_cursor: "cursor",
             has_newer: false,

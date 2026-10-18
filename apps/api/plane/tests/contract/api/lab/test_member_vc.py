@@ -230,10 +230,11 @@ def test_only_publisher_can_approve_quotes_start_and_manage_materials(laboratory
     )
     assert wallet(lab["lead"].id, lab["project"])["earned_available"] == "20.00"
     assert wallet(lab["member"].id, lab["project"])["available"] == "0.00"
-    # The recipient can pay for a further bounty solely with those earned VC.
+    # As project administrator, this recipient now publishes from the project pool.
     second = post(lab, body(lab, issue(lab, "再发布"), "20"), lab["lead"])
     assert second.status_code == 201, second.content
-    assert BountyFunding.objects.get(bounty_id=second.json()["id"]).earned_committed == 20
+    assert BountyFunding.objects.get(bounty_id=second.json()["id"]).source == "project"
+    assert wallet(lab["lead"].id, lab["project"])["earned_available"] == "20.00"
 
 
 def test_earned_vc_and_project_quota_cannot_be_spent_in_another_project(laboratory):

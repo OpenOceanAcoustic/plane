@@ -17,11 +17,11 @@ pytestmark = [pytest.mark.django_db(transaction=True), pytest.mark.contract]
 
 
 @pytest.mark.skipif(not os.environ.get("LAB_QUOTE_BROWSER_TEST"), reason="Requires built web assets and Playwright")
-@pytest.mark.parametrize("member_funded", [False, True])
-def test_live_quote_approval_through_browser_and_real_api(laboratory, live_server, settings, tmp_path, member_funded):
+@pytest.mark.parametrize("funding_kind", ["legacy", "personal", "project"])
+def test_live_quote_approval_through_browser_and_real_api(laboratory, live_server, settings, tmp_path, funding_kind):
     lab = laboratory
     roles = {role: lab[role] for role in ("member", "lead", "independent")}
-    if member_funded:
+    if funding_kind == "personal":
         from .test_member_vc import body, grant, historical_award, issue, post, setup
 
         stage = setup(lab)
@@ -32,6 +32,13 @@ def test_live_quote_approval_through_browser_and_real_api(laboratory, live_serve
         bounty_id = response.json()["id"]
         # The ordinary member publishes; the original project lead is the applicant.
         roles["lead"], roles["member"] = lab["member"], lab["lead"]
+    elif funding_kind == "project":
+        from .test_member_vc import body, issue, post, setup
+
+        stage = setup(lab)
+        response = post(lab, body(lab, issue(lab), "20"), actor=lab["lead"])
+        assert response.status_code == 201, response.content
+        bounty_id = response.json()["id"]
     else:
         bounty_id, _, _ = prepare(lab)
     settings.STORAGES = {
@@ -85,7 +92,7 @@ def test_live_quote_approval_through_browser_and_real_api(laboratory, live_serve
         timeout=120,
     )
     assert result.returncode == 0, result.stdout + result.stderr
-    if member_funded:
+    if funding_kind == "personal":
         from plane.lab.models import BountyFunding, Ledger
         from plane.lab.vc import wallet
 
@@ -93,3 +100,12 @@ def test_live_quote_approval_through_browser_and_real_api(laboratory, live_serve
         assert funding.project_committed == 37 and funding.earned_committed == 8
         assert wallet(lab["member"].id, lab["project"])["available"] == "3.00"
         assert Ledger.objects.count() == 1  # The historical award; quote approval creates no contribution.
+    elif funding_kind == "project":
+        from plane.lab.models import BountyFunding, Ledger
+        from plane.lab.vc import stage_reserved, wallet
+
+        funding = BountyFunding.objects.get(bounty_id=bounty_id)
+        assert funding.source == "project" and funding.project_committed == 45 and funding.earned_committed == 0
+        assert stage_reserved(stage) == 45
+        assert wallet(lab["lead"].id, lab["project"])["available"] == "0.00"
+        assert Ledger.objects.count() == 0

@@ -217,6 +217,7 @@ export function CustomImageUploader(props: CustomImageUploaderProps) {
 
   return (
     <div
+      role="group"
       className={cn(
         "image-upload-component flex cursor-default items-center justify-start gap-2 rounded-lg border border-dashed bg-layer-3 px-2 py-3 text-tertiary transition-all duration-200 ease-in-out",
         {
@@ -236,14 +237,16 @@ export function CustomImageUploader(props: CustomImageUploaderProps) {
       onDragOver={onDragEnter}
       onDragLeave={onDragLeave}
       contentEditable={false}
-      onClick={() => {
-        if (!failedToLoadImage && editor.isEditable && !hasDuplicationFailed) {
-          fileInputRef.current?.click();
-        }
-      }}
     >
-      <ImageIcon className="size-4" />
-      <div className="flex-1 text-14 font-medium">{getDisplayMessage()}</div>
+      <button
+        type="button"
+        className="flex flex-1 items-center gap-2 text-left"
+        disabled={failedToLoadImage || !editor.isEditable || hasDuplicationFailed}
+        onClick={() => fileInputRef.current?.click()}
+      >
+        <ImageIcon className="size-4" />
+        <span className="flex-1 text-14 font-medium">{getDisplayMessage()}</span>
+      </button>
       {hasDuplicationFailed && editor.isEditable && (
         <button
           type="button"

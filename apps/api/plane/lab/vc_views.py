@@ -8,6 +8,13 @@ from plane.db.models import Project
 from . import vc
 from .models import VCGrant
 from .planning_views import LabView
+from .vc_budgets import adjust_budget, budget_entries
+
+
+class VCBudgetEntryView(LabView):
+    def patch(self, request, slug, project_id, entry_id):
+        entry = adjust_budget(request.user, self.workspace, project_id, entry_id, request.data)
+        return Response(next(row for row in budget_entries(entry.stage) if row["id"] == str(entry.id)))
 
 
 class VCQuotaView(LabView):

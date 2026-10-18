@@ -389,7 +389,9 @@ def other_workspace(lab):
     )
     for user in (lab["lead"], lab["member"], lab["reviewer"], lab["independent"]):
         WorkspaceMember.objects.create(workspace=workspace, member=user, role=15)
-        ProjectMember.objects.create(workspace=workspace, project=project, member=user, role=15)
+        ProjectMember.objects.create(
+            workspace=workspace, project=project, member=user, role=20 if user == lab["lead"] else 15
+        )
     states = {
         key: State.objects.create(workspace=workspace, project=project, name=key, group=state.group)
         for key, state in lab["states"].items()

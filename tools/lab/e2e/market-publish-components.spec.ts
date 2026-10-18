@@ -172,6 +172,39 @@ const wallet = (project = "6.00", earned = "4.00") => ({
   earned_committed: "0.00",
 });
 
+test("project administrator publishes directly from the remaining pool without personal VC", async ({ page }) => {
+  let publication: Record<string, unknown> | undefined;
+  await mount(page, async () => {
+    await page.route("**/lab/bounties/budgets/", (route) =>
+      route.fulfill({
+        json: [{ ...budgets[0], wallet: wallet("0.00", "0.00"), can_allocate: true, publication_source: "project" }],
+      })
+    );
+    await page.route("**/lab/bounties/", async (route) => {
+      if (route.request().method() === "POST") {
+        publication = route.request().postDataJSON() as Record<string, unknown>;
+        return route.fulfill({ status: 201, json: { id: "direct-bounty" } });
+      }
+      return route.fulfill({ json: [] });
+    });
+  });
+  const dialog = await openPublication(page);
+  await expect(dialog.getByLabel("我的可用 VC")).toHaveCount(0);
+  await expect(dialog.getByLabel("项目额度支付 VC", { exact: true })).toHaveCount(0);
+  await expect(dialog.getByLabel("项目 VC 预算", { exact: true })).toContainText("剩余 80.00");
+  await dialog.getByLabel("工作项", { exact: true }).selectOption(issueId);
+  await dialog.getByLabel("VC配额", { exact: true }).fill("10");
+  await dialog.getByLabel("任务资料", { exact: true }).fill("项目直接支付");
+  await dialog.getByLabel("交付要求", { exact: true }).fill("交付报告");
+  await dialog.getByLabel("验收标准", { exact: true }).fill("数据完整");
+  await dialog.getByLabel("验收人", { exact: true }).selectOption(reviewerId);
+  await dialog.getByRole("button", { name: "发布", exact: true }).click();
+  await expect(dialog).toHaveCount(0);
+  expect(publication).toMatchObject({ project_id: projectId, budget: "10" });
+  expect(publication).not.toHaveProperty("project_vc");
+  expect(publication).not.toHaveProperty("earned_vc");
+});
+
 test("ordinary project member publishes using a combination of personal quota and earned VC", async ({ page }) => {
   let publication: Record<string, unknown> | undefined;
   const ordinaryPlanner = {

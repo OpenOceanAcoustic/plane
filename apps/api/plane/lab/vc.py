@@ -18,7 +18,7 @@ from rest_framework.exceptions import APIException, PermissionDenied, Validation
 
 from plane.db.models import Project, ProjectMember, WorkspaceMember
 from .auth import audit, lock
-from .models import Bounty, BountyFunding, Ledger, Stage, VCGrant
+from .models import Bounty, BountyFunding, Ledger, Stage, VCBudgetEntry, VCGrant
 from .permissions import workspace_member
 
 ZERO = Decimal("0.00")
@@ -49,9 +49,17 @@ def can_allocate(user, project):
 def stage_reserved(stage):
     # A member publication is already backed by a grant or an earlier award.
     # Counting its reservation again would charge project principal twice.
-    return summed(Bounty.objects.filter(stage=stage, member_funded=False), "reserved") + summed(
-        VCGrant.objects.filter(stage=stage), "delta"
+    return (
+        summed(Bounty.objects.filter(stage=stage, member_funded=False), "reserved")
+        + summed(VCGrant.objects.filter(stage=stage), "delta")
+        + summed(BountyFunding.objects.filter(bounty__stage=stage, source="project"), "project_committed")
     )
+
+
+def stage_budget(stage):
+    """Current VC pool; the original frozen Stage amount still anchors cash history."""
+    value = VCBudgetEntry.objects.filter(stage=stage).aggregate(value=Sum("amount"))["value"]
+    return stage.budget if value is None else value
 
 
 def wallet(user_id, project):
@@ -72,6 +80,7 @@ def wallet(user_id, project):
         "delta",
     )
     commitments = BountyFunding.objects.filter(
+        source="personal",
         owner_id_snapshot=user_id,
         bounty__stage__project_id_snapshot=project.id,
         bounty__stage__workspace_id_snapshot=project.workspace_id,
@@ -115,8 +124,13 @@ def reserve_additional(bounty, additional, actor):
     if not bounty.member_funded or additional <= 0:
         return
     funding = BountyFunding.objects.select_for_update().get(bounty=bounty)
-    require_member(funding.owner, bounty.stage.project)
-    project_vc, earned_vc = payment(funding.owner, bounty.stage.project, additional)
+    require_member(funding.owner, bounty.stage.project, admin=funding.source == "project")
+    if funding.source == "project":
+        if additional > stage_budget(bounty.stage) - stage_reserved(bounty.stage):
+            raise ValidationError("项目未分配 VC 余额不足")
+        project_vc, earned_vc = additional, ZERO
+    else:
+        project_vc, earned_vc = payment(funding.owner, bounty.stage.project, additional)
     funding.project_committed += project_vc
     funding.earned_committed += earned_vc
     funding.save(update_fields=["project_committed", "earned_committed"])
@@ -218,7 +232,7 @@ def grant(user, workspace, project_id, data):
     if data.get("stage_id") and str(stage.id) != str(data["stage_id"]):
         raise ValidationError("项目预算已变化，请刷新后重新分配")
     require_finance_open(workspace, project.id, stage.id)
-    if kind == "grant" and value > stage.budget - stage_reserved(stage):
+    if kind == "grant" and value > stage_budget(stage) - stage_reserved(stage):
         raise ValidationError("项目未分配 VC 余额不足")
     if kind == "reclaim":
         # Reclaim only this source's still-uncommitted quota; earned VC is never confiscated.

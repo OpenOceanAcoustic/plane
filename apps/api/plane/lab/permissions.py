@@ -76,7 +76,7 @@ def require_bounty_manager(user, bounty):
         return require_lead(user, bounty.stage.project)
     from .vc import require_member
 
-    require_member(user, bounty.stage.project)
+    require_member(user, bounty.stage.project, admin=bounty.funding.source == "project")
     if bounty.funding.owner_id_snapshot != user.id:
         raise PermissionDenied("仅悬赏发布人可以办理")
 

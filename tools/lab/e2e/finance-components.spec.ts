@@ -6,7 +6,7 @@ import { networkInterfaces, tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import type { AddressInfo } from "node:net";
 import { expect, test } from "@playwright/test";
-import type { LabBounty, LabFinanceOverview, LabPlanner } from "../../../packages/types/src/index";
+import type { LabBounty, LabBountyBudget, LabFinanceOverview, LabPlanner } from "../../../packages/types/src/index";
 
 const projectId = "11111111-1111-4111-8111-111111111111";
 const stageId = "22222222-2222-4222-8222-222222222222";
@@ -75,10 +75,47 @@ const bounty: LabBounty = {
   reward_estimate: { amount: "1400.00", formula_version: 2 },
 };
 function overview(): LabFinanceOverview {
+  const actions = [
+    "stage",
+    "receipt",
+    "opening",
+    "transfer",
+    "expense",
+    "settlement",
+    "history-settlement",
+    "commit",
+    "cancel-commit",
+    "payment",
+    "tax-remit",
+    "risk-release",
+    "risk-use",
+    "dispute",
+    "resolve-dispute",
+    "carryover",
+    "stage-allocation",
+    "reverse",
+    "future-plan",
+    "exploration-allocation",
+    "public-duty",
+    "public-commit",
+    "public-cancel-commit",
+    "public-payment",
+  ];
   return {
     manager_id: memberId,
     is_manager: true,
-    projects: [{ id: projectId, name: "声学实验", is_lead: true }],
+    allowed_actions: actions,
+    projects: [
+      {
+        id: projectId,
+        name: "声学实验",
+        is_lead: true,
+        can_manage_vc: true,
+        can_manage_permissions: true,
+        permissions: ["view", "record", "approve", "pay"],
+        allowed_actions: actions,
+      },
+    ],
     members: [{ id: memberId, name: "成员甲" }],
     accounts: [
       {
@@ -248,6 +285,9 @@ async function common(page: import("@playwright/test").Page, bounties: LabBounty
   );
   await page.route("**/lab/bounties/", (route) => route.fulfill({ json: bounties }));
   await page.route("**/lab/inbox/", (route) => route.fulfill({ json: [] }));
+  await page.route("**/lab/bounties/*/quotes/", (route) =>
+    route.fulfill({ json: { quotes: [], available: "100.00", can_apply: true, reviewers: [] } })
+  );
   await page.route("**/lab/bounties/*/detail/", (route) =>
     route.fulfill({ json: bounties.find((row) => route.request().url().includes(row.id)) ?? bounty })
   );
@@ -263,13 +303,115 @@ test("bounty hall keeps publication without separate frozen budget or WIP admini
   await expect(page.getByText("团队 T", { exact: false })).toHaveCount(0);
 });
 
-test("finance configures new project VC budget without rewriting previous yuan stages or forecasts", async ({
-  page,
-}) => {
+test("project administrator without the lead role can configure the initial VC budget", async ({ page }) => {
+  await common(page);
+  const data = overview();
+  data.projects[0]!.is_lead = false;
+  data.projects[0]!.can_manage_vc = true;
+  await page.route("**/lab/finance/overview/**", (route) => route.fulfill({ json: data }));
+  const row: LabBountyBudget = {
+    project_id: projectId,
+    project: "声学实验",
+    stage_id: null,
+    stage_name: null,
+    budget: null,
+    reserved: null,
+    available: null,
+    configured: false,
+    can_allocate: true,
+    entries: [],
+  };
+  await page.route("**/lab/bounties/budgets/", (route) => route.fulfill({ json: [row] }));
+  let submitted: Record<string, unknown> | undefined;
+  await page.route("**/lab/stages/", (route) => {
+    if (route.request().method() !== "POST") return route.fulfill({ json: [] });
+    submitted = route.request().postDataJSON() as Record<string, unknown>;
+    Object.assign(row, {
+      stage_id: stageId,
+      stage_name: "初始预算",
+      budget: "100.00",
+      reserved: "0.00",
+      available: "100.00",
+      configured: true,
+    });
+    return route.fulfill({ status: 201, json: { id: stageId } });
+  });
+  await mount(page, "finance", `/test/lab/finance?project_id=${projectId}`, planner, httpOrigin);
+  await page.getByRole("button", { name: "设置 VC 预算", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "设置项目 VC 预算", exact: true });
+  await expect(dialog.getByLabel("项目", { exact: true })).toHaveValue(projectId);
+  await dialog.getByLabel("预算名称", { exact: true }).fill("初始预算");
+  await dialog.getByLabel("VC 预算", { exact: true }).fill("100");
+  await dialog.getByLabel("操作／核准依据", { exact: true }).fill("项目初始额度");
+  await dialog.getByRole("button", { name: "保存", exact: true }).click();
+  await expect(dialog).toHaveCount(0);
+  expect(submitted).toMatchObject({ project_id: projectId, budget: "100" });
+  expect(submitted?.request_key).toEqual(expect.any(String));
+});
+
+test("adjusting one installment enforces the combined issued floor and preserves cash forecasts", async ({ page }) => {
+  await common(page);
+  const data = overview();
+  const forecasts = structuredClone(data.forecasts);
+  await page.route("**/lab/finance/overview/**", (route) => route.fulfill({ json: data }));
+  const row: LabBountyBudget = {
+    project_id: projectId,
+    project: "声学实验",
+    stage_id: stageId,
+    stage_name: "第一阶段",
+    budget: "150.00",
+    reserved: "100.00",
+    available: "50.00",
+    configured: true,
+    can_allocate: true,
+    entries: [
+      {
+        id: "entry-one",
+        name: "首笔额度",
+        initial_amount: "100.00",
+        amount: "100.00",
+        minimum: "50.00",
+        revision: 1,
+        created_at: "2026-10-18T00:00:00Z",
+      },
+      {
+        id: "entry-two",
+        name: "二笔额度",
+        initial_amount: "50.00",
+        amount: "50.00",
+        minimum: "0.00",
+        revision: 1,
+        created_at: "2026-10-18T01:00:00Z",
+      },
+    ],
+  };
+  await page.route("**/lab/bounties/budgets/", (route) => route.fulfill({ json: [row] }));
+  let submitted: Record<string, unknown> | undefined;
+  await page.route("**/lab/bounties/budgets/*/entries/*/", (route) => {
+    submitted = route.request().postDataJSON() as Record<string, unknown>;
+    Object.assign(row.entries![0]!, { amount: "50.00", revision: 2 });
+    Object.assign(row, { budget: "100.00", available: "0.00" });
+    return route.fulfill({ json: row.entries![0] });
+  });
+  await mount(page, "finance", `/test/lab/finance?project_id=${projectId}`, planner, httpOrigin);
+  await page.getByRole("button", { name: "调整首笔额度", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "调整 VC 预算", exact: true });
+  await dialog.getByLabel("调整后额度 VC", { exact: true }).fill("49.99");
+  await dialog.getByLabel("调整原因", { exact: true }).fill("缩减未使用预算");
+  await expect(dialog.getByRole("button", { name: "保存调整", exact: true })).toBeDisabled();
+  await dialog.getByLabel("调整后额度 VC", { exact: true }).fill("50");
+  await dialog.getByRole("button", { name: "保存调整", exact: true }).click();
+  await expect(dialog).toHaveCount(0);
+  expect(submitted).toMatchObject({ amount: "50", expected_revision: 1, reason: "缩减未使用预算" });
+  await expect(page.getByLabel("声学实验预算明细")).toContainText("50.00 VC");
+  expect(data.forecasts).toEqual(forecasts);
+});
+
+test("finance appends project VC without rewriting frozen yuan stages or forecasts", async ({ page }) => {
   await common(page);
   const data = overview();
   await page.route("**/lab/finance/overview/**", (route) => route.fulfill({ json: data }));
-  const budget = {
+  const budget: LabBountyBudget = {
     project_id: projectId,
     project: "声学实验",
     stage_id: stageId,
@@ -287,11 +429,20 @@ test("finance configures new project VC budget without rewriting previous yuan s
     if (route.request().method() === "POST") {
       submitted = route.request().postDataJSON() as Record<string, unknown>;
       Object.assign(budget, {
-        stage_id: "55555555-5555-4555-8555-555555555555",
-        stage_name: "新执行预算",
-        budget: "25.00",
-        reserved: "0.00",
-        available: "25.00",
+        budget: "1025.00",
+        reserved: "100.00",
+        available: "925.00",
+        entries: [
+          {
+            id: "new-entry",
+            name: "新执行预算",
+            amount: "25.00",
+            initial_amount: "25.00",
+            minimum: "0.00",
+            revision: 1,
+            created_at: "2026-10-18T00:00:00Z",
+          },
+        ],
       });
       return route.fulfill({ status: 201, json: { id: budget.stage_id } });
     }
@@ -327,9 +478,9 @@ test("finance configures new project VC budget without rewriting previous yuan s
   await expect(current).toContainText("1000.00");
   await expect(current).toContainText("100.00");
   await expect(current).toContainText("900.00");
-  await page.getByRole("button", { name: "设置 VC 预算", exact: true }).click();
+  await page.getByRole("button", { name: "追加 VC 预算", exact: true }).click();
   const dialog = page.getByRole("dialog", { name: "设置项目 VC 预算", exact: true });
-  await expect(dialog.getByLabel("负责项目", { exact: true })).toHaveValue(projectId);
+  await expect(dialog.getByLabel("项目", { exact: true })).toHaveValue(projectId);
   await expect(dialog.getByLabel("预算名称", { exact: true })).toHaveValue("当前预算");
   await dialog.getByLabel("预算名称", { exact: true }).fill("新执行预算");
   await dialog.getByLabel("VC 预算", { exact: true }).fill("25");
@@ -338,7 +489,7 @@ test("finance configures new project VC budget without rewriting previous yuan s
   await expect(dialog).toHaveCount(0);
   expect(submitted).toMatchObject({ project_id: projectId, name: "新执行预算", budget: "25" });
   await expect(current).toContainText("新执行预算");
-  await expect(current).toContainText("25.00");
+  await expect(current).toContainText("1025.00");
   expect(data.forecasts).toEqual(originalForecasts);
   expect(data.stages).toEqual(originalStages);
 });
@@ -349,7 +500,7 @@ test("finance VC ledger keeps project-scoped exports and clears previous records
   await common(page);
   const otherProjectId = "66666666-6666-4666-8666-666666666666";
   const data = overview();
-  data.projects.push({ id: otherProjectId, name: "其他项目", is_lead: true });
+  data.projects.push({ id: otherProjectId, name: "其他项目", is_lead: true, can_manage_vc: true });
   await page.route("**/lab/finance/overview/**", (route) => route.fulfill({ json: data }));
   const budget = {
     project_id: projectId,
@@ -723,7 +874,7 @@ test("ordinary HTTP task acceptance and workflow actions keep secure random requ
       },
     ],
   };
-  await page.route("**/lab/bounties/*/workflow/", (route) => route.fulfill({ json: workflow }));
+  await page.route("**/lab/bounties/*/workflow/?**", (route) => route.fulfill({ json: workflow }));
   await mount(page, "workflow", "/test/lab/bounties", planner, httpOrigin, [reviewed]);
   await page.getByRole("button", { name: "办理独立验收", exact: true }).click();
   await expect(page.getByRole("dialog")).toHaveAccessibleName("办理独立验收");
@@ -976,12 +1127,10 @@ test("open card default, personal participation and direct task detail preserve 
   expect(await card.evaluate((element) => getComputedStyle(element).borderColor)).toBe("rgb(249, 115, 22)");
   await card.click();
   await expect(page.locator(`#bounty-${bounty.id}`)).toContainText("标注表");
-  await expect(page.getByRole("button", { name: "申请认领", exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: /按原价申请/ })).toBeVisible();
 });
 
-test("cross-project planning cards keep custom color and route through task detail with disabled native status", async ({
-  page,
-}) => {
+test("cross-project planning cards keep custom color and enable bounty workflow status", async ({ page }) => {
   await common(page);
   const cross: LabPlanner = {
     ...planner,
@@ -1012,7 +1161,7 @@ test("cross-project planning cards keep custom color and route through task deta
   const card = page.locator(".lab-planner-card");
   await expect(card.getByLabel("悬赏任务")).toBeVisible();
   await expect(card).toContainText("本人自定义");
-  await expect(card.getByRole("combobox", { name: "跨项目悬赏状态" })).toBeDisabled();
+  await expect(card.getByRole("combobox", { name: "跨项目悬赏状态" })).toBeEnabled();
   await expect(card.getByRole("link", { name: "跨项目悬赏", exact: true })).toHaveAttribute(
     "href",
     `/test/lab/bounties?bounty_id=${bountyId}`
@@ -1492,6 +1641,7 @@ function financialLimitOverview(): LabFinanceOverview {
       withheld: "0.00",
       net_paid: "10.00",
       can_manage: true,
+      can_pay: true,
     },
     {
       id: "settlement-two",
@@ -1511,6 +1661,7 @@ function financialLimitOverview(): LabFinanceOverview {
       withheld: "0.00",
       net_paid: "0.00",
       can_manage: true,
+      can_pay: true,
     },
   ];
   data.commitments = [
@@ -1524,6 +1675,7 @@ function financialLimitOverview(): LabFinanceOverview {
       remaining: "20.00",
       cancelled: false,
       can_manage: true,
+      can_pay: true,
     },
   ];
   data.batches = [
@@ -1543,6 +1695,7 @@ function financialLimitOverview(): LabFinanceOverview {
       history_snapshot: [],
       created_at: "2026-10-09T08:00:00Z",
       can_manage: true,
+      can_pay: true,
     },
   ];
   data.public_awards = [
@@ -1561,6 +1714,7 @@ function financialLimitOverview(): LabFinanceOverview {
       withheld: "0.00",
       net_paid: "10.00",
       can_manage: true,
+      can_pay: true,
     },
     {
       id: "public-award-two",
@@ -1577,6 +1731,7 @@ function financialLimitOverview(): LabFinanceOverview {
       withheld: "0.00",
       net_paid: "0.00",
       can_manage: true,
+      can_pay: true,
     },
   ];
   data.public_commitments = [
@@ -1591,6 +1746,7 @@ function financialLimitOverview(): LabFinanceOverview {
       remaining: "20.00",
       cancelled: false,
       can_manage: true,
+      can_pay: true,
     },
   ];
   data.funding_targets = [
