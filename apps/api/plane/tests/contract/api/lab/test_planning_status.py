@@ -127,7 +127,7 @@ def test_confirmed_bounty_requires_explicit_start_submission_and_independent_acc
     assert final["status"] == "done" and final["awarded"] == "20.00"
 
 
-def test_native_work_limit_explains_parallel_tasks_without_unrelated_finance_or_acceptance_reasons(laboratory):
+def test_personal_planning_status_succeeds_over_recommended_workload(laboratory):
     lab = laboratory
     member, base = lab["client"](lab["member"]), lab["base"]
     configured = lab["client"](lab["lead"]).put(
@@ -149,13 +149,9 @@ def test_native_work_limit_explains_parallel_tasks_without_unrelated_finance_or_
         item = member.post(base + "items/", {"issue_id": str(issue.id)}, format="json")
         assert item.status_code == 201
         response = member.patch(base + f"items/{item.json()['id']}/", {"status": "active"}, format="json")
-        if index < 2:
-            assert response.status_code == 200, response.content
-        else:
-            assert response.status_code == 409
-            assert "并行上限" in response.json()["error"]
-            assert "冻结预算" not in response.json()["error"] and "独立验收" not in response.json()["error"]
-            current = next(
-                row for row in member.get(base + "planner/").json()["items"] if row["id"] == item.json()["id"]
-            )
-            assert current["status"] == "todo"
+        assert response.status_code == 200, response.content
+        current = next(row for row in member.get(base + "planner/").json()["items"] if row["id"] == item.json()["id"])
+        assert current["status"] == "active"
+        advice = member.get(base + "me/workload/").json()
+        assert advice["active"] == index + 1 and advice["blocking"] is False
+        assert advice["overloaded"] is (index == 2)

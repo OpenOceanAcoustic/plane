@@ -6,11 +6,12 @@ from concurrent.futures import ThreadPoolExecutor
 import pytest
 from django.core.management import call_command
 from django.core.management.sql import emit_post_migrate_signal
-from django.db import IntegrityError, close_old_connections, transaction
+from django.db import close_old_connections
 from django.test import Client
 
 from plane.db.models import APIToken, Issue, IssueAssignee, Project, ProjectMember, State, Workspace
 from plane.lab.models import Credential, WorkspacePolicy
+from plane.lab.workload import workload
 
 pytestmark = [pytest.mark.django_db(transaction=True), pytest.mark.contract]
 
@@ -54,7 +55,7 @@ def native_workspace(laboratory, settings, monkeypatch):
 
 
 @pytest.mark.parametrize("transport", ["app", "api"])
-def test_native_workspace_enforces_wip_before_any_lab_page_and_rolls_back_assignment(native_workspace, transport):
+def test_native_workspace_allows_over_recommended_wip_and_preserves_assignments(native_workspace, transport):
     client, user, project, todo, active, endpoint = native_workspace
     if transport == "api":
         token = APIToken.objects.create(user=user, label="Native API contract")
@@ -68,27 +69,29 @@ def test_native_workspace_enforces_wip_before_any_lab_page_and_rolls_back_assign
             content_type="application/json",
         )
         assert response.status_code == 201, response.content
-    rejected = client.post(
+    accepted = client.post(
         endpoint,
         {"name": "Over quota", state_field: str(active.id), assignee_field: [str(user.id)]},
         content_type="application/json",
     )
-    assert rejected.status_code == 409, rejected.content
-    assert Issue.objects.filter(project=project).count() == 2
-    assert IssueAssignee.objects.filter(project=project, assignee=user).count() == 2
+    assert accepted.status_code == 201, accepted.content
+    assert Issue.objects.filter(project=project).count() == 3
+    assert IssueAssignee.objects.filter(project=project, assignee=user).count() == 3
     waiting = Issue.objects.create(workspace=project.workspace, project=project, name="Waiting", state=todo)
-    rejected = client.patch(
+    accepted = client.patch(
         endpoint + str(waiting.id) + "/",
         {state_field: str(active.id), assignee_field: [str(user.id)]},
         content_type="application/json",
     )
-    assert rejected.status_code == 409, rejected.content
+    assert accepted.status_code == (204 if transport == "app" else 200), accepted.content
     waiting.refresh_from_db()
-    assert waiting.state_id == todo.id
-    assert not IssueAssignee.objects.filter(issue=waiting).exists()
+    assert waiting.state_id == active.id
+    assert IssueAssignee.objects.filter(issue=waiting, assignee=user).exists()
+    advice = workload(user, project.workspace)
+    assert advice["active"] == 4 and advice["overloaded"] and advice["blocking"] is False
 
 
-def test_native_concurrent_creations_cannot_exceed_wip(native_workspace):
+def test_native_concurrent_creations_over_recommended_wip_both_succeed(native_workspace):
     client, user, project, todo, active, endpoint = native_workspace
     body = {"state_id": str(active.id), "assignee_ids": [str(user.id)]}
     assert client.post(endpoint, {**body, "name": "First"}, content_type="application/json").status_code == 201
@@ -106,9 +109,9 @@ def test_native_concurrent_creations_cannot_exceed_wip(native_workspace):
 
     with ThreadPoolExecutor(max_workers=2) as pool:
         outcomes = list(pool.map(create, (1, 2)))
-    assert sorted(outcomes) == [201, 409]
-    assert Issue.objects.filter(project=project, state=active).count() == 2
-    assert IssueAssignee.objects.filter(project=project, assignee=user).count() == 2
+    assert outcomes == [201, 201]
+    assert Issue.objects.filter(project=project, state=active).count() == 3
+    assert IssueAssignee.objects.filter(project=project, assignee=user).count() == 3
 
 
 def test_migrate_backfills_missing_policies_and_allows_existing_work_to_finish(laboratory, settings):
@@ -129,12 +132,12 @@ def test_migrate_backfills_missing_policies_and_allows_existing_work_to_finish(l
     # flush emits post_migrate without an apps registry; that path must work too.
     emit_post_migrate_signal(verbosity=0, interactive=False, db="default")
     Issue.objects.filter(id=tasks[0].id).update(name="Existing work can be edited")
-    with pytest.raises(IntegrityError), transaction.atomic():
-        extra = Issue.objects.create(
-            workspace=lab["workspace"], project=lab["project"], name="New work", state=lab["states"]["active"]
-        )
-        IssueAssignee.objects.create(
-            workspace=lab["workspace"], project=lab["project"], issue=extra, assignee=lab["member"]
-        )
+    extra = Issue.objects.create(
+        workspace=lab["workspace"], project=lab["project"], name="New work", state=lab["states"]["active"]
+    )
+    IssueAssignee.objects.create(
+        workspace=lab["workspace"], project=lab["project"], issue=extra, assignee=lab["member"]
+    )
+    assert workload(lab["member"], lab["workspace"])["overloaded"]
     Issue.objects.filter(id=tasks[0].id).update(state=lab["states"]["done"])
-    assert Issue.objects.filter(state=lab["states"]["active"]).count() == 2
+    assert Issue.objects.filter(state=lab["states"]["active"]).count() == 3
