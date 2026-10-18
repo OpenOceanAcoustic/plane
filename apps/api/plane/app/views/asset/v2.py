@@ -640,6 +640,8 @@ class ProjectAssetEndpoint(BaseAPIView):
     def patch(self, request, slug, project_id, pk):
         # get the asset id
         asset = FileAsset.objects.get(id=pk, workspace__slug=slug, project_id=project_id)
+        if asset.entity_type == "CHAT_IMAGE":
+            return Response({"error": "Use the conversation image endpoint."}, status=status.HTTP_403_FORBIDDEN)
         # get the storage metadata
         asset.is_uploaded = True
         # get the storage metadata
@@ -656,6 +658,8 @@ class ProjectAssetEndpoint(BaseAPIView):
     def delete(self, request, slug, project_id, pk):
         # Get the asset
         asset = FileAsset.objects.get(id=pk, workspace__slug=slug, project_id=project_id)
+        if asset.entity_type == "CHAT_IMAGE":
+            return Response({"error": "Use the conversation image endpoint."}, status=status.HTTP_403_FORBIDDEN)
         # Check deleted assets
         asset.is_deleted = True
         asset.deleted_at = timezone.now()

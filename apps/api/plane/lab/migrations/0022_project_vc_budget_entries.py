@@ -21,7 +21,7 @@ def preserve_existing_budgets(apps, schema_editor):
 
 class Migration(migrations.Migration):
     dependencies = [
-        ("lab", "0020_chat_conversations"),
+        ("lab", "0021_chat_images"),
         migrations.swappable_dependency(settings.AUTH_USER_MODEL),
     ]
 

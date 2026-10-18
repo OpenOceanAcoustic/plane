@@ -57,6 +57,10 @@ type LiteTextEditorWrapperProps = MakeOptional<
       }
   );
 
+function isMutableRefObject<T>(value: React.ForwardedRef<T>): value is React.MutableRefObject<T | null> {
+  return !!value && typeof value === "object" && "current" in value;
+}
+
 export const LiteTextEditor = React.forwardRef(function LiteTextEditor(
   props: LiteTextEditorWrapperProps,
   ref: React.ForwardedRef<EditorRefApi>
@@ -113,9 +117,6 @@ export const LiteTextEditor = React.forwardRef(function LiteTextEditor(
   });
   // editor config
   const { getEditorFileHandlers } = useEditorConfig();
-  function isMutableRefObject<T>(ref: React.ForwardedRef<T>): ref is React.MutableRefObject<T | null> {
-    return !!ref && typeof ref === "object" && "current" in ref;
-  }
   // derived values
   const isEmpty = isCommentEmpty(props.initialValue);
 
@@ -147,13 +148,16 @@ export const LiteTextEditor = React.forwardRef(function LiteTextEditor(
             ]}
             editable={editable}
             flaggedExtensions={liteTextEditorExtensions.flagged}
-            fileHandler={getEditorFileHandlers({
-              projectId,
-              uploadFile: editable ? props.uploadFile : undefined,
-              duplicateFile: editable ? props.duplicateFile : undefined,
-              workspaceId,
-              workspaceSlug,
-            })}
+            fileHandler={{
+              ...getEditorFileHandlers({
+                projectId,
+                uploadFile: editable ? props.uploadFile : undefined,
+                duplicateFile: editable ? props.duplicateFile : undefined,
+                workspaceId,
+                workspaceSlug,
+              }),
+              ...commentContext.fileHandler,
+            }}
             getEditorMetaData={getEditorMetaData}
             handleEditorReady={(ready) => {
               if (ready) {

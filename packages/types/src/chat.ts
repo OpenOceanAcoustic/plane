@@ -24,7 +24,13 @@ export type TCommentOperations = {
   updateComment: (id: string, data: Partial<TComment>) => Promise<void>;
   removeComment: (id: string) => Promise<void>;
   copyCommentLink: (id: string) => void;
-} & Partial<Omit<TCommentsOperations, "createComment" | "updateComment" | "removeComment" | "copyCommentLink">>;
+  uploadCommentAsset?: (blockId: string, file: File, commentId?: string) => Promise<{ asset_id: string }>;
+} & Partial<
+  Omit<
+    TCommentsOperations,
+    "createComment" | "updateComment" | "removeComment" | "copyCommentLink" | "uploadCommentAsset"
+  >
+>;
 
 export type ChatScope = "workspace" | "project" | "issue";
 export type ChatThread = {

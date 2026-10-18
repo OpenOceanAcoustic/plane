@@ -17,6 +17,12 @@ from storages.backends.s3boto3 import S3Boto3Storage
 
 
 class S3Storage(S3Boto3Storage):
+    def get_object_parameters(self, name):
+        parameters = super().get_object_parameters(name)
+        if name.startswith("chat-images/"):
+            parameters["ACL"] = "private"
+        return parameters
+
     def url(self, name, parameters=None, expire=None, http_method=None):
         return name
 
