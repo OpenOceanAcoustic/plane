@@ -326,6 +326,9 @@ function quoteFixture(): import("../../../packages/types/src/index").LabBountyQu
   return {
     can_apply: false,
     available: "20.00",
+    funding_source: "project",
+    project_available: "980.00",
+    quote_limit: "1000.00",
     reviewers: [{ id: "reviewer", name: "复核人" }],
     file_size_limit: 5242880,
     quotes: [
@@ -477,6 +480,9 @@ test("live quote approval completes through the browser and real Django API", as
     server: string;
     base: string;
     bounty_id: string;
+    original_vc: string;
+    quote_vc: string;
+    quote_limit: string | null;
     sessions: Record<string, { id: string; cookie: { name: string; value: string } }>;
   };
   const contexts: import("@playwright/test").BrowserContext[] = [];
@@ -517,7 +523,8 @@ test("live quote approval completes through the browser and real Django API", as
     await applicant.page.getByRole("button", { name: "议价申请", exact: true }).click();
     let dialog = applicant.page.getByRole("dialog", { name: "议价申请", exact: true });
     await dialog.getByLabel("本人交付内容").fill("真实端到端分析报告");
-    await dialog.getByLabel("报价（VC）").fill("45");
+    if (fixture.quote_limit) await expect(dialog.getByLabel("报价（VC）")).toHaveAttribute("max", fixture.quote_limit);
+    await dialog.getByLabel("报价（VC）").fill(fixture.quote_vc);
     await dialog.getByLabel("依据附件").setInputFiles({
       name: "quote-proof.pdf",
       mimeType: "application/pdf",
@@ -536,7 +543,7 @@ test("live quote approval completes through the browser and real Django API", as
     const before = await lead.context.request.get(
       `${fixture.server}${fixture.base}bounties/${fixture.bounty_id}/detail/`
     );
-    expect((await before.json()).reserved).toBe("20.00");
+    expect((await before.json()).reserved).toBe(fixture.original_vc);
 
     const reviewer = await open("independent");
     await reviewer.page.getByRole("button", { name: "复核加价", exact: true }).click();
@@ -547,9 +554,9 @@ test("live quote approval completes through the browser and real Django API", as
       `${fixture.server}${fixture.base}bounties/${fixture.bounty_id}/detail/`
     );
     const record = await final.json();
-    expect(record).toMatchObject({ budget: "45.00", reserved: "45.00", awarded: "0", major: true });
+    expect(record).toMatchObject({ budget: fixture.quote_vc, reserved: fixture.quote_vc, awarded: "0", major: true });
     expect(record.allocations).toHaveLength(1);
-    expect(record.allocations[0]).toMatchObject({ planned: "45.00", approved: true, confirmed: true });
+    expect(record.allocations[0]).toMatchObject({ planned: fixture.quote_vc, approved: true, confirmed: true });
     const planner = await applicant.context.request.get(`${fixture.server}${fixture.base}planner/`);
     expect((await planner.json()).items.some((item: { issue_id: string }) => item.issue_id === record.issue_id)).toBe(
       true
@@ -560,4 +567,95 @@ test("live quote approval completes through the browser and real Django API", as
     );
     await Promise.all(contexts.map((context) => context.close()));
   }
+});
+
+test("a 5000 VC bounty accepts a 6000 VC negotiated application", async ({ page }) => {
+  const data = {
+    ...quoteFixture(),
+    available: "5000.00",
+    project_available: "5000.00",
+    quote_limit: "10000.00",
+    funding_source: "project" as const,
+    can_apply: true,
+    quotes: [],
+  };
+  await mount(page, workflow(false), { ...bounty, status: "open", budget: "5000.00", allocations: [] }, data);
+  let submitted = false;
+  await page.route("**/lab/bounties/bounty/quotes/", async (route) => {
+    if (route.request().method() === "GET") return route.fulfill({ json: data });
+    expect(route.request().postDataJSON()).toMatchObject({ kind: "negotiated", vc: "6000" });
+    submitted = true;
+    return route.fulfill({ status: 201, json: {} });
+  });
+  await page.getByRole("button", { name: "议价申请", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "议价申请", exact: true });
+  await dialog.getByLabel("本人交付内容").fill("完整交付");
+  await dialog.getByLabel("报价依据").fill("补充分析工作");
+  await dialog.getByLabel("报价（VC）").fill("10000.01");
+  await expect(dialog.getByRole("button", { name: "提交申请" })).toBeDisabled();
+  await expect(dialog.getByRole("alert")).toContainText("10000.00");
+  await dialog.getByLabel("报价（VC）").fill("6000");
+  await expect(dialog.getByRole("button", { name: "提交申请" })).toBeEnabled();
+  await dialog.getByRole("button", { name: "提交申请" }).click();
+  await expect(dialog).toHaveCount(0);
+  expect(submitted).toBe(true);
+});
+
+test("a changed project ceiling refreshes after rejection and retains the negotiated draft", async ({ page }) => {
+  const data = {
+    ...quoteFixture(),
+    available: "5000.00",
+    project_available: "5000.00",
+    quote_limit: "10000.00",
+    can_apply: true,
+    quotes: [],
+  };
+  await mount(page, workflow(false), { ...bounty, status: "open", budget: "5000.00", allocations: [] }, data);
+  let attempts = 0;
+  await page.route("**/lab/bounties/bounty/quotes/", async (route) => {
+    if (route.request().method() === "GET") return route.fulfill({ json: data });
+    attempts += 1;
+    if (attempts === 1) {
+      data.project_available = "1000.00";
+      data.quote_limit = "6000.00";
+      return route.fulfill({ status: 409, json: { detail: "项目余额已变化" } });
+    }
+    expect(route.request().postDataJSON()).toMatchObject({
+      vc: "5500",
+      deliverable: "补充完整报告",
+      basis: "新增工作量",
+    });
+    return route.fulfill({ status: 201, json: {} });
+  });
+  await page.getByRole("button", { name: "议价申请", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "议价申请", exact: true });
+  await dialog.getByLabel("本人交付内容").fill("补充完整报告");
+  await dialog.getByLabel("报价依据").fill("新增工作量");
+  await dialog.getByLabel("报价（VC）").fill("7000");
+  await dialog.getByRole("button", { name: "提交申请" }).click();
+  await expect(dialog.getByLabel("报价（VC）")).toHaveAttribute("max", "6000.00");
+  await expect(dialog.getByLabel("报价（VC）")).toHaveValue("7000");
+  await expect(dialog.getByRole("button", { name: "提交申请" })).toBeDisabled();
+  await dialog.getByLabel("报价（VC）").fill("5500");
+  await dialog.getByRole("button", { name: "提交申请" }).click();
+  await expect(dialog).toHaveCount(0);
+  expect(attempts).toBe(2);
+});
+
+test("personal-funded quote approval identifies the publisher balance rather than the project pool", async ({
+  page,
+}) => {
+  const data = quoteFixture();
+  data.funding_source = "personal";
+  data.project_available = null;
+  data.quote_limit = null;
+  data.quotes[0]!.budget_snapshot!.funding = "personal";
+  data.quotes[0]!.adjustment!.source_available = "0.00";
+  data.quotes[0]!.adjustment!.funded = false;
+  await mount(page, workflow(false), { ...bounty, status: "open" }, data);
+  await page.getByRole("button", { name: "审批报价", exact: true }).click();
+  const dialog = page.getByRole("dialog");
+  await expect(dialog.getByText("发布人可用 VC", { exact: true })).toBeVisible();
+  await expect(dialog.getByRole("alert")).toContainText("个人可用 VC 不足");
+  await expect(dialog.getByRole("button", { name: "同意并提交复核", exact: true })).toBeDisabled();
 });

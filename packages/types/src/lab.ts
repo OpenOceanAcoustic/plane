@@ -304,6 +304,9 @@ export type LabBountyQuotes = {
   quotes: LabBountyQuote[];
   can_apply: boolean;
   available: string;
+  funding_source: "project" | "personal";
+  project_available: string | null;
+  quote_limit: string | null;
   reviewers: LabMember[];
   file_size_limit: number;
 };
