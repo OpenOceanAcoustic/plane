@@ -2,13 +2,16 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 
 import uuid
+from io import BytesIO
 from unittest.mock import patch
 
 import pytest
+from PIL import Image
+from django.core.files.uploadedfile import SimpleUploadedFile
 from django.utils import timezone
 
-from plane.db.models import Issue, IssueComment, Notification, ProjectMember, Workspace, WorkspaceMember
-from plane.lab.chat_models import ChatMention, ChatReadState, ChatThread
+from plane.db.models import FileAsset, Issue, IssueComment, Notification, ProjectMember, Workspace, WorkspaceMember
+from plane.lab.chat_models import ChatImage, ChatMention, ChatReadState, ChatThread
 
 pytestmark = [pytest.mark.django_db(transaction=True), pytest.mark.contract]
 
@@ -297,3 +300,151 @@ def test_sync_large_history_is_paginated_without_losing_same_timestamp_messages(
         if not continuation:
             break
     assert len(values) == len(set(values)) == 450
+
+
+@pytest.fixture
+def image_storage(settings, tmp_path):
+    settings.STORAGES = {
+        "default": {"BACKEND": "django.core.files.storage.FileSystemStorage", "OPTIONS": {"location": str(tmp_path)}},
+        "staticfiles": {"BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage"},
+    }
+    content = BytesIO()
+    Image.new("RGB", (3, 2), "blue").save(content, format="PNG")
+    return content.getvalue(), tmp_path
+
+
+def upload_image(lab, thread, content, user=None, name="图片.png"):
+    return lab["client"](user or lab["member"]).post(
+        lab["base"] + f"chat/threads/{thread['id']}/images/",
+        {"file": SimpleUploadedFile(name, content, content_type="image/png")},
+        format="multipart",
+    )
+
+
+def image_html(asset_id):
+    return f'<image-component src="{asset_id}" status="uploaded"></image-component>'
+
+
+@pytest.mark.parametrize("scope", ["workspace", "project"])
+def test_chat_image_upload_only_message_retry_edit_and_delete(laboratory, image_storage, scope):
+    lab = laboratory
+    content, _ = image_storage
+    thread = resolve(lab, scope, lab["project"].id if scope == "project" else None)
+    uploaded = upload_image(lab, thread, content)
+    assert uploaded.status_code == 201, uploaded.content
+    asset_id = uploaded.json()["asset_id"]
+    url = lab["base"] + f"chat/threads/{thread['id']}/images/{asset_id}/"
+    member, reviewer = lab["client"](lab["member"]), lab["client"](lab["reviewer"])
+    assert member.get(url).status_code == 200
+    assert reviewer.get(url).status_code == 404  # Another member cannot inspect a draft image.
+    key = str(uuid.uuid4())
+    sent = send(lab, thread, image_html(asset_id), client_message_id=key)
+    assert sent.status_code == 201, sent.content
+    message = sent.json()
+    assert resolve(lab, scope, lab["project"].id if scope == "project" else None)["preview"] == "[图片]"
+    assert send(lab, thread, image_html(asset_id), client_message_id=key).json()["id"] == message["id"]
+    assert ChatImage.objects.get(asset_id=asset_id).message_id == uuid.UUID(message["id"])
+    response = reviewer.get(url)
+    assert response.status_code == 200
+    assert b"".join(response.streaming_content) == content
+    assert response["Content-Type"] == "image/png"
+    assert response["Cache-Control"] == "private, no-store"
+    assert response["Content-Disposition"].startswith("inline")
+    assert member.get(url + "?download=1")["Content-Disposition"].startswith("attachment")
+    second = upload_image(lab, thread, content).json()["asset_id"]
+    message_url = lab["base"] + f"chat/threads/{thread['id']}/messages/{message['id']}/"
+    edited = member.patch(message_url, {"comment_html": "<p>附图</p>" + image_html(second)}, format="json")
+    assert edited.status_code == 200, edited.content
+    assert reviewer.get(url).status_code == 404
+    second_url = url.replace(asset_id, second)
+    assert reviewer.get(second_url).status_code == 200
+    assert member.delete(message_url).status_code == 204
+    assert reviewer.get(second_url).status_code == 404
+
+
+def test_chat_image_permissions_and_native_routes_cannot_bypass_conversation(laboratory, image_storage):
+    lab = laboratory
+    content, _ = image_storage
+    thread = resolve(lab, "project", lab["project"].id)
+    asset_id = upload_image(lab, thread, content).json()["asset_id"]
+    assert send(lab, thread, image_html(asset_id), user=lab["reviewer"]).status_code == 400
+    other = resolve(lab)
+    assert send(lab, other, image_html(asset_id)).status_code == 400
+    assert send(lab, thread, image_html(uuid.uuid4())).status_code == 400
+    message = send(lab, thread, image_html(asset_id)).json()
+    client = lab["client"](lab["reviewer"])
+    url = lab["base"] + f"chat/threads/{thread['id']}/images/{asset_id}/"
+    for route in (
+        f"/api/assets/v2/workspaces/lab/{asset_id}/",
+        f"/api/assets/v2/workspaces/lab/download/{asset_id}/",
+        f"/api/assets/v2/workspaces/lab/projects/{lab['project'].id}/{asset_id}/",
+        f"/api/v1/workspaces/lab/assets/{asset_id}/",
+    ):
+        assert client.get(route).status_code == 403, route
+    native = f"/api/assets/v2/workspaces/lab/projects/{lab['project'].id}/{asset_id}/"
+    assert client.patch(native, {}, format="json").status_code == 403
+    assert client.delete(native).status_code == 403
+    assert client.patch(f"/api/v1/workspaces/lab/assets/{asset_id}/", {}, format="json").status_code == 403
+    duplicate = client.post(url + "duplicate/", {}, format="json")
+    assert duplicate.status_code == 201, duplicate.content
+    assert duplicate.json()["asset_id"] != asset_id
+    assert send(lab, thread, image_html(duplicate.json()["asset_id"]), user=lab["reviewer"]).status_code == 201
+    assert send(lab, thread, image_html(asset_id)).status_code == 400  # A new message needs a copy.
+    ProjectMember.objects.filter(project=lab["project"], member=lab["reviewer"]).update(is_active=False)
+    assert client.get(url).status_code == 404
+    assert client.post(url + "duplicate/", {}, format="json").status_code == 404
+    assert upload_image(lab, thread, content, user=lab["reviewer"]).status_code == 404
+    assert message["comment_html"] in page(lab, thread)["messages"][0]["comment_html"]
+
+
+@pytest.mark.parametrize("content", [b"", b"not an image", b"<svg xmlns='http://www.w3.org/2000/svg'></svg>"])
+def test_chat_image_rejects_invalid_bytes_without_creating_assets(laboratory, image_storage, content):
+    lab = laboratory
+    thread = resolve(lab)
+    assert upload_image(lab, thread, content).status_code == 400
+    assert not ChatImage.objects.exists()
+    assert not FileAsset.objects.filter(entity_type="CHAT_IMAGE").exists()
+    assert not any(path.is_file() for path in image_storage[1].rglob("*"))
+
+
+def test_chat_image_size_storage_failure_and_readonly_upload(laboratory, image_storage, settings):
+    lab = laboratory
+    content, directory = image_storage
+    thread = resolve(lab)
+    settings.FILE_SIZE_LIMIT = len(content) - 1
+    assert upload_image(lab, thread, content).status_code == 400
+    settings.FILE_SIZE_LIMIT = len(content) + 1
+    with patch("django.core.files.storage.FileSystemStorage._save", side_effect=OSError("storage offline")):
+        assert upload_image(lab, thread, content).status_code == 503
+    assert not ChatImage.objects.exists()
+    assert not any(path.is_file() for path in directory.rglob("*"))
+    project_thread = resolve(lab, "project", lab["project"].id)
+    ProjectMember.objects.filter(project=lab["project"], member=lab["member"]).update(role=10)
+    assert upload_image(lab, project_thread, content).status_code == 403
+
+
+def test_issue_image_only_comment_keeps_legacy_asset_association(laboratory, image_storage):
+    lab = laboratory
+    target = issue(lab)
+    thread = resolve(lab, "issue", target.id)
+    asset = FileAsset.objects.create(
+        workspace=lab["workspace"],
+        project=lab["project"],
+        asset="legacy.png",
+        entity_type="COMMENT_DESCRIPTION",
+        created_by=lab["member"],
+        is_uploaded=True,
+    )
+    asset.save(created_by_id=lab["member"].id)
+    sent = send(lab, thread, image_html(asset.id))
+    assert sent.status_code == 201, sent.content
+    comment = IssueComment.objects.get(id=sent.json()["id"])
+    response = lab["client"](lab["member"]).post(
+        f"/api/assets/v2/workspaces/lab/projects/{lab['project'].id}/{comment.id}/bulk/",
+        {"asset_ids": [str(asset.id)]},
+        format="json",
+    )
+    assert response.status_code == 204, response.content
+    asset.refresh_from_db()
+    assert asset.comment_id == comment.id
+    assert page(lab, thread)["messages"][0]["comment_html"] == comment.comment_html

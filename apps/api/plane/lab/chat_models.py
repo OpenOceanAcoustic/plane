@@ -47,6 +47,12 @@ class ChatMessage(Record):
         indexes = [models.Index(fields=["thread", "created_at", "id"], name="lab_chat_message_order")]
 
 
+class ChatImage(Record):
+    thread = models.ForeignKey(ChatThread, on_delete=models.CASCADE)
+    asset = models.OneToOneField("db.FileAsset", on_delete=models.CASCADE)
+    message = models.ForeignKey(ChatMessage, on_delete=models.CASCADE, null=True)
+
+
 class ChatReadState(Record):
     thread = models.ForeignKey(ChatThread, on_delete=models.CASCADE)
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)

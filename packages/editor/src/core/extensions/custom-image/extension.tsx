@@ -42,7 +42,7 @@ export function CustomImageExtension(props: Props) {
         ...this.parent?.(),
         getImageDownloadSource: getAssetDownloadSrc,
         getImageSource: getAssetSrc,
-        restoreImage: restoreImageFn,
+        restoreImage: fileHandler.lifecycle === "message" ? undefined : restoreImageFn,
         uploadImage: upload,
         duplicateImage: duplicate,
       };

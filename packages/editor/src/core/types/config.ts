@@ -8,6 +8,7 @@
 import type { TExtendedFileHandler } from "@/plane-editor/types/config";
 
 export type TFileHandler = {
+  lifecycle?: "editor" | "message";
   assetsUploadStatus: Record<string, number>; // blockId => progress percentage
   cancel: () => void;
   checkIfAssetExists: (assetId: string) => Promise<boolean>;

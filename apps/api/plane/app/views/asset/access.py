@@ -6,6 +6,9 @@ from plane.db.models import ProjectMember, WorkspaceMember
 
 def native_asset_access(user, asset):
     """Task grants deliberately never authorize native asset endpoints."""
+    # Chat images must be read through their conversation's current permissions.
+    if asset.entity_type == "CHAT_IMAGE":
+        return False
     if (
         not asset.workspace_id
         or not WorkspaceMember.objects.filter(member=user, workspace_id=asset.workspace_id, is_active=True).exists()

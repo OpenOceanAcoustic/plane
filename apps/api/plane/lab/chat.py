@@ -122,7 +122,7 @@ def participants(thread):
     return members
 
 
-def clean_content(user, thread, html):
+def clean_content(user, thread, html, message_id=None):
     if not isinstance(html, str) or len(html) > 100000:
         raise ValidationError("消息内容过长或格式无效")
     valid, _, clean = validate_html_content(html)
@@ -142,10 +142,14 @@ def clean_content(user, thread, html):
         # Labels are resolved for each reader, never copied from the sender's editor.
         node.clear()
         node.attrs = {"id": str(target), "entity_identifier": str(target), "entity_name": kind}
-    if not soup.get_text().strip() and not soup.find(["mention-component", "img"]):
+    if not soup.get_text().strip() and not soup.find(["mention-component", "img", "image-component"]):
         raise ValidationError("消息不能为空")
-    if thread.scope != "issue" and soup.find(["img", "video", "audio", "iframe", "image-component", "file-component"]):
-        raise ValidationError("此会话暂不支持图片或附件")
+    if thread.scope != "issue":
+        from .chat_images import validate_images
+
+        if soup.find(["video", "audio", "iframe", "file-component"]):
+            raise ValidationError("此会话暂不支持该附件类型")
+        validate_images(user, thread, soup, message_id)
     return str(soup)
 
 
@@ -266,6 +270,13 @@ def unread_messages(thread, user):
 
 def thread_data(thread, user):
     latest = messages(thread).order_by("-created_at", "-id").first()
+    preview = strip_tags(safe_html(latest.comment_html))[:120] if latest else ""
+    if (
+        latest
+        and not preview.strip()
+        and BeautifulSoup(latest.comment_html, "html.parser").find(["img", "image-component"])
+    ):
+        preview = "[图片]"
     title = (
         thread.workspace.name
         if thread.scope == "workspace"
@@ -283,7 +294,7 @@ def thread_data(thread, user):
         "can_write": can_write(user, thread),
         "unread_count": unread_messages(thread, user).count(),
         "activity_at": (latest.created_at if latest else thread.created_at).isoformat(),
-        "preview": strip_tags(safe_html(latest.comment_html))[:120] if latest else "",
+        "preview": preview,
     }
 
 

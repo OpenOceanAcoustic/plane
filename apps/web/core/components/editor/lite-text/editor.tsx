@@ -147,13 +147,16 @@ export const LiteTextEditor = React.forwardRef(function LiteTextEditor(
             ]}
             editable={editable}
             flaggedExtensions={liteTextEditorExtensions.flagged}
-            fileHandler={getEditorFileHandlers({
-              projectId,
-              uploadFile: editable ? props.uploadFile : undefined,
-              duplicateFile: editable ? props.duplicateFile : undefined,
-              workspaceId,
-              workspaceSlug,
-            })}
+            fileHandler={{
+              ...getEditorFileHandlers({
+                projectId,
+                uploadFile: editable ? props.uploadFile : undefined,
+                duplicateFile: editable ? props.duplicateFile : undefined,
+                workspaceId,
+                workspaceSlug,
+              }),
+              ...commentContext.fileHandler,
+            }}
             getEditorMetaData={getEditorMetaData}
             handleEditorReady={(ready) => {
               if (ready) {
