@@ -233,6 +233,8 @@ export type LabBounty = {
   status: LabBountyStatus;
   major: boolean;
   major_reasons: string[];
+  can_change_importance?: boolean;
+  importance_state?: { major: boolean; status: string; independent_reviewer_id: string | null } | null;
   evidence: string;
   due_at: string | null;
   overdue: boolean;

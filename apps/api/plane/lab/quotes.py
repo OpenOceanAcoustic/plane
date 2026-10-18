@@ -155,9 +155,7 @@ def adjustment(quote, snapshot):
     approved = sum((Decimal(row[1]) for row in snapshot["allocations"]), Decimal("0"))
     additional = max(Decimal("0.00"), approved + quote.vc - Decimal(snapshot["budget"]))
     next_budget = Decimal(snapshot["budget"]) + additional
-    requires_review = additional > 0 and bool(
-        snapshot["major"] or bounties.vc_major_reasons(next_budget, Decimal(snapshot["stage_budget"]))
-    )
+    requires_review = additional > 0 and snapshot["major"]
     return {
         "additional": str(additional),
         "next_budget": str(next_budget),
@@ -252,16 +250,9 @@ def finalize_quote(quote, actor, snapshot):
         reserve_additional(bounty, additional, actor)
         bounty.budget += additional
         bounty.reserved += additional
-        reasons = list(
-            dict.fromkeys(
-                [*bounty.major_reasons, *bounties.vc_major_reasons(bounty.budget, Decimal(snapshot["stage_budget"]))]
-            )
-        )
-        bounty.major = bounty.major or bool(reasons)
-        bounty.major_reasons = reasons
         if quote.reviewer_id:
             bounty.independent_reviewer_id = quote.reviewer_id
-        bounty.save(update_fields=["budget", "reserved", "major", "major_reasons", "independent_reviewer"])
+        bounty.save(update_fields=["budget", "reserved", "independent_reviewer"])
     allocation = Allocation.objects.create(
         bounty=bounty,
         user=quote.user,

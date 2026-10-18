@@ -25,6 +25,7 @@ from .permissions import can_view_team, collaboration_projects as project_ids, r
 from .planning_views import LabView
 from .bounty_access import access_level, accessible_bounties, bounty_access, issue_capabilities
 from .bounty_models import BountyPublication
+from .bounty_importance import EDITABLE, change_importance, importance_state
 from .bounty_budgets import project_budgets, publish_from_project
 from .vc_budgets import add_budget as freeze_vc_budget
 from .categories import item_category_data
@@ -108,6 +109,15 @@ def bounty_data(row, user, reward_context=None):
         "awarded": None if public else str(bounties.total(row.ledger.all(), "delta")),
         "status": row.status,
         "major": row.major,
+        "can_change_importance": bool(
+            lead
+            and row.status in EDITABLE
+            and row.issue_id
+            and not row.issue.archived_at
+            and not row.issue.deleted_at
+            and not row.issue.is_draft
+        ),
+        "importance_state": importance_state(row) if lead else None,
         "major_reasons": [] if public else row.major_reasons,
         "evidence": "" if public else row.evidence,
         "due_at": row.due_at.isoformat() if row.due_at else None,
@@ -236,6 +246,8 @@ class BountyActionView(LabView):
             bounties.cancel(request.user, row.id, data.get("reason", ""))
         elif action == "reopen":
             bounties.reopen(request.user, row.id, data.get("reason", ""))
+        elif action == "importance":
+            result = change_importance(request.user, row.id, data)
         elif action == "public-summary":
             result = bounties.update_public_summary(request.user, row.id, data)
         else:

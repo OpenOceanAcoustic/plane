@@ -146,7 +146,7 @@ test.beforeAll(async () => {
   const { build } = require("esbuild") as typeof import("esbuild");
   await build({
     stdin: {
-      contents: `import React from 'react'; import { createRoot } from 'react-dom/client'; import { LabStore } from '${resolve("packages/shared-state/src/lab.store.ts")}'; import { LabBountyWorkflow } from '${resolve("apps/web/core/components/lab/workflow.tsx")}'; const store = new LabStore('', 'test'); store.planner = { user_id: 'member-c', items: [], projects: [] }; createRoot(document.getElementById('root')).render(<LabBountyWorkflow store={store} bounty={window.labBounty} />);`,
+      contents: `import React from 'react'; import { createRoot } from 'react-dom/client'; import { LabStore } from '${resolve("packages/shared-state/src/lab.store.ts")}'; import { LabBountyWorkflow } from '${resolve("apps/web/core/components/lab/workflow.tsx")}'; const store = new LabStore('', 'test'); store.planner = { user_id: 'member-c', items: [], projects: [{id: window.labBounty.project_id, members: [{id:'reviewer',name:'复核人'}]}] }; function Root(){ const [bounty, setBounty] = React.useState(window.labBounty); Object.assign(window,{setLabBounty:setBounty}); return <LabBountyWorkflow store={store} bounty={bounty} />; } createRoot(document.getElementById('root')).render(<Root />);`,
       resolveDir: resolve("apps/web"),
       loader: "tsx",
       sourcefile: "bounty-workflow-harness.tsx",
@@ -483,6 +483,7 @@ test("live quote approval completes through the browser and real Django API", as
     original_vc: string;
     quote_vc: string;
     quote_limit: string | null;
+    major: boolean;
     sessions: Record<string, { id: string; cookie: { name: string; value: string } }>;
   };
   const contexts: import("@playwright/test").BrowserContext[] = [];
@@ -537,24 +538,32 @@ test("live quote approval completes through the browser and real Django API", as
     const lead = await open("lead");
     await lead.page.getByRole("button", { name: "审批报价", exact: true }).click();
     dialog = lead.page.getByRole("dialog", { name: "审批报价", exact: true });
-    await dialog.getByLabel("加价复核人").selectOption(fixture.sessions.independent!.id);
-    await dialog.getByRole("button", { name: "同意并提交复核", exact: true }).click();
-    await expect(dialog).toHaveCount(0);
-    const before = await lead.context.request.get(
-      `${fixture.server}${fixture.base}bounties/${fixture.bounty_id}/detail/`
-    );
-    expect((await before.json()).reserved).toBe(fixture.original_vc);
-
-    const reviewer = await open("independent");
-    await reviewer.page.getByRole("button", { name: "复核加价", exact: true }).click();
-    dialog = reviewer.page.getByRole("dialog", { name: "复核加价", exact: true });
+    if (fixture.major) {
+      await dialog.getByLabel("加价复核人").selectOption(fixture.sessions.independent!.id);
+      await dialog.getByRole("button", { name: "同意并提交复核", exact: true }).click();
+      await expect(dialog).toHaveCount(0);
+      const before = await lead.context.request.get(
+        `${fixture.server}${fixture.base}bounties/${fixture.bounty_id}/detail/`
+      );
+      expect((await before.json()).reserved).toBe(fixture.original_vc);
+      const reviewer = await open("independent");
+      await reviewer.page.getByRole("button", { name: "复核加价", exact: true }).click();
+      dialog = reviewer.page.getByRole("dialog", { name: "复核加价", exact: true });
+    } else {
+      await expect(dialog.getByLabel("加价复核人")).toHaveCount(0);
+    }
     await dialog.getByRole("button", { name: "批准承接", exact: true }).click();
     await expect(dialog).toHaveCount(0);
     const final = await lead.context.request.get(
       `${fixture.server}${fixture.base}bounties/${fixture.bounty_id}/detail/`
     );
     const record = await final.json();
-    expect(record).toMatchObject({ budget: fixture.quote_vc, reserved: fixture.quote_vc, awarded: "0", major: true });
+    expect(record).toMatchObject({
+      budget: fixture.quote_vc,
+      reserved: fixture.quote_vc,
+      awarded: "0",
+      major: fixture.major,
+    });
     expect(record.allocations).toHaveLength(1);
     expect(record.allocations[0]).toMatchObject({ planned: fixture.quote_vc, approved: true, confirmed: true });
     const planner = await applicant.context.request.get(`${fixture.server}${fixture.base}planner/`);
@@ -658,4 +667,53 @@ test("personal-funded quote approval identifies the publisher balance rather tha
   await expect(dialog.getByText("发布人可用 VC", { exact: true })).toBeVisible();
   await expect(dialog.getByRole("alert")).toContainText("个人可用 VC 不足");
   await expect(dialog.getByRole("button", { name: "同意并提交复核", exact: true })).toBeDisabled();
+});
+
+test("publisher changes importance before work starts using the displayed state", async ({ page }) => {
+  const record = {
+    ...bounty,
+    status: "open" as const,
+    major: false,
+    can_change_importance: true,
+    importance_state: { major: false, status: "open", independent_reviewer_id: null },
+  };
+  await mount(page, workflow(false), record);
+  let submitted = false;
+  await page.route("**/lab/bounties/bounty/importance/", (route) => {
+    expect(route.request().postDataJSON()).toMatchObject({
+      major: true,
+      independent_reviewer_id: "reviewer",
+      expected_state: record.importance_state,
+      request_key: expect.any(String),
+    });
+    submitted = true;
+    return route.fulfill({ json: { ok: true } });
+  });
+  await page.getByRole("button", { name: "调整重要级别", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "调整重要级别", exact: true });
+  await dialog.getByLabel("重要级别", { exact: true }).selectOption("major");
+  await expect(dialog.getByRole("button", { name: "保存", exact: true })).toBeDisabled();
+  await dialog.getByLabel("复核人", { exact: true }).selectOption("reviewer");
+  await dialog.getByRole("button", { name: "保存", exact: true }).click();
+  await expect(dialog).toHaveCount(0);
+  expect(submitted).toBe(true);
+});
+
+test("importance adjustment is absent when the server denies editing", async ({ page }) => {
+  await mount(page, workflow(false), { ...bounty, can_change_importance: false });
+  await expect(page.getByRole("button", { name: "调整重要级别", exact: true })).toHaveCount(0);
+});
+
+test("importance changes refresh review nodes even when the open status stays the same", async ({ page }) => {
+  const record = { ...bounty, major: true, status: "open" as const };
+  await mount(page, workflow(true), record);
+  await expect(page.locator('.react-flow__node[data-id="publication_review"]')).toHaveCount(1);
+  await page.route("**/lab/bounties/*/workflow/**", (route) => route.fulfill({ json: workflow(false) }));
+  await page.evaluate(
+    (value) => {
+      (window as unknown as { setLabBounty: (record: LabBounty) => void }).setLabBounty(value);
+    },
+    { ...record, major: false }
+  );
+  await expect(page.locator('.react-flow__node[data-id="publication_review"]')).toHaveCount(0);
 });

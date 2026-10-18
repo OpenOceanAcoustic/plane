@@ -16,6 +16,7 @@ import { LabAmountInput, LabDialog, LabField, labAmountError, labInputClass } fr
 import { LabBountyWorkflow } from "./workflow";
 import { LabBountyQuotesPanel } from "./bounty-quotes";
 import { LabBountyMaterials } from "./bounty-materials";
+import { LabBountyImportance } from "./bounty-importance";
 import { LabBountyPublish } from "./bounty-publish";
 import { LabVCWallets } from "./vc-wallets";
 // oxlint-disable-next-line import/no-unassigned-import -- local financial and task surfaces
@@ -353,6 +354,7 @@ export const LabMarket = observer(function LabMarket({ store }: { store: LabStor
                   ))}
                 </div>
                 <div className="flex flex-wrap gap-2">
+                  <LabBountyImportance store={store} bounty={bounty} />
                   {bounty.is_lead && (
                     <Button
                       size="sm"

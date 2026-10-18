@@ -15,20 +15,22 @@ from .test_member_vc import body, grant, issue, post, setup
 pytestmark = [pytest.mark.django_db(transaction=True), pytest.mark.contract]
 
 
-def published(lab, *, personal=False):
+def published(lab, *, personal=False, major=False):
     stage = setup(lab, "10000")
     if personal:
         assert grant(lab, "5000").status_code == 201
-    response = post(lab, body(lab, issue(lab), "5000"), actor=lab["member"] if personal else lab["lead"])
+    response = post(lab, body(lab, issue(lab), "5000", major=major), actor=lab["member"] if personal else lab["lead"])
     assert response.status_code == 201, response.content
     bounty = response.json()["id"]
-    assert action(lab, lab["independent"], bounty, "publication-review", {"reason": "发布复核"}).status_code == 200
+    if major:
+        assert action(lab, lab["independent"], bounty, "publication-review", {"reason": "发布复核"}).status_code == 200
     return stage, bounty
 
 
-def test_quote_above_bounty_price_uses_only_the_project_topup(laboratory):
+@pytest.mark.parametrize("major", [False, True])
+def test_quote_above_bounty_price_uses_only_the_project_topup(laboratory, major):
     lab = laboratory
-    stage, bounty = published(lab)
+    stage, bounty = published(lab, major=major)
     view = quote_list(lab, bounty, lab["member"])
     assert view["available"] == "5000.00"
     assert view["project_available"] == "5000.00" and view["quote_limit"] == "10000.00"
@@ -36,9 +38,10 @@ def test_quote_above_bounty_price_uses_only_the_project_topup(laboratory):
     quote = quote_list(lab, bounty)["quotes"][0]
     assert quote["adjustment"]["additional"] == "1000.00" and quote["adjustment"]["funded"]
     assert decide(lab, bounty, quote, reviewer_id=str(lab["independent"].id)).status_code == 200
-    assert stage_reserved(stage) == 5000 and not Allocation.objects.filter(bounty_id=bounty).exists()
-    quote = quote_list(lab, bounty, lab["independent"])["quotes"][0]
-    assert decide(lab, bounty, quote, "review", user=lab["independent"], decision="approve").status_code == 200
+    if major:
+        assert stage_reserved(stage) == 5000 and not Allocation.objects.filter(bounty_id=bounty).exists()
+        quote = quote_list(lab, bounty, lab["independent"])["quotes"][0]
+        assert decide(lab, bounty, quote, "review", user=lab["independent"], decision="approve").status_code == 200
     assert stage_reserved(stage) == 6000
     assert BountyFunding.objects.get(bounty_id=bounty).project_committed == 6000
     allocation = Allocation.objects.get(bounty_id=bounty)

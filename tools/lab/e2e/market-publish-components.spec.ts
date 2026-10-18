@@ -393,9 +393,7 @@ test("publication loads project work items without searching and sends a single 
     public_criteria: "抽样复核全部通过",
     reviewer_id: reviewerId,
     independent_reviewer_id: null,
-    cash_commitment: 0,
-    person_days: 0,
-    route_or_safety: false,
+    major: false,
   });
   await expect(dialog).toHaveCount(0);
   expect(taskRequests.length).toBeGreaterThan(0);
@@ -406,33 +404,18 @@ test("publication loads project work items without searching and sends a single 
   expect(errors).toEqual([]);
 });
 
-test("major review appears only at a threshold and advanced settings remain collapsed", async ({ page }) => {
+test("importance is selected by the publisher independently of VC", async ({ page }) => {
   await mount(page);
   const dialog = await openPublication(page);
-  await dialog.getByLabel("VC配额", { exact: true }).fill("20");
+  await expect(dialog.getByLabel("重要级别", { exact: true })).toHaveValue("normal");
+  await dialog.getByLabel("VC配额", { exact: true }).fill("80");
   await expect(dialog.getByLabel("复核人", { exact: true })).toHaveCount(0);
-  await dialog.getByLabel("VC配额", { exact: true }).fill("20.01");
+  await dialog.getByLabel("重要级别", { exact: true }).selectOption("major");
   await expect(dialog.getByLabel("复核人", { exact: true })).toBeVisible();
-  await dialog.getByLabel("验收人", { exact: true }).selectOption(reviewerId);
-  await expect(dialog.getByLabel("复核人", { exact: true }).locator("option")).toHaveText([
-    "请选择",
-    "负责人",
-    "验收人",
-    "复核人",
-  ]);
-  await dialog.getByLabel("VC配额", { exact: true }).fill("10");
+  await dialog.getByLabel("VC配额", { exact: true }).fill("1");
+  await expect(dialog.getByLabel("复核人", { exact: true })).toBeVisible();
+  await dialog.getByLabel("重要级别", { exact: true }).selectOption("normal");
   await expect(dialog.getByLabel("复核人", { exact: true })).toHaveCount(0);
-  await dialog.getByText("更多设置", { exact: true }).click();
-  await dialog.getByLabel("现金承诺（元）", { exact: true }).fill("5000");
-  await expect(dialog.getByLabel("复核人", { exact: true })).toBeVisible();
-  await dialog.getByLabel("现金承诺（元）", { exact: true }).fill("0");
-  await dialog.getByLabel("预计人日", { exact: true }).fill("10");
-  await expect(dialog.getByLabel("复核人", { exact: true })).toHaveCount(0);
-  await dialog.getByLabel("预计人日", { exact: true }).fill("10.01");
-  await expect(dialog.getByLabel("复核人", { exact: true })).toBeVisible();
-  await dialog.getByLabel("预计人日", { exact: true }).fill("0");
-  await dialog.getByLabel("重大路线或安全事项", { exact: true }).check();
-  await expect(dialog.getByLabel("复核人", { exact: true })).toBeVisible();
 });
 
 test("VC quota warns while typing and updates when switching project budgets", async ({ page }) => {
@@ -455,7 +438,6 @@ test("VC quota warns while typing and updates when switching project budgets", a
   await dialog.getByLabel("交付要求", { exact: true }).fill("交付要求");
   await dialog.getByLabel("验收标准", { exact: true }).fill("验收标准");
   await dialog.getByLabel("验收人", { exact: true }).selectOption(reviewerId);
-  await dialog.getByLabel("复核人", { exact: true }).selectOption(independentId);
   await quota.fill("80.00");
   await expect(quota).not.toHaveAttribute("aria-invalid", "true");
   await expect(dialog.getByRole("alert")).toHaveCount(0);
@@ -479,7 +461,8 @@ test("publisher can also be both reviewers on a major bounty", async ({ page }) 
   });
   const dialog = await openPublication(page);
   await dialog.getByLabel("工作项", { exact: true }).selectOption(issueId);
-  await dialog.getByLabel("VC配额", { exact: true }).fill("40");
+  await dialog.getByLabel("VC配额", { exact: true }).fill("1");
+  await dialog.getByLabel("重要级别", { exact: true }).selectOption("major");
   await dialog.getByLabel("任务资料", { exact: true }).fill("资料");
   await dialog.getByLabel("交付要求", { exact: true }).fill("交付");
   await dialog.getByLabel("验收标准", { exact: true }).fill("标准");
@@ -493,11 +476,12 @@ test("publisher can also be both reviewers on a major bounty", async ({ page }) 
   await dialog.getByLabel("复核人", { exact: true }).selectOption(memberId);
   await dialog.getByRole("button", { name: "发布", exact: true }).click();
   await expect(dialog).toHaveCount(0);
+  expect(body?.major).toBe(true);
   expect(body?.reviewer_id).toBe(memberId);
   expect(body?.independent_reviewer_id).toBe(memberId);
 });
 
-test("major review threshold compares exact decimal VC at twenty percent", async ({ page }) => {
+test("crossing a budget percentage leaves the selected importance unchanged", async ({ page }) => {
   await mount(page, async () => {
     await page.route("**/lab/bounties/budgets/", (route) =>
       route.fulfill({ json: [{ ...budgets[0], budget: "0.35", reserved: "0.00", available: "0.35" }] })
@@ -507,7 +491,7 @@ test("major review threshold compares exact decimal VC at twenty percent", async
   await dialog.getByLabel("VC配额", { exact: true }).fill("0.07");
   await expect(dialog.getByLabel("复核人", { exact: true })).toHaveCount(0);
   await dialog.getByLabel("VC配额", { exact: true }).fill("0.08");
-  await expect(dialog.getByLabel("复核人", { exact: true })).toBeVisible();
+  await expect(dialog.getByLabel("复核人", { exact: true })).toHaveCount(0);
 });
 
 test("changing projects clears the old work item and a late task response cannot overwrite the current project", async ({

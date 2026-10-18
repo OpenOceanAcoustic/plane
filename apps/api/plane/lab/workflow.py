@@ -61,6 +61,7 @@ AUDIT_LABELS = {
     "bounty.vc_reserved": "冻结悬赏 VC",
     "bounty.vc_released": "退回未用 VC",
     "bounty.published": "发布团队任务",
+    "bounty.importance_changed": "发布人调整重要级别",
     "bounty.publication_review": "重大发布复核通过",
     "bounty.claim": "申请认领",
     "bounty.claim_approved": "认领获批",
@@ -76,6 +77,7 @@ AUDIT_LABELS = {
 }
 AUDIT_NODES = {
     "bounty.published": "publication",
+    "bounty.importance_changed": "publication",
     "bounty.publication_review": "publication_review",
     "bounty.claim": "claim",
     "bounty.claim_approved": "claim",

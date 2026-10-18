@@ -24,6 +24,7 @@ def publish_major(lab, reviewer, independent):
             **body,
             "issue_id": str(issue.id),
             "budget": "40",
+            "major": True,
             "reviewer_id": str(reviewer.id),
             "independent_reviewer_id": str(independent.id),
         },
@@ -108,7 +109,13 @@ def test_shared_review_roles_still_require_eligible_current_members(laboratory, 
         lab["reviewer"].save(update_fields=["is_active"])
     response = lab["client"](lab["lead"]).post(
         lab["base"] + "bounties/",
-        {**body, "issue_id": str(issue.id), "budget": "40", "independent_reviewer_id": str(lab["reviewer"].id)},
+        {
+            **body,
+            "issue_id": str(issue.id),
+            "budget": "40",
+            "major": True,
+            "independent_reviewer_id": str(lab["reviewer"].id),
+        },
         format="json",
     )
     assert response.status_code == 400

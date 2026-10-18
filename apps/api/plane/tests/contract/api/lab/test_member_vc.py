@@ -343,7 +343,8 @@ def test_major_topup_does_not_freeze_or_grant_access_until_independent_review(la
     lab = laboratory
     setup(lab)
     assert grant(lab, "50").status_code == 201
-    bounty = post(lab, body(lab, issue(lab), "20")).json()["id"]
+    bounty = post(lab, body(lab, issue(lab), "20", major=True)).json()["id"]
+    assert action(lab, lab["independent"], bounty, "publication-review", {"reason": "发布复核"}).status_code == 200
     assert submit_quote(lab, bounty, lab["lead"], kind="negotiated", vc="40", basis="扩大交付").status_code == 201
     quote = quote_list(lab, bounty, lab["member"])["quotes"][0]
     response = decide(lab, bounty, quote, user=lab["member"], reviewer_id=str(lab["independent"].id))

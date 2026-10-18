@@ -27,7 +27,7 @@ def test_live_quote_approval_through_browser_and_real_api(laboratory, live_serve
         stage = setup(lab)
         historical_award(lab, stage, lab["member"])
         assert grant(lab, "40").status_code == 201
-        response = post(lab, body(lab, issue(lab), "20", project_vc="12", earned_vc="8"))
+        response = post(lab, body(lab, issue(lab), "20", project_vc="12", earned_vc="8", major=True))
         assert response.status_code == 201, response.content
         bounty_id = response.json()["id"]
         # The ordinary member publishes; the original project lead is the applicant.
@@ -39,11 +39,12 @@ def test_live_quote_approval_through_browser_and_real_api(laboratory, live_serve
         response = post(lab, body(lab, issue(lab), "5000"), actor=lab["lead"])
         assert response.status_code == 201, response.content
         bounty_id = response.json()["id"]
+    else:
+        bounty_id, _, _ = prepare(lab, major=True)
+    if funding_kind != "project":
         assert (
             action(lab, lab["independent"], bounty_id, "publication-review", {"reason": "发布复核"}).status_code == 200
         )
-    else:
-        bounty_id, _, _ = prepare(lab)
     settings.STORAGES = {
         **settings.STORAGES,
         "lab_quotes": {
@@ -73,6 +74,7 @@ def test_live_quote_approval_through_browser_and_real_api(laboratory, live_serve
                 "original_vc": "5000.00" if funding_kind == "project" else "20.00",
                 "quote_vc": "6000.00" if funding_kind == "project" else "45.00",
                 "quote_limit": "10000.00" if funding_kind == "project" else None,
+                "major": funding_kind != "project",
             }
         )
     )

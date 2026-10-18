@@ -14,7 +14,7 @@ from plane.lab.bounties import publish
 pytestmark = [pytest.mark.django_db(transaction=True), pytest.mark.contract]
 
 
-def prepare(lab, budget="20", stage_budget="1000", title="Team task"):
+def prepare(lab, budget="20", stage_budget="1000", title="Team task", major=False):
     lead = lab["client"](lab["lead"])
     base = lab["base"]
     assert (
@@ -36,6 +36,7 @@ def prepare(lab, budget="20", stage_budget="1000", title="Team task"):
         "stage_id": stage.json()["id"],
         "issue_id": str(issue.id),
         "budget": budget,
+        "major": major,
         "deliverable": "Data and report",
         "criteria": "Reproducible evidence",
         "reviewer_id": str(lab["reviewer"].id),
@@ -107,7 +108,7 @@ def test_partial_acceptance_is_delta_only_and_reversal_keeps_snapshots(laborator
 
 def test_major_publication_and_acceptance_require_second_independent_review(laboratory):
     lab = laboratory
-    bounty, issue, _ = prepare(lab, budget="40")
+    bounty, issue, _ = prepare(lab, budget="40", major=True)
     assert action(lab, lab["member"], bounty, "claim", {"planned": "40", "deliverable": "Report"}).status_code == 400
     assert action(lab, lab["lead"], bounty, "publication-review", {"reason": "Approve"}).status_code == 403
     assert (
@@ -270,10 +271,10 @@ def test_one_major_task_per_person_and_revoked_participant_cannot_start(laborato
     from plane.db.models import ProjectMember
 
     lab = laboratory
-    first, _, _ = prepare(lab, budget="40")
+    first, _, _ = prepare(lab, budget="40", major=True)
     assert action(lab, lab["independent"], first, "publication-review", {"reason": "Checked"}).status_code == 200
     start(lab, first, planned="40")
-    second, _, _ = prepare(lab, budget="40", title="Second major task")
+    second, _, _ = prepare(lab, budget="40", title="Second major task", major=True)
     assert action(lab, lab["independent"], second, "publication-review", {"reason": "Checked"}).status_code == 200
     claim = action(lab, lab["member"], second, "claim", {"planned": "40", "deliverable": "Report"})
     assert claim.status_code == 200
