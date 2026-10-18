@@ -89,6 +89,15 @@ export type LabTaskCardMetadata = {
   detail_path: string | null;
   bounty_detail_url: string | null;
 };
+export type LabWorkload = {
+  active: number;
+  major: number;
+  active_limit: number;
+  major_limit: number;
+  overloaded: boolean;
+  blocking: false;
+  message: string;
+};
 export type LabFolder = { id: string; name: string; position: number };
 export type LabCategory = { id: string; name: string; color: string; position: number };
 export type LabItemSchedule = {

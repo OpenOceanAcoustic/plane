@@ -14,6 +14,7 @@ from .chat_urls import chat_patterns
 from .auth_views import LabAuthView, LabBrowserView, LabInvitationView, LabSignOutView
 from .mobile import LiveTicketView
 from .contributions import ContributionsCalendarView, ContributionsEntriesView, ContributionsView
+from .workload import WorkloadView
 from .planning_views import (
     BlockDetailView,
     CalendarView,
@@ -62,6 +63,7 @@ business_patterns = [
     *chat_patterns,
     path("live-ticket/", LiveTicketView.as_view()),
     path("me/contributions/", ContributionsView.as_view()),
+    path("me/workload/", WorkloadView.as_view()),
     path("me/contributions/calendar/", ContributionsCalendarView.as_view()),
     path("me/contributions/entries/", ContributionsEntriesView.as_view()),
     path("analytics/", AnalyticsView.as_view()),
