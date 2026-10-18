@@ -11,9 +11,10 @@ import pytest
 from django.db import close_old_connections
 
 from plane.db.models import Project, ProjectMember, Workspace, WorkspaceMember
-from plane.lab import bounty_budgets
-from plane.lab.models import Audit, Bounty, Stage
-from .test_bounty_project_budget import assign, budgets, publication, task
+from plane.lab import vc_budgets
+from plane.lab.models import Audit, Bounty, Stage, VCBudgetEntry
+from django.utils import timezone
+from .test_bounty_project_budget import budgets, publication, task
 
 pytestmark = [pytest.mark.django_db(transaction=True), pytest.mark.contract]
 
@@ -38,7 +39,6 @@ def test_successful_budget_replay_preserves_bounty_reservation_and_single_source
     data = body(lab)
     first = create(lab, data)
     assert first.status_code == 201, first.content
-    assign(lab, "20")
     client = lab["client"](lab["lead"])
     assert (
         client.put(
@@ -70,11 +70,19 @@ def test_replay_normalizes_valid_input_and_does_not_promote_older_source(laborat
     data = body(lab)
     first = create(lab, data)
     assert first.status_code == 201, first.content
-    newer = create(lab, body(lab, name="新预算", budget="60"))
-    assert newer.status_code == 201, newer.content
+    newer = Stage.objects.create(
+        workspace=lab["workspace"],
+        project=lab["project"],
+        workspace_id_snapshot=lab["workspace"].id,
+        project_id_snapshot=lab["project"].id,
+        project_name=lab["project"].name,
+        name="历史独立阶段",
+        budget="60",
+        frozen_at=timezone.now(),
+    )
     replay = create(lab, {**data, "budget": 100, "name": f" {data['name']} ", "reason": f" {data['reason']} "})
     assert replay.status_code == 201 and replay.json() == first.json()
-    assert Stage.objects.count() == 2 and budgets(lab)[0]["stage_id"] == newer.json()["id"]
+    assert Stage.objects.count() == 2 and budgets(lab)[0]["stage_id"] == str(newer.id)
 
 
 @pytest.mark.parametrize("field", ["project_id", "name", "budget", "reason"])
@@ -105,19 +113,20 @@ def test_replay_checks_current_permission_and_rejects_other_actor(laboratory):
     assert create(lab, data, user=lab["member"]).status_code == 403
     lab["project"].project_lead = lab["member"]
     lab["project"].save(update_fields=["project_lead"])
+    ProjectMember.objects.filter(project=lab["project"], member=lab["member"]).update(role=20)
     response = create(lab, data, user=lab["member"])
     assert response.status_code == 400 and Stage.objects.count() == 1
 
 
-def test_waiting_budget_operation_rechecks_lead_after_finance_lock(laboratory, monkeypatch):
+def test_waiting_budget_operation_rechecks_admin_after_finance_lock(laboratory, monkeypatch):
     lab = laboratory
-    original_lock = bounty_budgets.lock
+    original_lock = vc_budgets.lock
 
     def change_lead_after_lock(name):
         original_lock(name)
-        Project.objects.filter(id=lab["project"].id).update(project_lead=lab["member"])
+        ProjectMember.objects.filter(project=lab["project"], member=lab["lead"]).update(role=15)
 
-    monkeypatch.setattr(bounty_budgets, "lock", change_lead_after_lock)
+    monkeypatch.setattr(vc_budgets, "lock", change_lead_after_lock)
     response = create(lab, body(lab))
     assert response.status_code == 403 and not Stage.objects.exists()
     assert not Audit.objects.filter(action="stage.frozen").exists()
@@ -150,7 +159,7 @@ def test_legacy_budget_without_key_remains_compatible(laboratory):
     data.pop("request_key")
     first, second = create(lab, data), create(lab, data)
     assert first.status_code == second.status_code == 201 and first.json() != second.json()
-    assert Stage.objects.count() == 2
+    assert Stage.objects.count() == 2 and VCBudgetEntry.objects.count() == 2
     assert all("request_key" not in row.details for row in Audit.objects.filter(action="stage.frozen"))
 
 

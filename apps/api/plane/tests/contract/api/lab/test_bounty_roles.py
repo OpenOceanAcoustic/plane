@@ -9,14 +9,12 @@ import pytest
 from plane.db.models import Issue, ProjectMember, WorkspaceMember
 from plane.lab.models import Acceptance, Audit, Bounty, Ledger
 from .test_bounties import action, prepare, start
-from .test_bounty_project_budget import assign
 
 pytestmark = [pytest.mark.django_db(transaction=True), pytest.mark.contract]
 
 
 def publish_major(lab, reviewer, independent):
     _, _, body = prepare(lab)
-    assign(lab, "40")
     issue = Issue.objects.create(
         workspace=lab["workspace"], project=lab["project"], name="Shared review roles", state=lab["states"]["todo"]
     )
@@ -96,7 +94,6 @@ def test_same_nonpublisher_can_accept_and_review(laboratory):
 def test_shared_review_roles_still_require_eligible_current_members(laboratory, invalid):
     lab = laboratory
     _, _, body = prepare(lab)
-    assign(lab, "40")
     issue = Issue.objects.create(
         workspace=lab["workspace"], project=lab["project"], name="Invalid reviewer", state=lab["states"]["todo"]
     )

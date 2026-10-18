@@ -26,6 +26,7 @@ def add(lab, value="100", actor=None, **extra):
             "name": "追加预算",
             "budget": value,
             "request_key": str(uuid.uuid4()),
+            "append": True,
             **extra,
         },
         format="json",
@@ -226,3 +227,35 @@ def test_two_installment_reductions_share_one_project_floor(laboratory):
         results = list(pool.map(reduce, entries))
     assert sorted(results) == [200, 400]
     assert stage_budget(stage) == stage_reserved(stage) == 150
+
+
+def test_migration_preserves_initial_budget_without_issuing_member_credit(laboratory):
+    from importlib import import_module
+    from types import SimpleNamespace
+    from django.apps import apps
+    from django.db import connection
+    from django.utils import timezone
+    from plane.lab.models import Ledger, VCGrant
+
+    lab = laboratory
+    stage = Stage.objects.create(
+        workspace=lab["workspace"],
+        project=lab["project"],
+        workspace_id_snapshot=lab["workspace"].id,
+        project_id_snapshot=lab["project"].id,
+        project_name=lab["project"].name,
+        name="既有初始额度",
+        budget="500",
+        frozen_at=timezone.now(),
+    )
+    migrate = import_module("plane.lab.migrations.0022_project_vc_budget_entries").preserve_existing_budgets
+    migrate(apps, SimpleNamespace(connection=connection))
+    entry = VCBudgetEntry.objects.get(stage=stage)
+    assert entry.amount == entry.initial_amount == stage_budget(stage) == 500
+    assert not VCGrant.objects.exists() and not Ledger.objects.exists() and not BountyFunding.objects.exists()
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "SELECT column_default FROM information_schema.columns "
+            "WHERE table_name='lab_bountyfunding' AND column_name='source'"
+        )
+        assert "personal" in cursor.fetchone()[0]

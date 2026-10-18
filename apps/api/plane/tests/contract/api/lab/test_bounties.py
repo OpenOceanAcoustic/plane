@@ -190,9 +190,6 @@ def test_native_state_bulk_assignment_and_concurrency_cannot_bypass_wip(laborato
 def test_parallel_publications_cannot_exceed_frozen_stage_budget(laboratory):
     lab = laboratory
     bounty, issue, body = prepare(lab, budget="20", stage_budget="30")
-    from .test_bounty_project_budget import assign
-
-    assign(lab)
 
     def publish(index):
         close_old_connections()

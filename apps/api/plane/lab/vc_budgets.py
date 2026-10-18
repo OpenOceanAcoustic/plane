@@ -37,8 +37,10 @@ def locked_project(user, workspace, identifier):
 def replay(user, workspace, key, snapshot):
     if key is None:
         return None
-    lock(f"vc-budget-request:{key}")
-    previous = Audit.objects.filter(action__in=ACTIONS, details__request_key=str(key)).first()
+    lock(f"vc-budget-request:{workspace.id}:{key}")
+    previous = Audit.objects.filter(
+        workspace_id_snapshot=workspace.id, action__in=ACTIONS, details__request_key=str(key)
+    ).first()
     if previous:
         if (
             previous.workspace_id_snapshot != workspace.id
@@ -53,7 +55,13 @@ def replay(user, workspace, key, snapshot):
 def materialize(stage):
     # Old fixtures/importers can create Stage directly. Preserve its frozen base once.
     if not VCBudgetEntry.objects.filter(stage=stage).exists():
-        VCBudgetEntry.objects.create(stage=stage, name=stage.name, initial_amount=stage.budget, amount=stage.budget)
+        VCBudgetEntry.objects.create(
+            stage=stage,
+            workspace_id_snapshot=stage.workspace_id_snapshot,
+            name=stage.name,
+            initial_amount=stage.budget,
+            amount=stage.budget,
+        )
 
 
 def budget_entries(stage):
@@ -79,13 +87,22 @@ def add_budget(user, workspace, project, data):
     if value <= 0 or not name or len(name) > 120 or len(reason) > 4000:
         raise ValidationError("请填写预算名称和正数项目 VC 预算")
     key = parse_key(data["request_key"]) if "request_key" in data else None
+    append = data.get("append", False)
+    if not isinstance(append, bool):
+        raise ValidationError("追加方式须为布尔值")
     snapshot = {"project_id": str(project.id), "name": name, "budget": f"{value:.2f}", "reason": reason}
+    if append:
+        snapshot["append"] = True
     project = locked_project(user, workspace, project.id)
     previous = replay(user, workspace, key, snapshot)
     if previous:
         identifier = previous.details.get("stage_id") or previous.object_id
         return get_object_or_404(Stage, id=identifier, workspace=workspace, project=project)
-    stage = Stage.objects.select_for_update().filter(project=project, workspace=workspace).order_by(*ORDER).first()
+    stage = (
+        Stage.objects.select_for_update().filter(project=project, workspace=workspace).order_by(*ORDER).first()
+        if append
+        else None
+    )
     if stage:
         require_finance_open(workspace, project.id, stage.id)
         materialize(stage)
@@ -113,6 +130,7 @@ def add_budget(user, workspace, project, data):
         )
     entry = VCBudgetEntry.objects.create(
         stage=stage,
+        workspace_id_snapshot=workspace.id,
         name=name,
         initial_amount=value,
         amount=value,

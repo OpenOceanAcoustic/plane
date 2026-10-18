@@ -12,7 +12,13 @@ def preserve_existing_budgets(apps, schema_editor):
     alias = schema_editor.connection.alias
     Entry.objects.using(alias).bulk_create(
         [
-            Entry(stage_id=row.id, name=row.name, initial_amount=row.budget, amount=row.budget)
+            Entry(
+                stage_id=row.id,
+                workspace_id_snapshot=row.workspace_id_snapshot,
+                name=row.name,
+                initial_amount=row.budget,
+                amount=row.budget,
+            )
             for row in Stage.objects.using(alias).all().iterator()
         ],
         batch_size=1000,
@@ -41,11 +47,12 @@ class Migration(migrations.Migration):
             fields=[
                 ("id", models.UUIDField(default=uuid.uuid4, editable=False, primary_key=True, serialize=False)),
                 ("created_at", models.DateTimeField(auto_now_add=True)),
+                ("workspace_id_snapshot", models.UUIDField()),
                 ("name", models.CharField(max_length=120)),
                 ("initial_amount", models.DecimalField(decimal_places=2, max_digits=14)),
                 ("amount", models.DecimalField(decimal_places=2, max_digits=14)),
                 ("revision", models.PositiveIntegerField(default=1)),
-                ("request_key", models.UUIDField(null=True, unique=True)),
+                ("request_key", models.UUIDField(null=True)),
                 ("request_snapshot", models.JSONField(default=dict)),
                 (
                     "actor",
@@ -62,10 +69,13 @@ class Migration(migrations.Migration):
             ],
             options={
                 "constraints": [
+                    models.UniqueConstraint(
+                        fields=["workspace_id_snapshot", "request_key"], name="lab_vc_budget_request_unique"
+                    ),
                     models.CheckConstraint(
                         condition=models.Q(("amount__gte", 0), ("initial_amount__gte", 0)),
                         name="lab_vc_budget_entry_nonnegative",
-                    )
+                    ),
                 ],
             },
         ),

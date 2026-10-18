@@ -58,17 +58,21 @@ class BountyFunding(Record):
 
 class VCBudgetEntry(Record):
     stage = models.ForeignKey("lab.Stage", on_delete=models.PROTECT, related_name="vc_budget_entries")
+    workspace_id_snapshot = models.UUIDField()
     name = models.CharField(max_length=120)
     initial_amount = models.DecimalField(max_digits=14, decimal_places=2)
     amount = models.DecimalField(max_digits=14, decimal_places=2)
     revision = models.PositiveIntegerField(default=1)
     actor = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True)
-    request_key = models.UUIDField(unique=True, null=True)
+    request_key = models.UUIDField(null=True)
     request_snapshot = models.JSONField(default=dict)
 
     class Meta:
         constraints = [
+            models.UniqueConstraint(
+                fields=["workspace_id_snapshot", "request_key"], name="lab_vc_budget_request_unique"
+            ),
             models.CheckConstraint(
                 condition=models.Q(amount__gte=0, initial_amount__gte=0), name="lab_vc_budget_entry_nonnegative"
-            )
+            ),
         ]

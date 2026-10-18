@@ -77,6 +77,21 @@ def budgets(lab, user=None):
     return result.json()
 
 
+def assign(lab, amount="10", user=None):
+    result = lab["client"](lab["lead"]).post(
+        lab["base"] + f"bounties/quotas/{lab['project'].id}/",
+        {
+            "user_id": str((user or lab["lead"]).id),
+            "amount": amount,
+            "reason": "安排项目任务",
+            "request_key": str(uuid.uuid4()),
+        },
+        format="json",
+    )
+    assert result.status_code == 201, result.content
+    return result
+
+
 def test_project_publication_uses_finance_budget_and_preserves_cash_and_vc_ledger(laboratory):
     lab = laboratory
     identifier = configure(lab, reason="阶段研究用途预算")

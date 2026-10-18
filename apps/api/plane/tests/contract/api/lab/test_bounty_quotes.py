@@ -92,7 +92,7 @@ def test_additional_vc_uses_original_source_and_requests_are_idempotent(laborato
     old_stage = lab["client"](lab["lead"]).get(lab["base"] + f"bounties/{bounty}/detail/").json()["stage_id"]
     created = lab["client"](lab["lead"]).post(
         lab["base"] + "stages/",
-        {"project_id": str(lab["project"].id), "name": "下一期预算", "budget": "1"},
+        {"project_id": str(lab["project"].id), "name": "追加预算", "budget": "1", "append": True},
         format="json",
     )
     assert created.status_code == 201

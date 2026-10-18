@@ -640,6 +640,7 @@ export function LabFinanceActionDialog({
           if (value && value !== "public") body[field.key] = value;
         }
         const occurredAt = text(form, "occurred_at");
+        if (action === "vc-stage") body.append = true;
         if (occurredAt) body.occurred_at = calendarInstant(occurredAt);
         if (action === "stage") {
           body.upgraded = upgraded;

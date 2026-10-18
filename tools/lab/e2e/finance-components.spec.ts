@@ -75,10 +75,47 @@ const bounty: LabBounty = {
   reward_estimate: { amount: "1400.00", formula_version: 2 },
 };
 function overview(): LabFinanceOverview {
+  const actions = [
+    "stage",
+    "receipt",
+    "opening",
+    "transfer",
+    "expense",
+    "settlement",
+    "history-settlement",
+    "commit",
+    "cancel-commit",
+    "payment",
+    "tax-remit",
+    "risk-release",
+    "risk-use",
+    "dispute",
+    "resolve-dispute",
+    "carryover",
+    "stage-allocation",
+    "reverse",
+    "future-plan",
+    "exploration-allocation",
+    "public-duty",
+    "public-commit",
+    "public-cancel-commit",
+    "public-payment",
+  ];
   return {
     manager_id: memberId,
     is_manager: true,
-    projects: [{ id: projectId, name: "声学实验", is_lead: true, can_manage_vc: true }],
+    allowed_actions: actions,
+    projects: [
+      {
+        id: projectId,
+        name: "声学实验",
+        is_lead: true,
+        can_manage_vc: true,
+        can_manage_permissions: true,
+        permissions: ["view", "record", "approve", "pay"],
+        allowed_actions: actions,
+      },
+    ],
     members: [{ id: memberId, name: "成员甲" }],
     accounts: [
       {
@@ -248,6 +285,9 @@ async function common(page: import("@playwright/test").Page, bounties: LabBounty
   );
   await page.route("**/lab/bounties/", (route) => route.fulfill({ json: bounties }));
   await page.route("**/lab/inbox/", (route) => route.fulfill({ json: [] }));
+  await page.route("**/lab/bounties/*/quotes/", (route) =>
+    route.fulfill({ json: { quotes: [], available: "100.00", can_apply: true, reviewers: [] } })
+  );
   await page.route("**/lab/bounties/*/detail/", (route) =>
     route.fulfill({ json: bounties.find((row) => route.request().url().includes(row.id)) ?? bounty })
   );
@@ -834,7 +874,7 @@ test("ordinary HTTP task acceptance and workflow actions keep secure random requ
       },
     ],
   };
-  await page.route("**/lab/bounties/*/workflow/", (route) => route.fulfill({ json: workflow }));
+  await page.route("**/lab/bounties/*/workflow/?**", (route) => route.fulfill({ json: workflow }));
   await mount(page, "workflow", "/test/lab/bounties", planner, httpOrigin, [reviewed]);
   await page.getByRole("button", { name: "办理独立验收", exact: true }).click();
   await expect(page.getByRole("dialog")).toHaveAccessibleName("办理独立验收");
@@ -1087,12 +1127,10 @@ test("open card default, personal participation and direct task detail preserve 
   expect(await card.evaluate((element) => getComputedStyle(element).borderColor)).toBe("rgb(249, 115, 22)");
   await card.click();
   await expect(page.locator(`#bounty-${bounty.id}`)).toContainText("标注表");
-  await expect(page.getByRole("button", { name: "申请认领", exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: /按原价申请/ })).toBeVisible();
 });
 
-test("cross-project planning cards keep custom color and route through task detail with disabled native status", async ({
-  page,
-}) => {
+test("cross-project planning cards keep custom color and enable bounty workflow status", async ({ page }) => {
   await common(page);
   const cross: LabPlanner = {
     ...planner,
@@ -1123,7 +1161,7 @@ test("cross-project planning cards keep custom color and route through task deta
   const card = page.locator(".lab-planner-card");
   await expect(card.getByLabel("悬赏任务")).toBeVisible();
   await expect(card).toContainText("本人自定义");
-  await expect(card.getByRole("combobox", { name: "跨项目悬赏状态" })).toBeDisabled();
+  await expect(card.getByRole("combobox", { name: "跨项目悬赏状态" })).toBeEnabled();
   await expect(card.getByRole("link", { name: "跨项目悬赏", exact: true })).toHaveAttribute(
     "href",
     `/test/lab/bounties?bounty_id=${bountyId}`
@@ -1603,6 +1641,7 @@ function financialLimitOverview(): LabFinanceOverview {
       withheld: "0.00",
       net_paid: "10.00",
       can_manage: true,
+      can_pay: true,
     },
     {
       id: "settlement-two",
@@ -1622,6 +1661,7 @@ function financialLimitOverview(): LabFinanceOverview {
       withheld: "0.00",
       net_paid: "0.00",
       can_manage: true,
+      can_pay: true,
     },
   ];
   data.commitments = [
@@ -1635,6 +1675,7 @@ function financialLimitOverview(): LabFinanceOverview {
       remaining: "20.00",
       cancelled: false,
       can_manage: true,
+      can_pay: true,
     },
   ];
   data.batches = [
@@ -1654,6 +1695,7 @@ function financialLimitOverview(): LabFinanceOverview {
       history_snapshot: [],
       created_at: "2026-10-09T08:00:00Z",
       can_manage: true,
+      can_pay: true,
     },
   ];
   data.public_awards = [
@@ -1672,6 +1714,7 @@ function financialLimitOverview(): LabFinanceOverview {
       withheld: "0.00",
       net_paid: "10.00",
       can_manage: true,
+      can_pay: true,
     },
     {
       id: "public-award-two",
@@ -1688,6 +1731,7 @@ function financialLimitOverview(): LabFinanceOverview {
       withheld: "0.00",
       net_paid: "0.00",
       can_manage: true,
+      can_pay: true,
     },
   ];
   data.public_commitments = [
@@ -1702,6 +1746,7 @@ function financialLimitOverview(): LabFinanceOverview {
       remaining: "20.00",
       cancelled: false,
       can_manage: true,
+      can_pay: true,
     },
   ];
   data.funding_targets = [
