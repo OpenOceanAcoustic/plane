@@ -2195,6 +2195,55 @@ function managementFixture() {
   };
 }
 
+for (const result of ["approved", "rejected"] as const) {
+  test(`cost review defaults to approval and accepts empty notes for ${result}`, async ({ page }) => {
+    await common(page);
+    const data = managementFixture();
+    data.records = [
+      {
+        id: "review-cost",
+        version_id: "cost-v1",
+        kind: "cost",
+        version: 1,
+        state: "submitted",
+        actor: "成员甲",
+        data: {
+          category: "labor",
+          user_id: memberId,
+          user_name: "成员甲",
+          date: "2026-10-19",
+          hours: "2.00",
+          rate: "150.00",
+          amount: "300.00",
+          work: "财务模块测试",
+        },
+      },
+    ];
+    let submitted: Record<string, unknown> | undefined;
+    await page.route("**/lab/finance/overview/**", (route) => route.fulfill({ json: overview() }));
+    await page.route("**/lab/projects/*/finance-management/", (route) => {
+      if (route.request().method() === "POST") {
+        submitted = route.request().postDataJSON();
+        data.records[0]!.state = result;
+        return route.fulfill({ status: 201, json: {} });
+      }
+      return route.fulfill({ json: data });
+    });
+    await mount(page, "finance", `/test/lab/finance?project_id=${projectId}`);
+    await page.getByRole("button", { name: "项目经费与成本", exact: true }).click();
+    await page.getByRole("button", { name: "工时与执行成本", exact: true }).click();
+    await page.getByRole("button", { name: "审核", exact: true }).click();
+    const dialog = page.getByRole("dialog");
+    await expect(dialog.getByLabel("审核结果", { exact: true })).toHaveValue("approved");
+    await expect(dialog.getByLabel("审核意见", { exact: true })).toHaveValue("");
+    await expect(dialog.getByLabel("操作说明", { exact: true })).toHaveValue("");
+    if (result === "rejected") await dialog.getByLabel("审核结果", { exact: true }).selectOption("rejected");
+    await dialog.getByRole("button", { name: "保存", exact: true }).click();
+    await expect(dialog).toHaveCount(0);
+    expect(submitted).toMatchObject({ action: "review", reason: "", data: { result, note: "" } });
+  });
+}
+
 test("labor defaults to today and multiplies a week with optional notes empty", async ({ page }) => {
   await common(page);
   const data = managementFixture();

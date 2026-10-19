@@ -133,7 +133,9 @@ def append_record(user, project, body, kind, key, previous, state, payload):
             body.get("reason", ""),
             "操作说明",
             2000,
-            required=not (kind in ("team", "labor-batch") or kind == "cost" and body.get("action") == "save"),
+            required=not (
+                kind in ("team", "labor-batch") or kind == "cost" and body.get("action") in ("save", "review")
+            ),
         ),
         actor=user,
         actor_name=user.display_name,
@@ -468,7 +470,7 @@ def financial_action(user, project, body, permissions):
         require_project_finance(user, project, "approve")
         if not previous or previous.state != "submitted":
             raise ValidationError("只能审核待核准费用")
-        state = data.get("result")
+        state = data.get("result", "approved")
         if state not in ("approved", "rejected"):
             raise ValidationError("审核结果无效")
         if state == "approved" and previous.data["category"] == "labor":
@@ -486,7 +488,7 @@ def financial_action(user, project, body, permissions):
                             totals[workday] += hours
             if any(hours > 24 for hours in totals.values()):
                 raise ValidationError("该成员当日已核准工时合计不能超过24小时")
-        data = {**previous.data, "review_note": text_field(data.get("note"), "审核意见", 2000, required=True)}
+        data = {**previous.data, "review_note": text_field(data.get("note", ""), "审核意见", 2000)}
     elif action == "cancel" and kind in ("cost", "payroll"):
         if not previous:
             raise ValidationError("记录不存在")
@@ -592,7 +594,7 @@ def finance_mutation(user, project, body):
         body.get("reason", ""),
         "操作说明",
         2000,
-        required=not (body.get("kind") == "cost" and body.get("action") == "save"),
+        required=not (body.get("kind") == "cost" and body.get("action") in ("save", "review")),
     )
     previous_request = ProjectManagementRecord.objects.filter(
         workspace=project.workspace, request_key=request_key

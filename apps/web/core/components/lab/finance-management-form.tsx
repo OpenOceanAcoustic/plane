@@ -129,7 +129,7 @@ function FinanceActionDialog({
           type={type}
           className={labInputClass}
           required={required}
-          maxLength={255}
+          maxLength={name === "note" || name === "reason" ? 2000 : 255}
           value={values[name] ?? fallback}
           onChange={(event) => change(name, event.target.value)}
         />
@@ -244,11 +244,17 @@ function FinanceActionDialog({
         )}
         {action === "review" && (
           <>
-            {input("result", "审核结果", [
-              { value: "approved", label: "通过" },
-              { value: "rejected", label: "退回修改" },
-            ])}
-            {input("note", "审核意见", undefined, "textarea")}
+            {input(
+              "result",
+              "审核结果",
+              [
+                { value: "approved", label: "通过" },
+                { value: "rejected", label: "退回修改" },
+              ],
+              "text",
+              "approved"
+            )}
+            {input("note", "审核意见", undefined, "text", "", false)}
           </>
         )}
         {paying && (
@@ -270,7 +276,7 @@ function FinanceActionDialog({
         )}
         {["reverse-payment", "reverse-recovery"].includes(action) &&
           input("evidence", "冲正凭证", undefined, "textarea")}
-        {input("reason", "操作说明", undefined, "textarea")}
+        {input("reason", "操作说明", undefined, action === "review" ? "text" : "textarea", "", action !== "review")}
       </fieldset>
     </LabDialog>
   );

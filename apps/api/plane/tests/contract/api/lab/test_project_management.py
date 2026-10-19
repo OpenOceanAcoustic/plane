@@ -163,6 +163,33 @@ def test_labor_payroll_uses_approved_hours_exact_rates_and_does_not_count_cost_t
     assert post(lab, "payroll", row=paid, action="cancel").status_code == 400
 
 
+@pytest.mark.parametrize("result", [None, "approved", "rejected"])
+def test_cost_review_defaults_to_approved_and_allows_missing_notes(laboratory, result):
+    lab = laboratory
+    row = cost(lab)
+    body = {
+        "kind": "cost",
+        "action": "review",
+        "record_id": row["id"],
+        "expected_version": row["version"],
+        "request_key": str(uuid.uuid4()),
+        "data": {} if result is None else {"result": result},
+    }
+    response = lab["client"](lab["lead"]).post(path(lab), body, format="json")
+    reviewed = ok(response)
+    assert reviewed["state"] == (result or "approved")
+    assert reviewed["data"]["review_note"] == "" and reviewed["reason"] == ""
+    assert ok(lab["client"](lab["lead"]).post(path(lab), body, format="json"))["version_id"] == reviewed["version_id"]
+
+
+def test_optional_review_notes_do_not_bypass_permissions_or_daily_hours(laboratory):
+    lab = laboratory
+    approve(lab, cost(lab, hours="16"))
+    row = cost(lab, hours="9")
+    assert post(lab, "cost", {}, row=row, action="review", user=lab["member"], reason="").status_code == 403
+    assert post(lab, "cost", {}, row=row, action="review", reason="").status_code == 400
+
+
 def test_reimbursement_transport_meals_audit_recovery_and_reversal_are_traceable(laboratory):
     lab = laboratory
     row = approve(lab, cost(lab, "travel"))
