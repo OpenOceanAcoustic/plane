@@ -64,6 +64,25 @@ def test_exact_versioned_report_and_idempotent_retries(laboratory):
     assert ProjectCostBudget.objects.count() == 2
 
 
+def test_structured_calculation_is_preserved_and_amount_is_validated(laboratory):
+    lab = laboratory
+    client = lab["client"](lab["lead"])
+    body = payload(items=[{"category": "labor", "name": "开发", "amount": "4.98", "note": "2.5小时 × 1.99元", "quantity": "2.5", "unit_price": "1.99", "unit": "小时"}])
+    result = client.post(endpoint(lab), body, format="json")
+    assert result.status_code == 201, result.content
+    assert result.json()["items"][0]["quantity"] == "2.5"
+    exported = client.get(endpoint(lab) + "?format=csv").content.decode("utf-8-sig")
+    assert "数量,单位,单价（元）" in exported
+    assert "2.5,小时,1.99" in exported
+    assert client.post(endpoint(lab), body, format="json").json()["id"] == result.json()["id"]
+    invalid = deepcopy(body)
+    invalid["request_key"] = str(uuid4())
+    invalid["expected_version"] = 1
+    invalid["items"][0]["amount"] = "4.97"
+    assert client.post(endpoint(lab), invalid, format="json").status_code == 400
+    assert ProjectCostBudget.objects.count() == 1
+
+
 @pytest.mark.parametrize(
     "amount", ["-1", "1.001", "NaN", "Infinity", "1e3", "1000000000000", "", " 1", True, 100, None]
 )

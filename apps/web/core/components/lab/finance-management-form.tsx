@@ -3,7 +3,7 @@ import { useState } from "react";
 import { v4 as uuidv4 } from "uuid";
 import type { LabFinanceManagement, LabManagementRecord } from "@plane/types";
 import type { LabStore } from "@plane/shared-state";
-import { LabDialog, LabField, LabAmountInput, labDecimalUnits, labInputClass } from "@plane/ui";
+import { Button, LabDialog, LabField, LabAmountInput, labDecimalUnits, labDecimalText, labInputClass } from "@plane/ui";
 import { CostEntryDialog } from "./cost-entry-form";
 
 export type FinanceManagementAction = {
@@ -33,6 +33,8 @@ type FinanceDialogProps = {
   chosen: FinanceManagementAction;
   onClose: () => void;
   onSaved: () => Promise<void>;
+  onAccountAction?: (action: string) => void;
+  accountActions?: string[];
 };
 export function FinanceManagementDialog(props: FinanceDialogProps) {
   if (props.chosen.kind === "cost" && props.chosen.action === "save")
@@ -56,14 +58,9 @@ function FinanceActionDialog({
   chosen,
   onClose,
   onSaved,
-}: {
-  store: LabStore;
-  path: string;
-  data: LabFinanceManagement;
-  chosen: FinanceManagementAction;
-  onClose: () => void;
-  onSaved: () => Promise<void>;
-}) {
+  onAccountAction,
+  accountActions = [],
+}: FinanceDialogProps) {
   const { kind, action, row } = chosen;
   const [values, setValues] = useState<Record<string, string>>(
     () =>
@@ -88,7 +85,7 @@ function FinanceActionDialog({
     fallback = "",
     required = true
   ) => (
-    <LabField key={name} label={label}>
+    <LabField key={name} label={required ? label : `${label}（选填）`}>
       {options ? (
         <select
           name={name}
@@ -115,6 +112,7 @@ function FinanceActionDialog({
         />
       ) : type === "textarea" ? (
         <textarea
+          aria-label={label}
           name={name}
           className={labInputClass}
           required={required}
@@ -125,6 +123,7 @@ function FinanceActionDialog({
         />
       ) : (
         <input
+          aria-label={label}
           name={name}
           type={type}
           className={labInputClass}
@@ -159,6 +158,15 @@ function FinanceActionDialog({
   return (
     <LabDialog
       title={labels[action] ?? labels[kind]}
+      submitLabel={
+        paying
+          ? "确认登记支付"
+          : action === "review"
+            ? (values.result ?? "approved") === "approved"
+              ? "确认通过"
+              : "确认退回"
+            : "保存"
+      }
       busy={busy}
       error={failure}
       onClose={onClose}
@@ -189,6 +197,18 @@ function FinanceActionDialog({
       }}
     >
       <fieldset disabled={busy} className="space-y-4">
+        {row && ["review", "pay"].includes(action) && (
+          <dl className="rounded-lg border border-subtle bg-layer-2 p-3 text-13">
+            <div>成员：{row.data.user_name}</div>
+            <div>
+              期间：{row.data.start ?? row.data.date} 至 {row.data.end ?? row.data.end_date ?? row.data.date}
+            </div>
+            {row.data.work && <div className="whitespace-pre-wrap">工作内容：{row.data.work}</div>}
+            <div>
+              {paying ? "应付" : "申报"}金额：{payable} 元
+            </div>
+          </dl>
+        )}
         {action === "save" && kind === "funding" && (
           <>
             {input("source_type", "项目类型", [
@@ -259,7 +279,20 @@ function FinanceActionDialog({
         )}
         {paying && (
           <>
-            <p>应付金额：{payable} 元</p>
+            {!data.accounts.length && (
+              <div role="status" className="space-y-3 rounded-lg border border-subtle p-3">
+                <p>暂无可用项目资金账户</p>
+                <div className="flex flex-wrap gap-2">
+                  {onAccountAction &&
+                    accountActions.map((entry) => (
+                      <Button key={entry} size="sm" variant="neutral-primary" onClick={() => onAccountAction(entry)}>
+                        {entry === "opening" ? "录入期初余额" : "登记真实到账"}
+                      </Button>
+                    ))}
+                </div>
+                {!accountActions.length && <p className="text-13 text-secondary">无资金登记权限</p>}
+              </div>
+            )}
             {input(
               "account_id",
               "项目资金账户",
@@ -267,7 +300,14 @@ function FinanceActionDialog({
             )}
             {account && cents(payable) > cents(account.available) && (
               <p role="alert" className="text-danger-primary">
-                项目可用资金不足
+                项目可用资金不足：可用 {account.available} 元，尚缺{" "}
+                {labDecimalText(cents(payable) - cents(account.available))} 元
+              </p>
+            )}
+            {account && <p className="text-13">账户可用余额：{account.available} 元</p>}
+            {!!data.accounts.length && !account && (
+              <p role="status" className="text-13 text-secondary">
+                请选择项目资金账户
               </p>
             )}
             {input("reference", "支付流水号")}

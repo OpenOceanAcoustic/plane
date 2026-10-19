@@ -78,15 +78,22 @@ export const LabFinance = observer(function LabFinance({
   refreshKey?: number;
 }) {
   const [searchParams, setSearchParams] = useSearchParams();
-  const projectId = searchParams.get("project_id") ?? "";
+  const projectId =
+    searchParams.get("project_id") ?? (store.planner?.projects.length === 1 ? store.planner.projects[0]!.id : "");
   const setProjectId = (id: string) =>
     setSearchParams((current) => {
       const next = new URLSearchParams(current);
       if (id) next.set("project_id", id);
-      else next.delete("project_id");
+      else next.set("project_id", "");
       return next;
     });
-  const [tab, setTab] = useState("accounts");
+  const tab = searchParams.get("finance_view") ?? (projectId ? "project-budget" : "accounts");
+  const setTab = (value: string) =>
+    setSearchParams((current) => {
+      const next = new URLSearchParams(current);
+      next.set("finance_view", value);
+      return next;
+    });
   const [chosen, setChosen] = useState<LabFinanceChosenAction>();
   const [permissionsOpen, setPermissionsOpen] = useState(false);
   const [budgetAdjustment, setBudgetAdjustment] = useState<{ projectId: string; entryId: string }>();
@@ -171,7 +178,7 @@ export const LabFinance = observer(function LabFinance({
       : []),
   ];
   return (
-    <div className="lab-finance space-y-5">
+    <div className="lab-finance lab-management min-w-0 space-y-5">
       {budgetAdjustment && adjustingEntry && (
         <LabVCBudgetAdjustment
           store={store}
@@ -190,9 +197,9 @@ export const LabFinance = observer(function LabFinance({
           onSaved={onSaved}
         />
       )}
-      <div className="flex flex-wrap items-center gap-2">
+      <div className="sticky top-0 z-20 flex flex-wrap items-center gap-2 rounded-lg border border-subtle bg-surface-1 p-3">
         <label className="flex items-center gap-2 text-13">
-          <span className="whitespace-nowrap">资金项目</span>
+          <span className="whitespace-nowrap">当前项目</span>
           <select
             aria-label="资金项目"
             value={projectId}
@@ -218,177 +225,202 @@ export const LabFinance = observer(function LabFinance({
             ))}
           </select>
         </label>
-        {(projectId
-          ? selectedProject?.can_manage_vc
-          : data?.projects.some((project) => project.can_manage_vc && !project.deleted)) && (
-          <Button variant="primary" size="sm" onClick={() => open("vc-stage")}>
-            {projectId && budgets?.some((budget) => budget.project_id === projectId && budget.configured)
-              ? "追加 VC 预算"
-              : "设置 VC 预算"}
-          </Button>
-        )}
-        {selectedProject?.can_manage_permissions && (
-          <Button variant="neutral-primary" size="sm" onClick={() => setPermissionsOpen(true)}>
-            财务权限
-          </Button>
-        )}
-        {canApprove && !!projectId && (
-          <Button variant="neutral-primary" size="sm" onClick={() => setFormulaOpen(true)}>
-            项目奖励公式
-          </Button>
-        )}
-        {selectedProject?.can_manage_permissions && !selectedProject.deleted && (
-          <Button
-            variant="danger"
-            size="sm"
-            onClick={() =>
-              setDeletion({
-                kind: "project",
-                id: selectedProject.id,
-                name: selectedProject.name,
-                blockedReason: selectedProject.delete_reason ?? undefined,
-              })
-            }
-          >
-            删除资金项目
-          </Button>
-        )}
-        {selectedProject?.can_manage_permissions && selectedProject.deleted && (
+      </div>
+      <details
+        className="rounded-lg border border-subtle p-3"
+        open={["forecasts", "settlements", "vc-ledger", "workflow"].includes(tab)}
+      >
+        <summary className="cursor-pointer text-14 font-medium">贡献、奖励与资金管理</summary>
+        <div className="mt-3 flex flex-wrap items-center gap-2">
+          {(projectId
+            ? selectedProject?.can_manage_vc
+            : data?.projects.some((project) => project.can_manage_vc && !project.deleted)) && (
+            <Button variant="primary" size="sm" onClick={() => open("vc-stage")}>
+              {projectId && budgets?.some((budget) => budget.project_id === projectId && budget.configured)
+                ? "追加 VC 预算"
+                : "设置 VC 预算"}
+            </Button>
+          )}
+          {selectedProject?.can_manage_permissions && (
+            <Button variant="neutral-primary" size="sm" onClick={() => setPermissionsOpen(true)}>
+              财务权限
+            </Button>
+          )}
+          {canApprove && !!projectId && (
+            <Button variant="neutral-primary" size="sm" onClick={() => setFormulaOpen(true)}>
+              项目奖励公式
+            </Button>
+          )}
+          {selectedProject?.can_manage_permissions && !selectedProject.deleted && (
+            <Button
+              variant="danger"
+              size="sm"
+              onClick={() =>
+                setDeletion({
+                  kind: "project",
+                  id: selectedProject.id,
+                  name: selectedProject.name,
+                  blockedReason: selectedProject.delete_reason ?? undefined,
+                })
+              }
+            >
+              删除资金项目
+            </Button>
+          )}
+          {selectedProject?.can_manage_permissions && selectedProject.deleted && (
+            <Button
+              size="sm"
+              variant="neutral-primary"
+              onClick={() => open("project-restore", { project_id: selectedProject.id })}
+            >
+              恢复资金项目
+            </Button>
+          )}
           <Button
             size="sm"
             variant="neutral-primary"
-            onClick={() => open("project-restore", { project_id: selectedProject.id })}
+            disabled={!data?.stages.some((stage) => !stage.deleted)}
+            onClick={() => setForecastOpen(true)}
           >
-            恢复资金项目
+            新增参考预测
           </Button>
-        )}
-        <Button
-          size="sm"
-          variant="neutral-primary"
-          disabled={!data?.stages.some((stage) => !stage.deleted)}
-          onClick={() => setForecastOpen(true)}
-        >
-          新增参考预测
-        </Button>
-        {canManage && (
-          <select
-            aria-label="办理资金事项"
-            className={`${labInputClass} max-w-64`}
-            value=""
-            onChange={(event) => {
-              if (event.target.value) open(event.target.value);
-            }}
-          >
-            <option value="">办理资金事项…</option>
-            {managementActions
-              .filter((action) => allowedActions.has(action))
-              .map((action) => (
-                <option key={action} value={action}>
-                  {financeActionLabels[action]}
-                </option>
-              ))}
-          </select>
-        )}
-        {(data?.is_manager || data?.can_designate_manager) && (
-          <Button size="sm" variant="neutral-primary" onClick={() => open("manager")}>
-            指定公共池管理员
-          </Button>
-        )}
-      </div>
-      {!!visibleBudgets.length && (
-        <section aria-label="项目 VC 预算" className="space-y-2">
-          <h2 className="text-14 font-semibold">项目 VC 预算</h2>
-          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-            {visibleBudgets.map((budget) => (
-              <article
-                key={budget.project_id}
-                data-tone="purple"
-                className="lab-finance-card lab-finance-vc rounded-lg border border-subtle bg-layer-2 p-4"
-              >
-                <div className="flex flex-wrap items-center gap-2">
-                  <h3 className="mr-auto text-14 font-medium">{budget.project}</h3>
-                  {budget.can_allocate && !budget.deleted && budget.configured && !projectId && (
-                    <Button
-                      size="sm"
-                      variant="primary"
-                      onClick={() => open("vc-stage", { project_id: budget.project_id })}
-                    >
-                      追加 VC 预算
-                    </Button>
-                  )}
-                  {budget.deleted && <span className="text-13 text-secondary">已删除</span>}
-                  {budget.stage_id && !budget.deleted && (
-                    <Button
-                      size="sm"
-                      variant="danger"
-                      onClick={() =>
-                        setDeletion({
-                          kind: "stage",
-                          id: budget.stage_id!,
-                          name: budget.stage_name ?? "VC 预算",
-                          blockedReason: budget.delete_reason ?? undefined,
-                        })
-                      }
-                    >
-                      删除阶段预算
-                    </Button>
-                  )}
-                  {budget.stage_id && budget.can_restore && (
-                    <Button
-                      size="sm"
-                      variant="neutral-primary"
-                      onClick={() => open("stage-restore", { stage_id: budget.stage_id! })}
-                    >
-                      恢复阶段预算
-                    </Button>
-                  )}
-                </div>
-                {budget.configured ? (
-                  <>
-                    <p className="mt-1 text-13">{budget.stage_name}</p>
-                    <dl className="mt-3 grid grid-cols-3 gap-2 text-13">
-                      <div>
-                        <dt className="text-secondary">预算</dt>
-                        <dd className="lab-finance-figure">{budget.budget} VC</dd>
-                      </div>
-                      <div>
-                        <dt className="text-secondary">已占用</dt>
-                        <dd className="lab-finance-figure lab-finance-reserved">{budget.reserved} VC</dd>
-                      </div>
-                      <div>
-                        <dt className="text-secondary">剩余</dt>
-                        <dd className="lab-finance-figure lab-finance-available">{budget.available} VC</dd>
-                      </div>
-                    </dl>
-                  </>
-                ) : (
-                  <p className="mt-2 text-13 text-secondary">尚未设置 VC 预算</p>
-                )}
-                {!!budget.entries?.length && (
-                  <div className="mt-3 space-y-2" aria-label={`${budget.project}预算明细`}>
-                    {budget.entries.map((entry) => (
-                      <div key={entry.id} className="flex items-center gap-3 text-13">
-                        <span className="mr-auto">{entry.name}</span>
-                        <span>{entry.amount} VC</span>
-                        {budget.can_allocate && !budget.deleted && (
-                          <Button
-                            size="sm"
-                            variant="neutral-primary"
-                            aria-label={`调整${entry.name}`}
-                            onClick={() => setBudgetAdjustment({ projectId: budget.project_id, entryId: entry.id })}
-                          >
-                            调整
-                          </Button>
-                        )}
-                      </div>
-                    ))}
+          {canManage && (
+            <select
+              aria-label="办理资金事项"
+              className={`${labInputClass} max-w-64`}
+              value=""
+              onChange={(event) => {
+                if (event.target.value) open(event.target.value);
+              }}
+            >
+              <option value="">办理资金事项…</option>
+              {managementActions
+                .filter((action) => allowedActions.has(action))
+                .map((action) => (
+                  <option key={action} value={action}>
+                    {financeActionLabels[action]}
+                  </option>
+                ))}
+            </select>
+          )}
+          {(data?.is_manager || data?.can_designate_manager) && (
+            <Button size="sm" variant="neutral-primary" onClick={() => open("manager")}>
+              指定公共池管理员
+            </Button>
+          )}
+        </div>
+        {!!visibleBudgets.length && (
+          <section aria-label="项目 VC 预算" className="space-y-2">
+            <h2 className="text-14 font-semibold">项目 VC 预算</h2>
+            <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+              {visibleBudgets.map((budget) => (
+                <article
+                  key={budget.project_id}
+                  data-tone="purple"
+                  className="lab-finance-card lab-finance-vc rounded-lg border border-subtle bg-layer-2 p-4"
+                >
+                  <div className="flex flex-wrap items-center gap-2">
+                    <h3 className="mr-auto text-14 font-medium">{budget.project}</h3>
+                    {budget.can_allocate && !budget.deleted && budget.configured && !projectId && (
+                      <Button
+                        size="sm"
+                        variant="primary"
+                        onClick={() => open("vc-stage", { project_id: budget.project_id })}
+                      >
+                        追加 VC 预算
+                      </Button>
+                    )}
+                    {budget.deleted && <span className="text-13 text-secondary">已删除</span>}
+                    {budget.stage_id && !budget.deleted && (
+                      <Button
+                        size="sm"
+                        variant="danger"
+                        onClick={() =>
+                          setDeletion({
+                            kind: "stage",
+                            id: budget.stage_id!,
+                            name: budget.stage_name ?? "VC 预算",
+                            blockedReason: budget.delete_reason ?? undefined,
+                          })
+                        }
+                      >
+                        删除阶段预算
+                      </Button>
+                    )}
+                    {budget.stage_id && budget.can_restore && (
+                      <Button
+                        size="sm"
+                        variant="neutral-primary"
+                        onClick={() => open("stage-restore", { stage_id: budget.stage_id! })}
+                      >
+                        恢复阶段预算
+                      </Button>
+                    )}
                   </div>
-                )}
-              </article>
-            ))}
-          </div>
-        </section>
-      )}
+                  {budget.configured ? (
+                    <>
+                      <p className="mt-1 text-13">{budget.stage_name}</p>
+                      <dl className="mt-3 grid grid-cols-3 gap-2 text-13">
+                        <div>
+                          <dt className="text-secondary">预算</dt>
+                          <dd className="lab-finance-figure">{budget.budget} VC</dd>
+                        </div>
+                        <div>
+                          <dt className="text-secondary">已占用</dt>
+                          <dd className="lab-finance-figure lab-finance-reserved">{budget.reserved} VC</dd>
+                        </div>
+                        <div>
+                          <dt className="text-secondary">剩余</dt>
+                          <dd className="lab-finance-figure lab-finance-available">{budget.available} VC</dd>
+                        </div>
+                      </dl>
+                    </>
+                  ) : (
+                    <p className="mt-2 text-13 text-secondary">尚未设置 VC 预算</p>
+                  )}
+                  {!!budget.entries?.length && (
+                    <div className="mt-3 space-y-2" aria-label={`${budget.project}预算明细`}>
+                      {budget.entries.map((entry) => (
+                        <div key={entry.id} className="flex items-center gap-3 text-13">
+                          <span className="mr-auto">{entry.name}</span>
+                          <span>{entry.amount} VC</span>
+                          {budget.can_allocate && !budget.deleted && (
+                            <Button
+                              size="sm"
+                              variant="neutral-primary"
+                              aria-label={`调整${entry.name}`}
+                              onClick={() => setBudgetAdjustment({ projectId: budget.project_id, entryId: entry.id })}
+                            >
+                              调整
+                            </Button>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </article>
+              ))}
+            </div>
+          </section>
+        )}
+        <nav className="mt-3 flex flex-wrap gap-2" aria-label="贡献与奖励视图">
+          {[
+            { id: "forecasts", label: "预算与参考预测" },
+            { id: "settlements", label: "核准与付款" },
+            { id: "vc-ledger", label: "VC 明细" },
+            { id: "workflow", label: "资金与项目流程" },
+          ].map((entry) => (
+            <Button
+              key={entry.id}
+              size="sm"
+              variant={tab === entry.id ? "accent-primary" : "neutral-primary"}
+              onClick={() => setTab(entry.id)}
+            >
+              {entry.label}
+            </Button>
+          ))}
+        </nav>
+      </details>
       {budgetError && (
         <p role="alert" className="text-13 text-danger-primary">
           {budgetError instanceof Error ? budgetError.message : "项目 VC 预算加载失败"}
@@ -399,11 +431,10 @@ export const LabFinance = observer(function LabFinance({
           { id: "project-budget", label: "项目启动预算" },
           { id: "management", label: "项目经费与成本" },
           { id: "accounts", label: "真实余额与到账" },
-          { id: "forecasts", label: "预算与参考预测" },
-          { id: "settlements", label: "核准与付款" },
+          { id: "cost", label: "工时与费用" },
+          { id: "payroll", label: "工资与报销" },
+          { id: "audit", label: "财务审计" },
           { id: "ledger", label: "账目明细" },
-          { id: "vc-ledger", label: "VC 明细" },
-          { id: "workflow", label: "资金与项目流程" },
         ].map((view) => (
           <Button
             key={view.id}
@@ -426,6 +457,42 @@ export const LabFinance = observer(function LabFinance({
           {error instanceof Error ? error.message : "资金账加载失败"}
         </p>
       )}
+      {!projectId && data && (
+        <div className="rounded-lg border border-subtle p-5">
+          <h2 className="mb-3 text-16 font-semibold">选择项目</h2>
+          <select
+            aria-label="选择财务项目"
+            className={`${labInputClass} max-w-80`}
+            value=""
+            onChange={(event) => setProjectId(event.target.value)}
+          >
+            <option value="">请选择项目</option>
+            {data.projects
+              .filter((project) => !project.deleted)
+              .map((project) => (
+                <option key={project.id} value={project.id}>
+                  {project.name}
+                </option>
+              ))}
+          </select>
+        </div>
+      )}
+      {data && tab === "accounts" && (
+        <div className="flex flex-wrap gap-2">
+          {["receipt", "opening"]
+            .filter((action) => allowedActions.has(action))
+            .map((action) => (
+              <Button
+                key={action}
+                size="sm"
+                variant={action === "receipt" ? "primary" : "neutral-primary"}
+                onClick={() => open(action, projectId ? { project_id: projectId, kind: "project" } : undefined)}
+              >
+                {financeActionLabels[action]}
+              </Button>
+            ))}
+        </div>
+      )}
       {data &&
         tab === "project-budget" &&
         (projectId && selectedProject?.permissions?.includes("view") ? (
@@ -434,10 +501,13 @@ export const LabFinance = observer(function LabFinance({
           <p className="text-13 text-secondary">{projectId ? "无项目预算查看权限" : "请选择资金项目"}</p>
         ))}
       {data &&
-        tab === "management" &&
+        ["management", "cost", "payroll", "audit"].includes(tab) &&
         (projectId ? (
           <LabFinanceManagement
-            key={projectId}
+            key={`${projectId}-${tab}`}
+            view={tab === "management" ? "overview" : tab}
+            onAccountAction={(action) => open(action, { project_id: projectId, kind: "project" })}
+            accountActions={["opening", "receipt"].filter((action) => allowedActions.has(action))}
             store={store}
             projectId={projectId}
             refreshKey={refreshKey + revision}

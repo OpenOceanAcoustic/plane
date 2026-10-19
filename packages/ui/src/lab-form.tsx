@@ -139,7 +139,7 @@ export function LabDialog({
           aria-describedby={description ? `${id}-description` : undefined}
           className={`shadow-xl fixed top-1/2 left-1/2 z-[81] max-h-[85vh] w-[calc(100%_-_2rem)] ${wide ? "max-w-4xl" : "max-w-lg"} -translate-x-1/2 -translate-y-1/2 overflow-y-auto rounded-xl border border-subtle bg-surface-1 p-6 text-primary`}
         >
-          <form onSubmit={submit} className="flex flex-col gap-4">
+          <form onSubmit={submit} className="lab-management flex flex-col gap-4">
             <DialogPrimitive.Title className="pr-7 text-18 font-semibold">{title}</DialogPrimitive.Title>
             {description && (
               <DialogPrimitive.Description id={`${id}-description`} className="text-13 text-secondary">
@@ -155,7 +155,7 @@ export function LabDialog({
                 {error || localError}
               </p>
             )}
-            <div className="mt-2 flex justify-end gap-2 border-t border-subtle pt-4">
+            <div className="sticky bottom-0 mt-2 flex justify-end gap-2 border-t border-subtle bg-surface-1 pt-4">
               <Button variant="neutral-primary" disabled={busy} onClick={onClose}>
                 {onSubmit ? "取消" : "关闭"}
               </Button>

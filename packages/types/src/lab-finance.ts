@@ -320,6 +320,9 @@ export type LabProjectBudgetItem = {
   name: string;
   amount: string;
   note: string;
+  quantity?: string;
+  unit?: string;
+  unit_price?: string;
 };
 export type LabProjectBudget = {
   id: string;

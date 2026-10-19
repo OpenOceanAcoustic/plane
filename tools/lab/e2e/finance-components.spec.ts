@@ -240,7 +240,8 @@ async function mount(
   route = "/test/lab/bounties",
   customPlanner = planner,
   targetOrigin = origin,
-  customBounties: LabBounty[] = [bounty]
+  customBounties: LabBounty[] = [bounty],
+  dailyDefaults = false
 ) {
   await page.addInitScript(
     (config) => {
@@ -252,6 +253,10 @@ async function mount(
     console.error("component browser error:", error.message);
   });
   await page.goto(targetOrigin);
+  if (view === "finance" && !dailyDefaults) {
+    await page.getByText("贡献、奖励与资金管理", { exact: true }).click();
+    await page.getByRole("button", { name: "真实余额与到账", exact: true }).click();
+  }
 }
 async function common(page: import("@playwright/test").Page, bounties: LabBounty[] = [bounty]) {
   await page.route("**/auth/get-csrf-token/", (route) => route.fulfill({ json: { csrf_token: "test" } }));
@@ -2048,7 +2053,7 @@ test("financial new budgets and opening balances do not inherit an unrelated acc
   await common(page);
   await page.route("**/lab/finance/overview/**", (route) => route.fulfill({ json: financialLimitOverview() }));
   await mount(page, "finance");
-  await page.getByRole("button", { name: "设置 VC 预算", exact: true }).click();
+  await page.getByRole("button", { name: /^(设置|追加) VC 预算$/ }).click();
   let dialog = page.getByRole("dialog");
   await dialog.getByLabel("VC 预算", { exact: true }).fill("1000000.00");
   await expect(dialog.getByRole("alert")).toHaveCount(0);
@@ -2124,7 +2129,7 @@ test("startup budget requires a project and respects read-only finance access", 
   );
   await mount(page, "finance");
   await page.getByRole("button", { name: "项目启动预算", exact: true }).click();
-  await expect(page.getByText("请选择资金项目", { exact: true })).toBeVisible();
+  await expect(page.getByText("尚未编制项目启动预算", { exact: true })).toBeVisible();
   await page.getByLabel("资金项目", { exact: true }).selectOption(projectId);
   await expect(page.getByText("尚未编制项目启动预算", { exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "编制预算", exact: true })).toHaveCount(0);
@@ -2238,7 +2243,7 @@ for (const result of ["approved", "rejected"] as const) {
     await expect(dialog.getByLabel("审核意见", { exact: true })).toHaveValue("");
     await expect(dialog.getByLabel("操作说明", { exact: true })).toHaveValue("");
     if (result === "rejected") await dialog.getByLabel("审核结果", { exact: true }).selectOption("rejected");
-    await dialog.getByRole("button", { name: "保存", exact: true }).click();
+    await dialog.getByRole("button", { name: result === "approved" ? "确认通过" : "确认退回", exact: true }).click();
     await expect(dialog).toHaveCount(0);
     expect(submitted).toMatchObject({ action: "review", reason: "", data: { result, note: "" } });
   });
@@ -2305,7 +2310,7 @@ test("multi-person labor totals each person and preserves the whole draft on rej
   await page.getByRole("button", { name: "工时与执行成本", exact: true }).click();
   await page.getByRole("button", { name: "登记工时／费用", exact: true }).click();
   const dialog = page.getByRole("dialog");
-  await dialog.getByLabel("登记对象", { exact: true }).selectOption("multiple");
+  await dialog.getByRole("button", { name: "多人", exact: true }).click();
   await dialog.getByRole("button", { name: "添加成员", exact: true }).click();
   await dialog.getByLabel("工作内容／费用事项", { exact: true }).fill("多人开发");
   await dialog.getByLabel("工时 成员甲", { exact: true }).fill("5×8");
@@ -2345,7 +2350,7 @@ test("labor creates a reusable team and loads its members into the grid", async 
   await page.getByRole("button", { name: "项目经费与成本", exact: true }).click();
   await page.getByRole("button", { name: "工时与执行成本", exact: true }).click();
   await page.getByRole("button", { name: "登记工时／费用", exact: true }).click();
-  await page.getByLabel("登记对象", { exact: true }).selectOption("team");
+  await page.getByRole("button", { name: "团队", exact: true }).click();
   await page.getByRole("button", { name: "新建团队", exact: true }).click();
   const teamDialog = page.getByRole("dialog");
   await teamDialog.getByLabel("团队名称", { exact: true }).fill("APP研发组");
@@ -2465,8 +2470,8 @@ test("management payroll prevents payment above the real project account balance
   await page.getByRole("button", { name: "登记支付", exact: true }).click();
   const dialog = page.getByRole("dialog");
   await dialog.getByLabel("项目资金账户", { exact: true }).selectOption("project-account");
-  await expect(dialog.getByText("项目可用资金不足", { exact: true })).toBeVisible();
-  await expect(dialog.getByRole("button", { name: "保存", exact: true })).toBeDisabled();
+  await expect(dialog.getByText(/项目可用资金不足：/)).toBeVisible();
+  await expect(dialog.getByRole("button", { name: "确认登记支付", exact: true })).toBeDisabled();
 });
 
 function qualityFixture() {
@@ -2488,6 +2493,123 @@ function qualityFixture() {
     ],
   };
 }
+
+test("daily finance starts with yuan budget and exposes direct labor without VC setup", async ({ page }) => {
+  await common(page);
+  await page.route("**/lab/finance/overview/**", (route) => route.fulfill({ json: overview() }));
+  await page.route("**/lab/finance/project-budgets/*/", (route) =>
+    route.fulfill({ json: { can_edit: true, versions: [] } })
+  );
+  await page.route("**/lab/projects/*/finance-management/", (route) => route.fulfill({ json: managementFixture() }));
+  await mount(page, "finance", `/test/lab/finance?project_id=${projectId}`, planner, origin, [bounty], true);
+  await expect(page.getByRole("button", { name: "编制预算", exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "设置 VC 预算", exact: true })).not.toBeVisible();
+  await page.getByRole("button", { name: "工时与费用", exact: true }).click();
+  await page.getByRole("button", { name: "登记工时／费用", exact: true }).click();
+  await expect(page.getByRole("button", { name: "团队", exact: true })).toBeVisible();
+  await page.setViewportSize({ width: 390, height: 844 });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(
+    true
+  );
+});
+
+test("startup budget preserves structured calculation and rounds currency exactly", async ({ page }) => {
+  await common(page);
+  await page.route("**/lab/finance/overview/**", (route) => route.fulfill({ json: overview() }));
+  let body: Record<string, unknown> | undefined;
+  await page.route("**/lab/finance/project-budgets/*/", (route) => {
+    if (route.request().method() === "POST") {
+      body = route.request().postDataJSON();
+      return route.fulfill({ status: 201, json: {} });
+    }
+    return route.fulfill({ json: { can_edit: true, versions: [] } });
+  });
+  await mount(page, "finance", `/test/lab/finance?project_id=${projectId}`, planner, origin, [bounty], true);
+  await page.getByRole("button", { name: "编制预算", exact: true }).click();
+  await page.getByLabel("第1项计价方式", { exact: true }).selectOption("calculation");
+  await page.getByLabel("第1项数量", { exact: true }).fill("2.5");
+  await page.getByLabel("第1项单价", { exact: true }).fill("1.99");
+  await expect(page.getByLabel("第1项预算金额", { exact: true })).toHaveValue("4.98");
+  await page.getByLabel("编制／调整说明", { exact: true }).fill("按工时测算");
+  await page.getByRole("button", { name: "保存预算", exact: true }).click();
+  await expect.poll(() => body).toBeTruthy();
+  expect((body?.items as Record<string, unknown>[])[0]).toMatchObject({
+    quantity: "2.5",
+    unit_price: "1.99",
+    unit: "小时",
+    amount: "4.98",
+  });
+});
+
+test("empty payment account gives a funding action while preserving the payment draft", async ({ page }) => {
+  await common(page);
+  await page.route("**/lab/finance/overview/**", (route) => route.fulfill({ json: overview() }));
+  const data = managementFixture();
+  data.accounts = [];
+  data.records = [
+    {
+      id: "payroll-empty",
+      kind: "payroll",
+      version: 1,
+      state: "ready",
+      data: {
+        user_id: memberId,
+        user_name: "成员甲",
+        amount: "300.00",
+        start: "2026-10-01",
+        end: "2026-10-31",
+        lines: [],
+      },
+    },
+  ];
+  await page.route("**/lab/projects/*/finance-management/", (route) => route.fulfill({ json: data }));
+  await mount(
+    page,
+    "finance",
+    `/test/lab/finance?project_id=${projectId}&finance_view=payroll`,
+    planner,
+    origin,
+    [bounty],
+    true
+  );
+  await page.getByRole("button", { name: "登记支付", exact: true }).click();
+  const payment = page.getByRole("dialog", { name: "登记实际支付", exact: true });
+  await expect(payment.getByText("暂无可用项目资金账户", { exact: true })).toBeVisible();
+  await payment.getByLabel("支付流水号", { exact: true }).fill("draft-reference");
+  await payment.getByRole("button", { name: "录入期初余额", exact: true }).click();
+  const funding = page.getByRole("dialog", { name: "录入期初余额", exact: true });
+  await expect(funding.getByLabel("资金归属", { exact: true })).toHaveValue(projectId);
+  await expect(funding.getByLabel("账户类型", { exact: true })).toHaveValue("project");
+  await funding.getByRole("button", { name: "取消", exact: true }).click();
+  await expect(payment.getByLabel("支付流水号", { exact: true })).toHaveValue("draft-reference");
+});
+
+test("quality overview filters missing documents and version changes without counting stale approval", async ({
+  page,
+}) => {
+  await common(page);
+  const data = qualityFixture();
+  data.records = [
+    {
+      id: "req-stale",
+      kind: "artifact",
+      state: "approved",
+      version: 2,
+      document_current: false,
+      document_status: "updated",
+      data: { category: "requirements", title: "过期资料" },
+    },
+  ];
+  await page.route("**/lab/projects/*/quality/", (route) => route.fulfill({ json: data }));
+  await mount(page, "quality", `/test/lab/quality?project_id=${projectId}`);
+  await expect(page.getByText("已通过资料类别：0 / 3", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: /待复审\s*1/ }).click();
+  await expect(page.getByText("内容已更新，待复审", { exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "编制项目计划", exact: true })).not.toBeVisible();
+  await page.getByRole("button", { name: /未登记\s*2/ }).click();
+  await expect(page.getByText("过期资料", { exact: true })).not.toBeVisible();
+  await expect(page.getByRole("button", { name: "编制项目计划", exact: true })).toBeVisible();
+});
 
 test("quality project plan saves assignments dates requirements and technical route", async ({ page }) => {
   await common(page);
@@ -2521,8 +2643,9 @@ test("quality project plan saves assignments dates requirements and technical ro
   await dialog.getByLabel("第1项开始日期", { exact: true }).fill("2026-10-18");
   await dialog.getByLabel("第1项结束日期", { exact: true }).fill("2026-11-01");
   await dialog.getByLabel("操作说明", { exact: true }).fill("提交初始项目计划");
-  await dialog.getByRole("button", { name: "保存", exact: true }).click();
+  await dialog.getByRole("button", { name: "保存草稿", exact: true }).click();
   await expect(dialog).toHaveCount(0);
+  await page.getByRole("button", { name: "项目计划", exact: true }).click();
   await expect(page.getByText("建模、实验、误差分析", { exact: true })).toBeVisible();
   expect(submitted).toMatchObject({
     kind: "plan",
@@ -2549,12 +2672,16 @@ test("quality requirement templates can be authored and changed approved documen
   });
   await mount(page, "quality", `/test/lab/quality?project_id=${projectId}`);
   await page.getByRole("button", { name: "需求与开发", exact: true }).click();
-  await page.getByRole("button", { name: "新增资料", exact: true }).click();
+  await page
+    .getByRole("row")
+    .filter({ hasText: "需求规格说明" })
+    .getByRole("button", { name: "新增资料", exact: true })
+    .click();
   const dialog = page.getByRole("dialog");
   await expect(dialog.getByLabel("资料内容", { exact: true })).toContainText("功能需求");
   await dialog.getByLabel("资料内容", { exact: true }).fill("功能：声学计算\n验收：误差低于约定指标");
   await dialog.getByLabel("操作说明", { exact: true }).fill("编写需规初稿");
-  await dialog.getByRole("button", { name: "保存", exact: true }).click();
+  await dialog.getByRole("button", { name: "保存草稿", exact: true }).click();
   await expect(dialog).toHaveCount(0);
   expect(submitted).toMatchObject({ kind: "artifact", data: { category: "requirements", title: "需求规格说明" } });
   data.records = [

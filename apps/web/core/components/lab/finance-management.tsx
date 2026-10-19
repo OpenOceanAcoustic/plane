@@ -3,7 +3,7 @@ import { useState } from "react";
 import useSWR from "swr";
 import type { LabFinanceManagement, LabManagementRecord } from "@plane/types";
 import type { LabStore } from "@plane/shared-state";
-import { Button } from "@plane/ui";
+import { Button, labDecimalText, labDecimalUnits } from "@plane/ui";
 import { FinanceManagementDialog } from "./finance-management-form";
 import type { FinanceManagementAction } from "./finance-management-form";
 import {
@@ -19,16 +19,24 @@ export function LabFinanceManagement({
   store,
   projectId,
   refreshKey,
+  view = "overview",
+  onAccountAction,
+  accountActions = [],
 }: {
   store: LabStore;
   projectId: string;
   refreshKey: number;
+  view?: string;
+  onAccountAction?: (action: string) => void;
+  accountActions?: string[];
 }) {
   const path = `projects/${projectId}/finance-management/`;
-  const { data, error, mutate } = useSWR(["lab-finance-management", store.slug, projectId, refreshKey], () =>
-    store.request<LabFinanceManagement>(path)
+  const { data, error, mutate } = useSWR(
+    ["lab-finance-management", store.slug, projectId, refreshKey],
+    () => store.request<LabFinanceManagement>(path),
+    { keepPreviousData: true }
   );
-  const [tab, setTab] = useState("overview");
+  const [tab, setTab] = useState(view);
   const [chosen, setChosen] = useState<FinanceManagementAction>();
   const [history, setHistory] = useState<LabManagementRecord>();
   const [failure, setFailure] = useState("");
@@ -50,6 +58,8 @@ export function LabFinanceManagement({
           path={path}
           data={data}
           chosen={chosen}
+          onAccountAction={onAccountAction}
+          accountActions={accountActions}
           onClose={() => setChosen(undefined)}
           onSaved={async () => {
             await mutate();
@@ -60,21 +70,25 @@ export function LabFinanceManagement({
         <ManagementHistory store={store} path={path} record={history} onClose={() => setHistory(undefined)} />
       )}
       <div className="flex flex-wrap gap-2" role="navigation" aria-label="项目财务管理视图">
-        {[
-          { id: "overview", label: "经费与预算执行" },
-          { id: "cost", label: "工时与执行成本" },
-          { id: "payroll", label: "工资及报销" },
-          { id: "audit", label: "财务审计" },
-        ].map((entry) => (
-          <Button
-            key={entry.id}
-            size="sm"
-            variant={tab === entry.id ? "accent-primary" : "neutral-primary"}
-            onClick={() => setTab(entry.id)}
-          >
-            {entry.label}
-          </Button>
-        ))}
+        {view === "overview" && (
+          <>
+            {[
+              { id: "overview", label: "经费与预算执行" },
+              { id: "cost", label: "工时与执行成本" },
+              { id: "payroll", label: "工资及报销" },
+              { id: "audit", label: "财务审计" },
+            ].map((entry) => (
+              <Button
+                key={entry.id}
+                size="sm"
+                variant={tab === entry.id ? "accent-primary" : "neutral-primary"}
+                onClick={() => setTab(entry.id)}
+              >
+                {entry.label}
+              </Button>
+            ))}
+          </>
+        )}
         <Button
           className="ml-auto"
           size="sm"
@@ -99,12 +113,23 @@ export function LabFinanceManagement({
           {failure}
         </p>
       )}
+      {error && (
+        <p role="alert" className="text-danger-primary">
+          {error instanceof Error ? error.message : "项目财务读取失败"}
+        </p>
+      )}
       {data.summary && (
         <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
           {[
             ["核定项目经费", data.summary.funding],
             ["核定预算", data.summary.budget],
             ["累计实际到账", data.summary.received],
+            [
+              "资金可用余额",
+              labDecimalText(
+                data.accounts.reduce((sum, account) => sum + (labDecimalUnits(account.available) ?? 0n), 0n)
+              ),
+            ],
             ["已认定执行成本", data.summary.cost],
             ["预算余量", data.summary.remaining],
             ["工资与报销已支付", data.summary.paid],

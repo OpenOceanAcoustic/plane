@@ -4,6 +4,8 @@ import type { ReactNode } from "react";
 import type { LabManagementRecord } from "@plane/types";
 import type { LabStore } from "@plane/shared-state";
 import { LabDialog } from "@plane/ui";
+// oxlint-disable-next-line import/no-unassigned-import -- shared management surfaces
+import "./management.css";
 export const managementStates: Record<string, string> = {
   submitted: "待核准",
   approved: "已通过",

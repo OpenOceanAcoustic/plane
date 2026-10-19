@@ -5,17 +5,14 @@ import useSWR from "swr";
 import type { LabManagementRecord, LabProjectQuality as QualityData } from "@plane/types";
 import type { LabStore } from "@plane/shared-state";
 import { Button, labInputClass } from "@plane/ui";
-import {
-  ManagementHistory,
-  ManagementTable,
-  managementCell as cell,
-  managementStates,
-  downloadManagement,
-} from "./management-ui";
+import { ManagementHistory, ManagementTable, managementCell as cell, downloadManagement } from "./management-ui";
 import { ProjectQualityDialog } from "./project-quality-form";
 import type { QualityAction } from "./project-quality-form";
+import { qualityMatches, qualityStatus } from "./quality-status";
+import type { QualityFilter } from "./quality-status";
 
 const stages = [
+  { id: "all", label: "全部资料" },
   { id: "plan", label: "项目计划" },
   { id: "development", label: "需求与开发" },
   { id: "testing", label: "测试资料" },
@@ -28,7 +25,7 @@ export function LabProjectQuality({ store, refreshKey }: { store: LabStore; refr
   return (
     <div className="space-y-4">
       <label className="flex max-w-80 flex-col gap-1 text-13">
-        项目
+        当前项目
         <select
           aria-label="质量管理项目"
           value={projectId}
@@ -37,7 +34,7 @@ export function LabProjectQuality({ store, refreshKey }: { store: LabStore; refr
             setParams((current) => {
               const next = new URLSearchParams(current);
               if (event.target.value) next.set("project_id", event.target.value);
-              else next.delete("project_id");
+              else next.set("project_id", "");
               return next;
             })
           }
@@ -64,7 +61,15 @@ function QualityProject({ store, projectId, refreshKey }: { store: LabStore; pro
   const { data, error, mutate } = useSWR(["lab-project-quality", store.slug, projectId, refreshKey], () =>
     store.request<QualityData>(path)
   );
-  const [tab, setTab] = useState("plan");
+  const [params, setParams] = useSearchParams();
+  const tab = params.get("quality_stage") ?? "all";
+  const setTab = (value: string) =>
+    setParams((current) => {
+      const next = new URLSearchParams(current);
+      next.set("quality_stage", value);
+      return next;
+    });
+  const [filter, setFilter] = useState<QualityFilter>("all");
   const [chosen, setChosen] = useState<QualityAction>();
   const [history, setHistory] = useState<LabManagementRecord>();
   const [failure, setFailure] = useState("");
@@ -72,60 +77,71 @@ function QualityProject({ store, projectId, refreshKey }: { store: LabStore; pro
   if (!data)
     return <p role={error ? "alert" : undefined}>{error instanceof Error ? error.message : "正在读取项目质量资料…"}</p>;
   const plan = data.records.find((record) => record.kind === "plan");
+  const categories = [{ key: "plan", stage: "plan", label: "项目计划" }, ...data.catalog];
+  const rowsFor = (key: string) =>
+    data.records.filter((row) =>
+      key === "plan" ? row.kind === "plan" : row.kind === "artifact" && row.data.category === key
+    );
   const approved = new Set(
     data.records.filter((row) => row.state === "approved" && row.document_current).map((row) => row.data.category)
   ).size;
   const actions = (row: LabManagementRecord) => (
     <div className="flex flex-wrap gap-1">
-      <Button size="sm" variant="neutral-primary" onClick={() => setHistory(row)}>
-        历史
-      </Button>
-      {row.data.page_id && (
-        <a
-          className="rounded border border-subtle px-2 py-1 text-12 text-accent-primary"
-          href={`/${store.slug}/projects/${projectId}/pages/${row.data.page_id}`}
-        >
-          打开文档
-        </a>
-      )}
-      {data.can_edit && row.state !== "submitted" && (
-        <>
-          <Button
-            size="sm"
-            variant="neutral-primary"
-            onClick={() => setChosen({ action: "save", kind: row.kind, row })}
-          >
-            编辑
+      <details>
+        <summary className="cursor-pointer rounded border border-subtle px-3 py-2 text-12">更多</summary>
+        <div className="flex flex-wrap gap-2 py-2">
+          <Button size="sm" variant="neutral-primary" onClick={() => setHistory(row)}>
+            历史
           </Button>
-          <Button size="sm" onClick={() => setChosen({ action: "submit", kind: row.kind, row })}>
-            提交评审
-          </Button>
-        </>
-      )}
-      {data.can_edit && row.state === "submitted" && (
+          {row.data.page_id && row.document_status !== "unavailable" && (
+            <a
+              className="rounded border border-subtle px-2 py-1 text-12 text-accent-primary"
+              href={`/${store.slug}/projects/${projectId}/pages/${row.data.page_id}`}
+            >
+              打开文档
+            </a>
+          )}
+          {data.can_edit && row.state !== "submitted" && (
+            <>
+              <Button
+                size="sm"
+                variant="neutral-primary"
+                onClick={() => setChosen({ action: "save", kind: row.kind, row })}
+              >
+                {row.document_status === "unavailable" ? "重新关联" : "编辑"}
+              </Button>
+            </>
+          )}
+          {data.can_edit && row.state === "submitted" && (
+            <Button
+              size="sm"
+              variant="neutral-primary"
+              onClick={() => setChosen({ action: "withdraw", kind: row.kind, row })}
+            >
+              撤回
+            </Button>
+          )}
+        </div>
+      </details>
+      {data.can_edit && row.state !== "submitted" && (row.state !== "approved" || !row.document_current) && (
         <Button
           size="sm"
-          variant="neutral-primary"
-          onClick={() => setChosen({ action: "withdraw", kind: row.kind, row })}
+          disabled={row.document_status === "unavailable"}
+          onClick={() => setChosen({ action: "submit", kind: row.kind, row })}
         >
-          撤回
+          {row.state === "approved" ? "重新提交评审" : "提交评审"}
         </Button>
       )}
-      {data.can_edit && data.can_review && row.state === "submitted" && (
+      {data.can_edit && data.can_review && row.state === "submitted" && row.document_current && (
         <Button size="sm" onClick={() => setChosen({ action: "review", kind: row.kind, row })}>
           评审
         </Button>
       )}
     </div>
   );
-  const status = (row: LabManagementRecord) =>
-    row.state === "approved" && !row.document_current
-      ? "文档已更新或不可用，待复审"
-      : row.state === "submitted"
-        ? "待评审"
-        : managementStates[row.state];
+  const status = qualityStatus;
   return (
-    <section className="space-y-4" aria-label="项目过程与质量管理">
+    <section className="lab-management space-y-4" aria-label="项目过程与质量管理">
       {chosen && (
         <ProjectQualityDialog
           key={`${chosen.kind}-${chosen.action}-${chosen.row?.id ?? chosen.category ?? "new"}`}
@@ -170,18 +186,150 @@ function QualityProject({ store, projectId, refreshKey }: { store: LabStore; pro
           {failure}
         </p>
       )}
+      <div className="grid grid-cols-2 gap-3 md:grid-cols-5" aria-label="资料状态筛选">
+        {(
+          [
+            ["missing", "未登记", categories.filter((entry) => !rowsFor(entry.key).length).length],
+            ["draft", "草稿／需修改", data.records.filter((row) => qualityMatches(row, "draft")).length],
+            ["submitted", "待评审", data.records.filter((row) => qualityMatches(row, "submitted")).length],
+            ["approved", "已通过", data.records.filter((row) => qualityMatches(row, "approved")).length],
+            ["outdated", "待复审", data.records.filter((row) => qualityMatches(row, "outdated")).length],
+          ] as [QualityFilter, string, number][]
+        ).map(([value, label, count]) => (
+          <button
+            key={value}
+            type="button"
+            aria-pressed={filter === value}
+            className="lab-management-count"
+            onClick={() => {
+              setFilter(value);
+              setTab("all");
+            }}
+          >
+            <span>{label}</span>
+            <strong>{count}</strong>
+          </button>
+        ))}
+      </div>
       <nav className="flex flex-wrap gap-2" aria-label="项目质量阶段">
         {stages.map((stage) => (
           <Button
             size="sm"
             key={stage.id}
+            aria-label={stage.label}
+            aria-pressed={tab === stage.id}
             variant={tab === stage.id ? "accent-primary" : "neutral-primary"}
-            onClick={() => setTab(stage.id)}
+            onClick={() => {
+              setTab(stage.id);
+              setFilter("all");
+            }}
           >
             {stage.label}
+            <span className="ml-2 text-secondary">
+              {
+                categories.filter(
+                  (entry) =>
+                    (stage.id === "all" || entry.stage === stage.id) &&
+                    rowsFor(entry.key).some((row) => qualityMatches(row, "approved"))
+                ).length
+              }
+              /{categories.filter((entry) => stage.id === "all" || entry.stage === stage.id).length}
+            </span>
           </Button>
         ))}
       </nav>
+      <>
+        {filter !== "all" && (
+          <Button size="sm" variant="neutral-primary" onClick={() => setFilter("all")}>
+            清除状态筛选
+          </Button>
+        )}
+        <ManagementTable headings={["资料类别／名称", "状态", "资料记录／文档版本", "操作"]}>
+          {categories
+            .filter((category) => tab === "all" || category.stage === tab)
+            .flatMap((category) => {
+              const rows = rowsFor(category.key);
+              if (!rows.length)
+                return filter !== "all" && filter !== "missing"
+                  ? []
+                  : [
+                      <tr key={category.key}>
+                        <td className={cell}>{category.label}</td>
+                        <td className={cell}>未登记</td>
+                        <td className={cell}>—</td>
+                        <td className={cell}>
+                          {data.can_edit && (
+                            <Button
+                              size="sm"
+                              variant="neutral-primary"
+                              onClick={() =>
+                                setChosen(
+                                  category.key === "plan"
+                                    ? { action: "save", kind: "plan" }
+                                    : { action: "save", kind: "artifact", category: category.key }
+                                )
+                              }
+                            >
+                              {category.key === "plan" ? "编制项目计划" : "新增资料"}
+                            </Button>
+                          )}
+                        </td>
+                      </tr>,
+                    ];
+              return rows
+                .filter((row) => qualityMatches(row, filter))
+                .map((row) => (
+                  <tr key={row.id}>
+                    <td className={cell}>
+                      <span className="block text-12 text-secondary">{category.label}</span>
+                      {row.data.page_id && row.document_status !== "unavailable" ? (
+                        <a
+                          className="text-accent-primary underline"
+                          href={`/${store.slug}/projects/${projectId}/pages/${row.data.page_id}`}
+                        >
+                          {row.data.title}
+                        </a>
+                      ) : (
+                        row.data.title
+                      )}
+                    </td>
+                    <td className={cell}>
+                      <span
+                        className="lab-management-status"
+                        data-state={
+                          !row.document_current && ["approved", "submitted"].includes(row.state)
+                            ? "outdated"
+                            : row.state
+                        }
+                      >
+                        {status(row)}
+                      </span>
+                    </td>
+                    <td className={`${cell} text-12`}>
+                      <p>
+                        资料记录 V{row.version} · {row.actor}
+                      </p>
+                      <p>
+                        文档版本：
+                        {row.document_version_at
+                          ? new Date(row.document_version_at).toLocaleString("zh-CN", { timeZone: "Asia/Shanghai" })
+                          : "—"}
+                      </p>
+                      {row.data.reviewed_by && (
+                        <p>
+                          最近评审：{row.data.reviewed_by} ·{" "}
+                          {row.data.reviewed_at
+                            ? new Date(row.data.reviewed_at).toLocaleString("zh-CN", { timeZone: "Asia/Shanghai" })
+                            : "—"}
+                        </p>
+                      )}
+                    </td>
+                    <td className={cell}>{actions(row)}</td>
+                  </tr>
+                ));
+            })}
+        </ManagementTable>
+      </>
       {tab === "plan" && (
         <section className="space-y-3">
           <div className="flex items-center gap-2">
@@ -221,46 +369,6 @@ function QualityProject({ store, projectId, refreshKey }: { store: LabStore; pro
           )}
         </section>
       )}
-      {data.catalog
-        .filter((entry) => entry.stage === tab)
-        .map((category) => {
-          const rows = data.records.filter((row) => row.kind === "artifact" && row.data.category === category.key);
-          return (
-            <section className="space-y-2 rounded-lg border border-subtle p-4" key={category.key}>
-              <div className="flex items-center gap-2">
-                <h2 className="mr-auto font-semibold">{category.label}</h2>
-                {data.can_edit && (
-                  <Button
-                    size="sm"
-                    variant="neutral-primary"
-                    onClick={() => setChosen({ action: "save", kind: "artifact", category: category.key })}
-                  >
-                    新增资料
-                  </Button>
-                )}
-              </div>
-              {rows.length ? (
-                <ManagementTable headings={["资料名称", "状态", "版本／登记人", "操作"]}>
-                  {rows.map((row) => (
-                    <tr key={row.id}>
-                      <td className={cell}>{row.data.title}</td>
-                      <td className={cell}>
-                        {status(row)}
-                        {row.data.review_note && <p className="max-w-64 whitespace-pre-wrap">{row.data.review_note}</p>}
-                      </td>
-                      <td className={cell}>
-                        V{row.version} · {row.actor}
-                      </td>
-                      <td className={cell}>{actions(row)}</td>
-                    </tr>
-                  ))}
-                </ManagementTable>
-              ) : (
-                <p className="text-13 text-secondary">尚未登记资料</p>
-              )}
-            </section>
-          );
-        })}
     </section>
   );
 }

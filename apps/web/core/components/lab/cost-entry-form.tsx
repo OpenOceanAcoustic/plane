@@ -142,7 +142,7 @@ export function CostEntryDialog({
   const hourError =
     labor && lines.some((line) => line.hours && !laborHours(line.hours)) ? "工时请填数字或天数×每日小时，例如5×8" : "";
   const field = (name: string, label: string, type = "text", fallback = "", required = true) => (
-    <LabField label={label}>
+    <LabField label={required ? label : `${label}（选填）`}>
       {type === "amount" ? (
         <LabAmountInput
           name={name}
@@ -154,6 +154,7 @@ export function CostEntryDialog({
         />
       ) : (
         <input
+          aria-label={label}
           name={name}
           className={labInputClass}
           type={type}
@@ -247,22 +248,32 @@ export function CostEntryDialog({
           )}
           {labor && !row && data.can_record && (
             <LabField label="登记对象">
-              <select
-                className={labInputClass}
-                value={mode}
-                onChange={(event) => {
-                  setMode(event.target.value);
-                  changed();
-                  if (event.target.value === "single")
-                    setLines((current) =>
-                      current.length ? [current[0]!] : [{ key: uuidv4(), user_id: data.user_id, hours: "", rate: "" }]
-                    );
-                }}
-              >
-                <option value="single">单人</option>
-                <option value="multiple">多人</option>
-                <option value="team">团队</option>
-              </select>
+              <div role="group" aria-label="登记对象" className="flex flex-wrap gap-2">
+                {[
+                  { value: "single", label: "单人" },
+                  { value: "multiple", label: "多人" },
+                  { value: "team", label: "团队" },
+                ].map((entry) => (
+                  <Button
+                    key={entry.value}
+                    size="sm"
+                    aria-pressed={mode === entry.value}
+                    variant={mode === entry.value ? "primary" : "neutral-primary"}
+                    onClick={() => {
+                      setMode(entry.value);
+                      changed();
+                      if (entry.value === "single")
+                        setLines((current) =>
+                          current.length
+                            ? [current[0]!]
+                            : [{ key: uuidv4(), user_id: data.user_id, hours: "", rate: "" }]
+                        );
+                    }}
+                  >
+                    {entry.label}
+                  </Button>
+                ))}
+              </div>
             </LabField>
           )}
         </div>
@@ -355,7 +366,14 @@ export function CostEntryDialog({
                             onChange={(event) => updateLine(line.key, "hours", event.target.value)}
                           />
                           {parsed && (
-                            <span className="text-12 text-secondary">{labDecimalText(parsed.units)} 小时</span>
+                            <span className="text-12 text-secondary">
+                              {line.hours}＝{labDecimalText(parsed.units)} 小时
+                            </span>
+                          )}
+                          {line.hours && !parsed && (
+                            <span role="alert" className="text-12 text-danger-primary">
+                              请输入数字或天数×每日小时
+                            </span>
                           )}
                         </td>
                         <td className="min-w-36 p-2">
@@ -367,7 +385,10 @@ export function CostEntryDialog({
                             onValueChange={(value) => updateLine(line.key, "rate", value)}
                           />
                         </td>
-                        <td className="p-2 whitespace-nowrap" aria-label={`合计 ${name}`}>
+                        <td
+                          className="bg-layer-2 p-2 text-right font-semibold whitespace-nowrap tabular-nums"
+                          aria-label={`合计 ${name}`}
+                        >
                           {labDecimalText(laborAmount(line.hours, line.rate))}
                         </td>
                         {mode === "multiple" && (
@@ -393,7 +414,7 @@ export function CostEntryDialog({
                     <td className="p-2" colSpan={3}>
                       最终合计（元）
                     </td>
-                    <td className="p-2" aria-label="工时最终合计">
+                    <td className="p-2 text-right font-semibold tabular-nums" aria-label="工时最终合计">
                       {labDecimalText(laborTotal)}
                     </td>
                   </tr>
@@ -448,8 +469,9 @@ export function CostEntryDialog({
         )}
         <div className="grid grid-cols-2 gap-3">
           {field("evidence", "费用凭证／依据", "text", "", false)}
-          <LabField label="操作说明">
+          <LabField label="操作说明（选填）">
             <input
+              aria-label="操作说明"
               className={labInputClass}
               maxLength={2000}
               value={reason}

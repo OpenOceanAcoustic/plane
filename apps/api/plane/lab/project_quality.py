@@ -9,6 +9,7 @@ from html import escape
 
 from django.db import transaction
 from django.http import HttpResponse
+from django.utils import timezone
 from django.shortcuts import get_object_or_404
 from rest_framework.exceptions import PermissionDenied, ValidationError
 from rest_framework.response import Response
@@ -75,6 +76,14 @@ def current_document(row, project, user):
 def quality_record(row, project, user):
     result = record_data(row)
     result["document_current"] = current_document(row, project, user)
+    page = accessible_pages(user, project.workspace, project.id).filter(
+        id=row.data.get("page_id"), archived_at__isnull=True, access=Page.PUBLIC_ACCESS
+    ).first() if row.data.get("page_id") else None
+    result["document_status"] = "current" if result["document_current"] else "updated" if page else "unavailable"
+    bound = PageVersion.objects.filter(page=page, id=row.data.get("page_version_id")).first() if page else None
+    current = PageVersion.objects.filter(page=page).order_by("-created_at", "-id").first() if page else None
+    result["document_version_at"] = bound.created_at.isoformat() if bound else None
+    result["current_document_version_at"] = current.created_at.isoformat() if current else None
     if not result["document_current"]:
         result["data"] = {**result["data"], "page_name": ""}
     return result
@@ -269,6 +278,7 @@ def quality_mutation(user, project, body):
             if not version:
                 raise ValidationError("资料没有可用版本")
             payload.update(page_version_id=str(version.id), page_name=page.name, page_hash=page_fingerprint(page))
+            payload.update(submitted_by=user.display_name, submitted_at=timezone.now().isoformat())
             state = "submitted"
         elif action == "withdraw":
             if previous.state != "submitted":
@@ -283,6 +293,7 @@ def quality_mutation(user, project, body):
             if state not in ("approved", "rejected"):
                 raise ValidationError("评审结果无效")
             payload["review_note"] = text_field(data.get("note"), "评审意见", 4000, required=True)
+            payload.update(reviewed_by=user.display_name, reviewed_at=timezone.now().isoformat())
     else:
         raise ValidationError("操作无效")
     row = append_record(user, project, body, kind, record_key, previous, state, payload)

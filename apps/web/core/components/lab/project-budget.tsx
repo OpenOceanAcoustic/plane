@@ -48,7 +48,19 @@ export function LabProjectBudget({ store, projectId }: { store: LabStore; projec
     reason.trim() &&
     items.every((row) => row.name.trim() && amountValid(row.amount));
   const change = (index: number, patch: Partial<LabProjectBudgetItem>) => {
-    setItems((current) => current.map((item, position) => (position === index ? { ...item, ...patch } : item)));
+    setItems((current) =>
+      current.map((item, position) => {
+        if (position !== index) return item;
+        const next = { ...item, ...patch };
+        if (next.quantity !== undefined && ("quantity" in patch || "unit_price" in patch || "unit" in patch)) {
+          const quantity = labDecimalUnits(next.quantity),
+            price = labDecimalUnits(next.unit_price ?? "");
+          next.amount = quantity === null || price === null ? "" : labDecimalText((quantity * price + 50n) / 100n);
+          next.note = `${next.quantity}${next.unit ?? ""} × ${next.unit_price ?? ""}元／${next.unit ?? "项"}`;
+        }
+        return next;
+      })
+    );
     setRequestKey(uuidv4());
   };
   const begin = () => {
@@ -109,6 +121,11 @@ export function LabProjectBudget({ store, projectId }: { store: LabStore; projec
     <section aria-label="项目启动预算" className="space-y-4">
       <div className="flex flex-wrap items-center gap-2">
         <h2 className="mr-auto text-16 font-semibold">项目启动预算</h2>
+        {editing && (
+          <span role="status" className="text-13 text-secondary">
+            未保存
+          </span>
+        )}
         {!editing && !!data?.versions.length && (
           <select
             aria-label="预算版本"
@@ -220,6 +237,70 @@ export function LabProjectBudget({ store, projectId }: { store: LabStore; projec
                     <td className="min-w-40 px-3 py-2">
                       {editing ? (
                         <>
+                          <select
+                            aria-label={`第${index + 1}项计价方式`}
+                            className={labInputClass}
+                            value={row.quantity === undefined ? "amount" : "calculation"}
+                            disabled={busy}
+                            onChange={(event) => {
+                              if (event.target.value === "calculation")
+                                change(index, {
+                                  quantity: "1",
+                                  unit_price: row.amount,
+                                  unit: row.category === "labor" ? "小时" : "项",
+                                });
+                              else {
+                                setItems((current) =>
+                                  current.map((item, position) => {
+                                    if (position !== index) return item;
+                                    const { quantity: _quantity, unit_price: _price, unit: _unit, ...rest } = item;
+                                    return rest;
+                                  })
+                                );
+                                setRequestKey(uuidv4());
+                              }
+                            }}
+                          >
+                            <option value="amount">直接填写金额</option>
+                            <option value="calculation">数量 × 单价</option>
+                          </select>
+                          {row.quantity !== undefined && (
+                            <div className="my-2 grid grid-cols-3 gap-2">
+                              <label className="text-12">
+                                数量
+                                <input
+                                  aria-label={`第${index + 1}项数量`}
+                                  className={labInputClass}
+                                  value={row.quantity}
+                                  inputMode="decimal"
+                                  disabled={busy}
+                                  onChange={(event) => change(index, { quantity: event.target.value })}
+                                />
+                              </label>
+                              <label className="text-12">
+                                单价（元）
+                                <input
+                                  aria-label={`第${index + 1}项单价`}
+                                  className={labInputClass}
+                                  value={row.unit_price ?? ""}
+                                  inputMode="decimal"
+                                  disabled={busy}
+                                  onChange={(event) => change(index, { unit_price: event.target.value })}
+                                />
+                              </label>
+                              <label className="text-12">
+                                单位
+                                <input
+                                  aria-label={`第${index + 1}项单位`}
+                                  className={labInputClass}
+                                  value={row.unit ?? ""}
+                                  maxLength={20}
+                                  disabled={busy}
+                                  onChange={(event) => change(index, { unit: event.target.value })}
+                                />
+                              </label>
+                            </div>
+                          )}
                           <input
                             aria-label={`第${index + 1}项预算金额`}
                             type="text"
@@ -228,6 +309,7 @@ export function LabProjectBudget({ store, projectId }: { store: LabStore; projec
                             value={row.amount}
                             maxLength={15}
                             disabled={busy}
+                            readOnly={row.quantity !== undefined}
                             aria-invalid={!amountValid(row.amount)}
                             onChange={(event) => change(index, { amount: event.target.value })}
                           />
@@ -319,7 +401,8 @@ export function LabProjectBudget({ store, projectId }: { store: LabStore; projec
                   }}
                 />
               </label>
-              <div className="flex gap-2">
+              <div className="lab-management-footer">
+                <strong className="mr-auto text-14">预算合计：{labDecimalText(totalUnits)} 元</strong>
                 <Button size="sm" variant="primary" disabled={!valid || busy || conflict} onClick={() => void save()}>
                   {busy ? "保存中…" : "保存预算"}
                 </Button>
@@ -328,6 +411,7 @@ export function LabProjectBudget({ store, projectId }: { store: LabStore; projec
                   variant="neutral-primary"
                   disabled={busy}
                   onClick={() => {
+                    if (!window.confirm("放弃未保存的预算修改？")) return;
                     setEditing(false);
                     setFailure("");
                     setConflict(false);

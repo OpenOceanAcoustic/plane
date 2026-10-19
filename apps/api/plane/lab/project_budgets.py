@@ -61,12 +61,22 @@ def normalize_budget(data):
             raise ValidationError("预算金额须为非负数，最多12位整数及2位小数")
         amount = Decimal(raw)
         total += amount
+        calculation = {}
+        if "quantity" in item:
+            quantity, price = item.get("quantity"), item.get("unit_price")
+            if any(not isinstance(value, str) or not re.fullmatch(r"[0-9]{1,12}(?:\.[0-9]{1,2})?", value) for value in (quantity, price)):
+                raise ValidationError("预算数量和单价须为非负数，最多12位整数及2位小数")
+            computed = (Decimal(quantity) * Decimal(price)).quantize(Decimal("0.01"), rounding="ROUND_HALF_UP")
+            if computed != amount:
+                raise ValidationError("预算金额与数量乘单价不一致")
+            calculation = {"quantity": quantity, "unit_price": price, "unit": text_field(item.get("unit", ""), "计价单位", 20, required=True)}
         normalized.append(
             {
                 "category": item["category"],
                 "name": text_field(item.get("name", ""), "费用项目", 120, required=True),
                 "amount": f"{amount:.2f}",
                 "note": text_field(item.get("note", ""), "测算依据", 1000),
+                **calculation,
             }
         )
     if total > MAX_AMOUNT:
@@ -153,7 +163,7 @@ def budget_csv(row, project):
     output.write("\ufeff")
     writer = csv.writer(output)
     writer.writerow(
-        ["项目", "版本", "费用类别", "费用项目", "预算金额（元）", "测算依据", "编制人", "编制时间", "编制／调整说明"]
+        ["项目", "版本", "费用类别", "费用项目", "预算金额（元）", "测算依据", "编制人", "编制时间", "编制／调整说明", "数量", "单位", "单价（元）"]
     )
     for item in row.items:
         writer.writerow(
@@ -167,6 +177,9 @@ def budget_csv(row, project):
                 csv_cell(row.actor_name),
                 row.created_at.isoformat(),
                 csv_cell(row.reason),
+                item.get("quantity", ""),
+                csv_cell(item.get("unit", "")),
+                item.get("unit_price", ""),
             ]
         )
     writer.writerow(["合计", "", "", "", f"{row.total:.2f}"])

@@ -1,0 +1,67 @@
+/* Copyright (c) 2026 OpenOceanAcoustic and contributors. SPDX-License-Identifier: AGPL-3.0-only */
+.lab-management {
+  min-width: 0;
+  font-size: 14px;
+}
+.lab-management button,
+.lab-management summary,
+.lab-management-link {
+  min-height: 36px;
+}
+.lab-management .lab-money {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.lab-management-count {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: flex-start;
+  border: 1px solid var(--border-color-subtle);
+  border-radius: 10px;
+  padding: 12px;
+  text-align: left;
+}
+.lab-management-count strong {
+  font-size: 22px;
+  font-variant-numeric: tabular-nums;
+}
+.lab-management-count[aria-pressed="true"] {
+  box-shadow: inset 0 0 0 2px var(--text-color-accent-primary);
+}
+.lab-management-status {
+  display: inline-flex;
+  border: 1px solid var(--border-color-subtle);
+  border-radius: 5px;
+  padding: 3px 8px;
+  font-size: 12px;
+}
+.lab-management-status[data-state="approved"],
+.lab-management-status[data-state="paid"] {
+  color: var(--label-emerald-text);
+  background: var(--label-emerald-bg);
+}
+.lab-management-status[data-state="submitted"],
+.lab-management-status[data-state="outdated"] {
+  color: var(--label-orange-text);
+  background: var(--label-orange-bg);
+}
+.lab-management-footer {
+  position: sticky;
+  bottom: 0;
+  z-index: 10;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  background: var(--background-color-surface-1);
+  border-top: 1px solid var(--border-color-subtle);
+  padding: 12px;
+}
+@media (max-width: 640px) {
+  .lab-management button,
+  .lab-management summary {
+    min-height: 44px;
+  }
+}

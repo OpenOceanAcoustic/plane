@@ -30,6 +30,9 @@ export type LabManagementRecord = {
   recovery_remaining?: string;
   payroll_id?: string | null;
   document_current?: boolean;
+  document_status?: "current" | "updated" | "unavailable";
+  document_version_at?: string | null;
+  current_document_version_at?: string | null;
   data: {
     source_type?: string;
     funding_amount?: string;
@@ -77,6 +80,10 @@ export type LabManagementRecord = {
     page_id?: string;
     page_version_id?: string;
     page_name?: string;
+    submitted_by?: string;
+    submitted_at?: string;
+    reviewed_by?: string;
+    reviewed_at?: string;
   };
 };
 export type LabFinanceManagement = {

@@ -53,10 +53,14 @@ export function ProjectQualityDialog({
   const [requestKey, setRequestKey] = useState(() => uuidv4());
   const [recordId] = useState(() => row?.id ?? (kind === "plan" ? data.plan_id : uuidv4()));
   const [busy, setBusy] = useState(false);
+  const [dirty, setDirty] = useState(false);
   const [error, setError] = useState("");
-  const changed = () => setRequestKey(uuidv4());
+  const changed = () => {
+    setDirty(true);
+    setRequestKey(uuidv4());
+  };
   const { data: documents, mutate: refreshDocuments } = useSWR(
-    mode === "link" && action === "save" ? ["quality-project-documents", store.slug, projectId] : null,
+    mode !== "write" && action === "save" ? ["quality-project-documents", store.slug, projectId] : null,
     () => store.request<LabDocumentList>(`projects/${projectId}/documents/`)
   );
   const assign = (rowId: string, field: keyof LabAssignment, value: string) => {
@@ -76,9 +80,23 @@ export function ProjectQualityDialog({
   return (
     <LabDialog
       title={name}
+      wide={action === "save"}
+      submitLabel={
+        action === "save"
+          ? "保存草稿"
+          : action === "review"
+            ? result === "approved"
+              ? "确认通过"
+              : "确认退回"
+            : action === "submit"
+              ? "提交评审"
+              : "确认撤回"
+      }
       busy={busy}
       error={error}
-      onClose={onClose}
+      onClose={() => {
+        if (!dirty || window.confirm("放弃未保存的修改？")) onClose();
+      }}
       onSubmit={async () => {
         setBusy(true);
         setError("");
@@ -97,7 +115,7 @@ export function ProjectQualityDialog({
                     title,
                     category,
                     content: mode === "write" ? content : "",
-                    page_id: mode === "link" ? pageId : "",
+                    page_id: mode !== "write" ? pageId : "",
                     requirements,
                     technical_route: route,
                     assignments: assignments.map(({ rowId: _id, ...entry }) => entry),
@@ -114,6 +132,35 @@ export function ProjectQualityDialog({
       }}
     >
       <fieldset disabled={busy} className="space-y-4">
+        {action !== "save" && row && (
+          <dl className="space-y-1 rounded-lg border border-subtle bg-layer-2 p-3 text-13">
+            <div>资料：{row.data.title}</div>
+            <div>资料记录：V{row.version}</div>
+            <div>
+              文档版本：
+              {row.document_version_at
+                ? new Date(row.document_version_at).toLocaleString("zh-CN", { timeZone: "Asia/Shanghai" })
+                : "—"}
+            </div>
+            <div>提交人：{row.data.submitted_by ?? row.actor}</div>
+            <div>
+              提交时间：
+              {row.data.submitted_at
+                ? new Date(row.data.submitted_at).toLocaleString("zh-CN", { timeZone: "Asia/Shanghai" })
+                : "—"}
+            </div>
+            {row.data.page_id && row.document_status !== "unavailable" && (
+              <a
+                className="inline-block text-accent-primary underline"
+                target="_blank"
+                rel="noreferrer"
+                href={`/${store.slug}/projects/${projectId}/pages/${row.data.page_id}`}
+              >
+                查看当前文档
+              </a>
+            )}
+          </dl>
+        )}
         {action === "save" && (
           <>
             <LabField label="资料名称">
@@ -158,7 +205,7 @@ export function ProjectQualityDialog({
                 </LabField>
                 <h3 className="text-14 font-medium">成员分工与排期</h3>
                 {assignments.map((entry, index) => (
-                  <div key={entry.rowId} className="grid gap-2 rounded border border-subtle p-3 sm:grid-cols-2">
+                  <div key={entry.rowId} className="grid gap-2 rounded border border-subtle p-3 sm:grid-cols-4">
                     <LabField label={`第${index + 1}项项目成员`}>
                       <select
                         className={labInputClass}
@@ -230,17 +277,26 @@ export function ProjectQualityDialog({
             ) : (
               <>
                 <LabField label="资料来源">
-                  <select
-                    className={labInputClass}
-                    value={mode}
-                    onChange={(event) => {
-                      setMode(event.target.value);
-                      changed();
-                    }}
-                  >
-                    <option value="write">编写内容</option>
-                    <option value="link">关联项目文档／上传文件</option>
-                  </select>
+                  <div className="flex flex-wrap gap-2" role="group" aria-label="资料来源">
+                    {[
+                      { value: "write", label: "在线编写" },
+                      { value: "link", label: "关联项目文档" },
+                      { value: "upload", label: "上传文件" },
+                    ].map((entry) => (
+                      <Button
+                        key={entry.value}
+                        size="sm"
+                        aria-pressed={mode === entry.value}
+                        variant={mode === entry.value ? "primary" : "neutral-primary"}
+                        onClick={() => {
+                          setMode(entry.value);
+                          changed();
+                        }}
+                      >
+                        {entry.label}
+                      </Button>
+                    ))}
+                  </div>
                 </LabField>
                 {mode === "write" ? (
                   <LabField label="资料内容">

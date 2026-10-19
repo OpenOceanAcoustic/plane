@@ -400,11 +400,16 @@ def test_quality_templates_native_documents_and_version_bound_review(laboratory)
         )
     )
     assert approved["document_current"]
+    assert approved["document_status"] == "current"
+    assert approved["document_version_at"]
+    assert approved["data"]["reviewed_by"] == lab["lead"].display_name
+    assert submitted["data"]["submitted_by"] == lab["lead"].display_name
     page.description_html = "<p>需求变更</p>"
     page.save(update_fields=["description_html"])
     # Content changes without a new PageVersion must also invalidate the old approval.
     current = lab["client"](lab["lead"]).get(path(lab, True)).json()["records"][0]
     assert current["state"] == "approved" and current["document_current"] is False
+    assert current["document_status"] == "updated"
     resubmitted = ok(post(lab, "artifact", row=approved, action="submit", quality=True))
     assert resubmitted["document_current"]
     assert PageVersion.objects.filter(page=page).count() == 2
