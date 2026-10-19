@@ -3,8 +3,8 @@ import { useState } from "react";
 import { v4 as uuidv4 } from "uuid";
 import type { LabFinanceManagement, LabManagementRecord } from "@plane/types";
 import type { LabStore } from "@plane/shared-state";
-import { LabDialog, LabField, LabAmountInput, labDecimalText, labDecimalUnits, labInputClass } from "@plane/ui";
-import { costCategories } from "./management-ui";
+import { LabDialog, LabField, LabAmountInput, labDecimalUnits, labInputClass } from "@plane/ui";
+import { CostEntryDialog } from "./cost-entry-form";
 
 export type FinanceManagementAction = {
   kind: LabManagementRecord["kind"];
@@ -25,9 +25,31 @@ const labels: Record<string, string> = {
   "reverse-payment": "冲正支付",
 };
 const cents = (text: string) => labDecimalUnits(text) ?? 0n;
-const product = (first: string, second: string) => (cents(first) * cents(second) + 50n) / 100n;
 
-export function FinanceManagementDialog({
+type FinanceDialogProps = {
+  store: LabStore;
+  path: string;
+  data: LabFinanceManagement;
+  chosen: FinanceManagementAction;
+  onClose: () => void;
+  onSaved: () => Promise<void>;
+};
+export function FinanceManagementDialog(props: FinanceDialogProps) {
+  if (props.chosen.kind === "cost" && props.chosen.action === "save")
+    return (
+      <CostEntryDialog
+        store={props.store}
+        path={props.path}
+        data={props.data}
+        row={props.chosen.row}
+        reimbursement={props.chosen.reimbursement}
+        onClose={props.onClose}
+        onSaved={props.onSaved}
+      />
+    );
+  return <FinanceActionDialog {...props} />;
+}
+function FinanceActionDialog({
   store,
   path,
   data,
@@ -115,15 +137,6 @@ export function FinanceManagementDialog({
     </LabField>
   );
   const memberOptions = data.members.map((entry) => ({ value: entry.id, label: entry.name }));
-  const category = values.category ?? "labor";
-  const amount =
-    category === "labor"
-      ? product(values.hours ?? "0", values.rate ?? "0")
-      : cents(values.actual_amount ?? "0") +
-        (category === "travel"
-          ? product(values.days ?? "0", values.transport_rate ?? "0") +
-            product(values.days ?? "0", values.meal_rate ?? "0")
-          : 0n);
   const paying = action === "pay";
   const account = data.accounts.find((entry) => entry.id === values.account_id);
   const payable = row?.recognized_amount ?? row?.data.amount ?? "0";
@@ -186,33 +199,6 @@ export function FinanceManagementDialog({
             {input("budget_amount", "核定预算（元）", undefined, "amount")}
             {input("reference", "合同／决议编号", undefined, "text", "", false)}
             {input("basis", "合同／内部决议依据", undefined, "textarea")}
-          </>
-        )}
-        {action === "save" && kind === "cost" && (
-          <>
-            {input("category", "费用类别", costCategories, "text", "labor")}
-            {input("user_id", "成员／报销人", memberOptions, "text", data.user_id)}
-            {input("date", "发生日期", undefined, "date")}
-            {input("work", "工作内容／费用事项", undefined, "textarea")}
-            {category === "labor" ? (
-              <>
-                {input("hours", "劳动工时（小时）", undefined, "amount")}
-                {input("rate", "工时单价（元／小时）", undefined, "amount")}
-              </>
-            ) : (
-              <>
-                {input("actual_amount", "实际费用（元）", undefined, "amount", "0.00")}
-                {category === "travel" && (
-                  <>
-                    {input("days", "出差天数", undefined, "amount", "0.00")}
-                    {input("transport_rate", "每日交通补助（元）", undefined, "amount", "0.00")}
-                    {input("meal_rate", "每日餐费补助（元）", undefined, "amount", "0.00")}
-                  </>
-                )}
-              </>
-            )}
-            {input("evidence", "费用凭证／依据", undefined, "textarea", "", category !== "labor")}
-            <p aria-label="本次费用合计">合计：{labDecimalText(amount)} 元</p>
           </>
         )}
         {action === "save" && kind === "payroll" && (

@@ -205,7 +205,11 @@ test.beforeAll(async () => {
     const file = request.url === "/app.js" ? "app.js" : request.url === "/app.css" ? "app.css" : null;
     response.setHeader(
       "Content-Type",
-      file === "app.js" ? "text/javascript" : file === "app.css" ? "text/css" : "text/html"
+      file === "app.js"
+        ? "text/javascript; charset=utf-8"
+        : file === "app.css"
+          ? "text/css; charset=utf-8"
+          : "text/html; charset=utf-8"
     );
     if (file) {
       response.end(await readFile(join(directory, file)));
@@ -2172,6 +2176,7 @@ test("startup budget preserves a conflicting draft until explicitly reloaded", a
 
 function managementFixture() {
   return {
+    today: "2026-10-19",
     project_id: projectId,
     funding_id: "99999999-1111-4111-8111-111111111111",
     user_id: memberId,
@@ -2189,6 +2194,120 @@ function managementFixture() {
     categories: [],
   };
 }
+
+test("labor defaults to today and multiplies a week with optional notes empty", async ({ page }) => {
+  await common(page);
+  const data = managementFixture();
+  let submitted: Record<string, unknown> | undefined;
+  await page.route("**/lab/finance/overview/**", (route) => route.fulfill({ json: overview() }));
+  await page.route("**/lab/projects/*/finance-management/", (route) => {
+    if (route.request().method() === "POST") {
+      submitted = route.request().postDataJSON();
+      return route.fulfill({ status: 201, json: {} });
+    }
+    return route.fulfill({ json: data });
+  });
+  await mount(page, "finance", `/test/lab/finance?project_id=${projectId}`);
+  await page.getByRole("button", { name: "项目经费与成本", exact: true }).click();
+  await page.getByRole("button", { name: "工时与执行成本", exact: true }).click();
+  await page.getByRole("button", { name: "登记工时／费用", exact: true }).click();
+  const dialog = page.getByRole("dialog");
+  await expect(dialog.getByLabel("发生日期", { exact: true })).toHaveValue("2026-10-19");
+  await dialog.getByLabel("工作内容／费用事项", { exact: true }).fill("本周财务开发");
+  await dialog.getByLabel("工时 成员甲", { exact: true }).fill("5x8");
+  await dialog.getByLabel("工时单价 成员甲", { exact: true }).fill("150");
+  await expect(dialog.getByLabel("结束日期", { exact: true })).toHaveValue("2026-10-23");
+  await expect(dialog.getByLabel("合计 成员甲", { exact: true })).toHaveText("6000.00");
+  await dialog.getByLabel("结束日期", { exact: true }).fill("2026-10-20");
+  await expect(dialog.getByRole("button", { name: "保存", exact: true })).toBeDisabled();
+  await expect(dialog.getByRole("alert")).toContainText("工时超出所选期间");
+  await dialog.getByLabel("结束日期", { exact: true }).fill("2026-10-23");
+  await dialog.getByRole("button", { name: "保存", exact: true }).click();
+  await expect(dialog).toHaveCount(0);
+  expect(submitted).toMatchObject({
+    reason: "",
+    action: "save",
+    data: {
+      date: "2026-10-19",
+      end_date: "2026-10-23",
+      hours: "5x8",
+      rate: "150",
+      evidence: "",
+    },
+  });
+});
+
+test("multi-person labor totals each person and preserves the whole draft on rejection", async ({ page }) => {
+  await common(page);
+  const data = managementFixture();
+  const secondId = "55555555-5555-4555-8555-555555555555";
+  data.members.push({ id: secondId, name: "成员乙" });
+  let submitted: Record<string, unknown> | undefined;
+  await page.route("**/lab/finance/overview/**", (route) => route.fulfill({ json: overview() }));
+  await page.route("**/lab/projects/*/finance-management/", (route) => {
+    if (route.request().method() === "POST") {
+      submitted = route.request().postDataJSON();
+      return route.fulfill({ status: 400, json: { error: "成员资料已变化" } });
+    }
+    return route.fulfill({ json: data });
+  });
+  await mount(page, "finance", `/test/lab/finance?project_id=${projectId}`);
+  await page.getByRole("button", { name: "项目经费与成本", exact: true }).click();
+  await page.getByRole("button", { name: "工时与执行成本", exact: true }).click();
+  await page.getByRole("button", { name: "登记工时／费用", exact: true }).click();
+  const dialog = page.getByRole("dialog");
+  await dialog.getByLabel("登记对象", { exact: true }).selectOption("multiple");
+  await dialog.getByRole("button", { name: "添加成员", exact: true }).click();
+  await dialog.getByLabel("工作内容／费用事项", { exact: true }).fill("多人开发");
+  await dialog.getByLabel("工时 成员甲", { exact: true }).fill("5×8");
+  await dialog.getByLabel("工时单价 成员甲", { exact: true }).fill("150");
+  await dialog.getByLabel("工时 成员乙", { exact: true }).fill("5*6");
+  await dialog.getByLabel("工时单价 成员乙", { exact: true }).fill("100.10");
+  await expect(dialog.getByLabel("合计 成员乙", { exact: true })).toHaveText("3003.00");
+  await expect(dialog.getByLabel("工时最终合计", { exact: true })).toHaveText("9003.00");
+
+  await dialog.getByRole("button", { name: "保存", exact: true }).click();
+  await expect(dialog.getByRole("alert")).toContainText("成员资料已变化");
+  await expect(dialog.getByLabel("工时 成员甲", { exact: true })).toHaveValue("5×8");
+  await expect(dialog.getByLabel("工时 成员乙", { exact: true })).toHaveValue("5*6");
+  expect(submitted).toMatchObject({
+    action: "save-batch",
+    data: {
+      lines: [
+        { user_id: memberId, hours: "5×8", rate: "150" },
+        { user_id: secondId, hours: "5*6", rate: "100.10" },
+      ],
+    },
+  });
+});
+
+test("labor creates a reusable team and loads its members into the grid", async ({ page }) => {
+  await common(page);
+  const data = managementFixture();
+  data.members.push({ id: "55555555-5555-4555-8555-555555555555", name: "成员乙" });
+  let saved: Record<string, unknown> | undefined;
+  await page.route("**/lab/finance/overview/**", (route) => route.fulfill({ json: overview() }));
+  await page.route("**/lab/projects/*/finance-management/", (route) => route.fulfill({ json: data }));
+  await page.route("**/lab/projects/*/labor-teams/", (route) => {
+    saved = route.request().postDataJSON();
+    return route.fulfill({ status: 201, json: { id: saved!.record_id, version: 1, data: saved!.data } });
+  });
+  await mount(page, "finance", `/test/lab/finance?project_id=${projectId}`);
+  await page.getByRole("button", { name: "项目经费与成本", exact: true }).click();
+  await page.getByRole("button", { name: "工时与执行成本", exact: true }).click();
+  await page.getByRole("button", { name: "登记工时／费用", exact: true }).click();
+  await page.getByLabel("登记对象", { exact: true }).selectOption("team");
+  await page.getByRole("button", { name: "新建团队", exact: true }).click();
+  const teamDialog = page.getByRole("dialog");
+  await teamDialog.getByLabel("团队名称", { exact: true }).fill("APP研发组");
+  await teamDialog.getByRole("checkbox", { name: "成员甲", exact: true }).check();
+  await teamDialog.getByRole("checkbox", { name: "成员乙", exact: true }).check();
+  await teamDialog.getByRole("button", { name: "保存", exact: true }).click();
+  await expect(page.getByRole("dialog")).toContainText("登记工时与费用");
+  await expect(page.getByLabel("团队", { exact: true })).toHaveValue(String(saved!.record_id));
+  await expect(page.getByRole("table", { name: "成员工时明细" }).getByRole("row")).toHaveCount(4);
+  expect(saved).toMatchObject({ data: { name: "APP研发组", member_ids: [memberId, data.members[1]!.id] } });
+});
 
 test("management compiles contract funding and keeps actual receipts independent", async ({ page }) => {
   await common(page);

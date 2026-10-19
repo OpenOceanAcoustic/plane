@@ -226,8 +226,10 @@ export function LabFinanceManagement({
                     <>
                       <td className={cell}>
                         {row.data.date}
+                        {row.data.end_date && row.data.end_date !== row.data.date && <> 至 {row.data.end_date}</>}
                         <br />
                         {row.data.user_name}
+                        {row.data.team_name && <p>{row.data.team_name}</p>}
                       </td>
                       <td className={cell}>
                         {costCategories.find((entry) => entry.value === row.data.category)?.label}
@@ -272,7 +274,9 @@ export function LabFinanceManagement({
                           <summary>{row.data.lines?.length ?? 0} 条工作记录</summary>
                           {row.data.lines?.map((line) => (
                             <p className="max-w-64 whitespace-pre-wrap" key={line.cost_id}>
-                              {line.date} · {line.work} · {line.hours} 小时 × {line.rate} = {line.amount} 元
+                              {line.date}
+                              {line.end_date && line.end_date !== line.date ? ` 至 ${line.end_date}` : ""} · {line.work}{" "}
+                              · {line.hours} 小时 × {line.rate} = {line.amount} 元
                             </p>
                           ))}
                         </details>

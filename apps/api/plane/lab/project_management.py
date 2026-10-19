@@ -10,6 +10,7 @@ import hashlib
 from datetime import date
 from decimal import Decimal, ROUND_HALF_UP
 from io import StringIO
+from zoneinfo import ZoneInfo
 
 from django.db import transaction
 from django.http import HttpResponse
@@ -25,6 +26,7 @@ from .finance_permissions import project_finance_access, require_project_finance
 from .finance_services import available, perform, posting, require_finance_open, finance_removal_state
 from .management_models import ProjectManagementRecord, latest_records
 from .planning_views import LabView
+from .labor_hours import work_hours, daily_hours
 from .project_budgets import BudgetConflict, CATEGORIES, text_field
 
 CENT = Decimal("0.01")
@@ -127,7 +129,12 @@ def append_record(user, project, body, kind, key, previous, state, payload):
         state=state,
         data=payload,
         document_version_id=payload.get("page_version_id") if kind in ("plan", "artifact") else None,
-        reason=text_field(body.get("reason"), "操作说明", 2000, required=True),
+        reason=text_field(
+            body.get("reason", ""),
+            "操作说明",
+            2000,
+            required=not (kind in ("team", "labor-batch") or kind == "cost" and body.get("action") == "save"),
+        ),
         actor=user,
         actor_name=user.display_name,
         request_key=identifier(body.get("request_key"), "请求标识"),
@@ -205,15 +212,17 @@ def normalize_cost(user, project, data, permissions):
     if issue_id:
         issue = get_object_or_404(Issue, id=identifier(issue_id, "工作项ID"), project=project, is_draft=False)
         issue_id = str(issue.id)
-    hours = decimal_value(data.get("hours", "0"), "工时")
+    start_date = day(data.get("date") or project_today(project))
+    hours = ZERO
+    end_date = start_date
+    hours_expression = ""
     rate = decimal_value(data.get("rate", "0"), "工时单价")
     actual = decimal_value(data.get("actual_amount", "0"), "实际费用")
     days = decimal_value(data.get("days", "0"), "出差天数")
     transport = decimal_value(data.get("transport_rate", "0"), "每日交通补助")
     meal = decimal_value(data.get("meal_rate", "0"), "每日餐费补助")
     if category == "labor":
-        if not 0 < hours <= 24:
-            raise ValidationError("每日劳动工时须大于0且不超过24小时")
+        hours, end_date, hours_expression = work_hours(data.get("hours", "0"), start_date, data.get("end_date"))
         if rate <= 0:
             raise ValidationError("工时单价须大于零")
         actual = days = transport = meal = ZERO
@@ -233,7 +242,10 @@ def normalize_cost(user, project, data, permissions):
         "category": category,
         "user_id": user_id,
         "user_name": name,
-        "date": day(data.get("date")),
+        "date": start_date,
+        "end_date": end_date,
+        "hours_expression": hours_expression,
+        "team_name": text_field(data.get("team_name", ""), "团队名称", 100),
         "issue_id": issue_id or None,
         "work": text_field(data.get("work"), "工作内容／费用事项", 4000, required=True),
         "hours": money_text(hours),
@@ -245,8 +257,12 @@ def normalize_cost(user, project, data, permissions):
         "transport": money_text(days * transport),
         "meal": money_text(days * meal),
         "amount": money_text(total),
-        "evidence": text_field(data.get("evidence", ""), "费用凭证／依据", 4000, required=category != "labor"),
+        "evidence": text_field(data.get("evidence", ""), "费用凭证／依据", 4000),
     }
+
+
+def project_today(project):
+    return timezone.now().astimezone(ZoneInfo(project.workspace.timezone or "Asia/Shanghai")).date().isoformat()
 
 
 def financial_action(user, project, body, permissions):
@@ -287,9 +303,22 @@ def financial_action(user, project, body, permissions):
                 and row.state == "approved"
                 and row.data["category"] == "labor"
                 and row.data["user_id"] == user_id
-                and start <= row.data["date"] <= end
+                and start <= row.data["date"]
+                and row.data.get("end_date", row.data["date"]) <= end
                 and not payroll_for(row, rows)
             ]
+            if any(
+                row.kind == "cost"
+                and row.state == "approved"
+                and row.data["category"] == "labor"
+                and row.data["user_id"] == user_id
+                and not payroll_for(row, rows)
+                and row.data["date"] <= end
+                and row.data.get("end_date", row.data["date"]) >= start
+                and row not in costs
+                for row in rows
+            ):
+                raise ValidationError("计薪期间截断了周期工时，请选择覆盖完整工时起止日期的期间")
             if not costs:
                 raise ValidationError("所选期间没有可计薪的已核准工时")
             total = sum((recognized_cost(row, rows) for row in costs), ZERO)
@@ -308,6 +337,7 @@ def financial_action(user, project, body, permissions):
                             "cost_id": str(row.object_key),
                             "version_id": str(row.id),
                             "date": row.data["date"],
+                            "end_date": row.data.get("end_date", row.data["date"]),
                             "work": row.data["work"],
                             "hours": row.data["hours"],
                             "rate": row.data["rate"],
@@ -442,20 +472,19 @@ def financial_action(user, project, body, permissions):
         if state not in ("approved", "rejected"):
             raise ValidationError("审核结果无效")
         if state == "approved" and previous.data["category"] == "labor":
-            other_hours = sum(
-                (
-                    Decimal(entry.data["hours"])
-                    for entry in rows
-                    if entry.kind == "cost"
+            totals = daily_hours(previous.data)
+            for entry in rows:
+                if (
+                    entry.kind == "cost"
                     and entry.object_key != previous.object_key
                     and entry.state == "approved"
                     and entry.data["category"] == "labor"
                     and entry.data["user_id"] == previous.data["user_id"]
-                    and entry.data["date"] == previous.data["date"]
-                ),
-                ZERO,
-            )
-            if other_hours + Decimal(previous.data["hours"]) > 24:
+                ):
+                    for workday, hours in daily_hours(entry.data).items():
+                        if workday in totals:
+                            totals[workday] += hours
+            if any(hours > 24 for hours in totals.values()):
                 raise ValidationError("该成员当日已核准工时合计不能超过24小时")
         data = {**previous.data, "review_note": text_field(data.get("note"), "审核意见", 2000, required=True)}
     elif action == "cancel" and kind in ("cost", "payroll"):
@@ -559,7 +588,12 @@ def finance_mutation(user, project, body):
     if body.get("kind") not in FINANCE_KINDS:
         raise ValidationError("财务记录类型无效")
     request_key = identifier(body.get("request_key"), "请求标识")
-    text_field(body.get("reason"), "操作说明", 2000, required=True)
+    text_field(
+        body.get("reason", ""),
+        "操作说明",
+        2000,
+        required=not (body.get("kind") == "cost" and body.get("action") == "save"),
+    )
     previous_request = ProjectManagementRecord.objects.filter(
         workspace=project.workspace, request_key=request_key
     ).first()
@@ -586,6 +620,8 @@ def finance_mutation(user, project, body):
 
 
 def finance_overview(user, project):
+    from .project_labor import labor_teams
+
     membership(user, project)
     permissions, _ = project_finance_access(user, project)
     rows = list(latest_records(project.id).filter(kind__in=FINANCE_KINDS))
@@ -617,6 +653,8 @@ def finance_overview(user, project):
         cost_data.append(value)
     funding = next((row for row in rows if row.kind == "funding"), None)
     result = {
+        "today": project_today(project),
+        "teams": labor_teams(project, user),
         "project_id": str(project.id),
         "funding_id": str(uuid.uuid5(project.id, "funding")),
         "can_view_finance": "view" in permissions,
@@ -722,6 +760,9 @@ class ProjectFinanceManagementView(LabView):
                     "状态",
                     "成员",
                     "日期",
+                    "结束日期",
+                    "工时测算",
+                    "团队",
                     "事项",
                     "金额（元）",
                     "认定金额（元）",
@@ -760,6 +801,9 @@ class ProjectFinanceManagementView(LabView):
                     states[row["state"]],
                     data.get("user_name", ""),
                     data.get("date", data.get("start", "")),
+                    data.get("end_date", data.get("end", "")),
+                    data.get("hours_expression", ""),
+                    data.get("team_name", ""),
                     data.get("work", data.get("finding", "")),
                 ]
                 numbers = [
@@ -783,4 +827,12 @@ class ProjectFinanceManagementView(LabView):
 
     def post(self, request, slug, pk):
         project = get_object_or_404(Project, workspace=self.workspace, id=pk)
+        if (
+            isinstance(request.data, dict)
+            and request.data.get("action") == "save-batch"
+            and request.data.get("kind") == "cost"
+        ):
+            from .project_labor import labor_batch
+
+            return Response(labor_batch(request.user, project, request.data), status=201)
         return Response(record_data(finance_mutation(request.user, project, request.data)), status=201)

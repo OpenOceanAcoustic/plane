@@ -10,6 +10,7 @@ export type LabAssignment = {
 export type LabPayrollLine = {
   cost_id: string;
   date: string;
+  end_date?: string;
   work: string;
   hours: string;
   rate: string;
@@ -39,6 +40,9 @@ export type LabManagementRecord = {
     user_id?: string;
     user_name?: string;
     date?: string;
+    end_date?: string;
+    hours_expression?: string;
+    team_name?: string;
     issue_id?: string | null;
     work?: string;
     hours?: string;
@@ -76,6 +80,8 @@ export type LabManagementRecord = {
   };
 };
 export type LabFinanceManagement = {
+  today?: string;
+  teams?: LabLaborTeam[];
   project_id: string;
   funding_id: string;
   user_id: string;
@@ -101,6 +107,11 @@ export type LabFinanceManagement = {
     recovered: string;
   };
   categories: { category: string; label: string; budget: string; cost: string; remaining: string }[];
+};
+export type LabLaborTeam = {
+  id: string;
+  version: number;
+  data: { name: string; member_ids: string[]; members: { id: string; name: string }[] };
 };
 export type LabProjectQuality = {
   project_id: string;

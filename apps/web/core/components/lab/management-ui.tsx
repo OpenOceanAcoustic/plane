@@ -113,7 +113,7 @@ export function ManagementHistory({
               {row.data.lines.map((line) => (
                 <tr key={line.cost_id}>
                   {Object.entries({
-                    date: line.date,
+                    date: line.end_date && line.end_date !== line.date ? `${line.date} 至 ${line.end_date}` : line.date,
                     work: line.work,
                     hours: line.hours,
                     rate: line.rate,
@@ -156,6 +156,9 @@ const historyLabels: Record<string, string> = {
   category: "类别",
   user_name: "成员",
   date: "日期",
+  end_date: "结束日期",
+  hours_expression: "工时测算",
+  team_name: "团队",
   work: "工作内容／事项",
   hours: "工时",
   rate: "工时单价",
