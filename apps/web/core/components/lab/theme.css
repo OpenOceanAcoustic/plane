@@ -80,7 +80,14 @@
 
 .lab-page[data-lab-section="quality"],
 .lab-navigation-item[data-lab-section="quality"] {
-  --lab-section-bg: var(--label-blue-bg);
-  --lab-section-text: var(--label-blue-text);
-  --lab-section-border: var(--label-blue-border);
+  --lab-section-bg: var(--label-pink-bg);
+  --lab-section-text: var(--label-pink-text);
+  --lab-section-border: var(--label-pink-border);
+}
+
+.lab-page[data-lab-section="planning"],
+.lab-navigation-item[data-lab-section="planning"] {
+  --lab-section-bg: var(--label-purple-bg);
+  --lab-section-text: var(--label-purple-text);
+  --lab-section-border: var(--label-purple-border);
 }

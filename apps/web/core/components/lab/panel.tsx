@@ -15,6 +15,7 @@ import { LabMarket } from "./market";
 import { LabFinance } from "./finance";
 import { LabProjectQuality } from "./project-quality";
 import { LabPlanningWorkbench } from "./planner-workbench";
+import { LabProjectPlanning } from "./project-planning";
 import { LabTaskTable } from "./task-table";
 import { LabContributions } from "./contributions";
 import type { LabOpenProjectIssue } from "./item-details";
@@ -122,6 +123,9 @@ export const LabPanel = observer(function LabPanel({
           ) : (
             <p className="text-13 text-secondary">暂无团队排期查看权限</p>
           ))}
+        {store.planner && section === "planning" && (
+          <LabProjectPlanning store={store} refreshKey={refreshKey} openProjectIssue={openProjectIssue} />
+        )}
         {store.planner && section === "bounties" && <LabMarket store={store} />}
         {store.planner && section === "tasks" && <LabTaskTable store={store} refreshKey={refreshKey} />}
         {store.planner && section === "analytics" && <LabAnalyticsPanel store={store} refreshKey={refreshKey} />}

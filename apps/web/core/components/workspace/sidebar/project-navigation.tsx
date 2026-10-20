@@ -4,7 +4,7 @@
  * See the LICENSE file for details.
  */
 
-import { MessageSquare } from "lucide-react";
+import { CalendarRange, MessageSquare } from "lucide-react";
 import React, { useCallback, useMemo } from "react";
 import { observer } from "mobx-react";
 import Link from "next/link";
@@ -71,6 +71,16 @@ export const ProjectNavigation = observer(function ProjectNavigation(props: TPro
 
   const baseNavigation = useCallback(
     (workspaceSlug: string, projectId: string): TNavigationItem[] => [
+      {
+        i18n_key: "项目规划",
+        key: "planning",
+        name: "项目规划",
+        href: `/${workspaceSlug}/lab/planning?project_id=${projectId}`,
+        icon: CalendarRange,
+        access: [EUserPermissions.ADMIN, EUserPermissions.MEMBER, EUserPermissions.GUEST],
+        shouldRender: true,
+        sortOrder: 0.5,
+      },
       {
         i18n_key: "sidebar.work_items",
         key: "work_items",

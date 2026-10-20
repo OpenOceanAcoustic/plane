@@ -5,6 +5,7 @@
  */
 
 import { useMemo, useCallback } from "react";
+import { CalendarRange } from "lucide-react";
 // plane imports
 import { EUserPermissions, EUserPermissionsLevel } from "@plane/constants";
 import { CycleIcon, IntakeIcon, ModuleIcon, PageIcon, ViewsIcon, WorkItemsIcon } from "@plane/propel/icons";
@@ -33,6 +34,16 @@ export const useNavigationItems = ({
   const baseNavigation = useCallback(
     // oxlint-disable-next-line no-shadow
     (workspaceSlug: string, projectId: string): TNavigationItem[] => [
+      {
+        i18n_key: "项目规划",
+        key: "planning",
+        name: "项目规划",
+        href: `/${workspaceSlug}/lab/planning?project_id=${projectId}`,
+        icon: CalendarRange,
+        access: [EUserPermissions.ADMIN, EUserPermissions.MEMBER, EUserPermissions.GUEST],
+        shouldRender: true,
+        sortOrder: 0,
+      },
       {
         i18n_key: "sidebar.work_items",
         key: "work_items",

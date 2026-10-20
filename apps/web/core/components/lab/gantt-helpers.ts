@@ -16,10 +16,14 @@ export type LabGanttTask = {
   title: string;
   key: string;
   project_id: string;
+  parent_id?: string | null;
   start_date: string | null;
   target_date: string | null;
   state: string;
   state_group: string;
+  priority?: string;
+  assignee_ids?: string[];
+  assignee_names?: string[];
   external_dependency: boolean;
 };
 export type LabGanttDependency = { id: string; predecessor_id: string; successor_id: string };

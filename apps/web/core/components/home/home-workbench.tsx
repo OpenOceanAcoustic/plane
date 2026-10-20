@@ -6,7 +6,7 @@ import { useParams } from "next/navigation";
 import {
   ArrowRight,
   BarChart3,
-  CalendarDays,
+  CalendarRange,
   CheckCircle2,
   ClipboardCheck,
   FolderKanban,
@@ -191,15 +191,33 @@ function ProjectCard({
           )}
         </div>
         <nav className="lab-home-project-links" aria-label={`${project.name}快捷入口`}>
-          <Link href={`/${workspaceSlug}/lab/finance?project_id=${encodeURIComponent(project.id)}`}>
-            <Wallet size={10} />
+          <Link
+            className="lab-project-action"
+            data-tone="indigo"
+            href={`/${workspaceSlug}/lab/planning?project_id=${encodeURIComponent(project.id)}`}
+            title="项目规划"
+          >
+            <CalendarRange size={11} />
+            规划
+          </Link>
+          <Link
+            className="lab-project-action"
+            data-tone="emerald"
+            href={`/${workspaceSlug}/lab/finance?project_id=${encodeURIComponent(project.id)}`}
+            title="项目资金与预算"
+          >
+            <Wallet size={11} />
             资金
           </Link>
-          <Link href={`/${workspaceSlug}/lab/quality?project_id=${encodeURIComponent(project.id)}`}>
-            <ClipboardCheck size={10} />
+          <Link
+            className="lab-project-action"
+            data-tone="pink"
+            href={`/${workspaceSlug}/lab/quality?project_id=${encodeURIComponent(project.id)}`}
+            title="项目质量资料"
+          >
+            <ClipboardCheck size={11} />
             质量
           </Link>
-          <Link href={issuesHref}>打开</Link>
         </nav>
       </div>
     </article>
@@ -432,7 +450,7 @@ export function HomeWorkbenchView(props: HomeWorkbenchViewProps) {
             <QuickLink href={`/${workspaceSlug}/stickies/`} icon={<Lightbulb size={14} />} label="想法便签" />
             <QuickLink href={`/${workspaceSlug}/lab/finance`} icon={<Wallet size={14} />} label="资金与奖励" />
             <QuickLink href={`/${workspaceSlug}/lab/quality`} icon={<ClipboardCheck size={14} />} label="项目与质量" />
-            <QuickLink href={`/${workspaceSlug}/lab/team`} icon={<CalendarDays size={14} />} label="团队排期" />
+            <QuickLink href={`/${workspaceSlug}/lab/planning`} icon={<CalendarRange size={14} />} label="项目规划" />
             <QuickLink href={`/${workspaceSlug}/lab/bounties`} icon={<Target size={14} />} label="悬赏大厅" />
             <QuickLink href={`/${workspaceSlug}/lab/analytics`} icon={<BarChart3 size={14} />} label="数据总览" />
           </div>

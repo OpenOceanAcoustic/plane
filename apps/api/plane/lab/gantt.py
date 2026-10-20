@@ -178,6 +178,7 @@ class GanttView(LabView):
             readable_issues(request.user, self.workspace)
             .filter(project=project, is_draft=False, archived_at__isnull=True)
             .select_related("state")
+            .prefetch_related("assignees")
             .order_by("sort_order", "sequence_id")
         )
         if project.archived_at:
@@ -194,22 +195,27 @@ class GanttView(LabView):
                 relations.append({"id": str(edge.id), "predecessor_id": p, "successor_id": s})
             else:
                 external.add(p if p in visible else s)
+        def task_payload(row):
+            assignees = list(row.assignees.all())
+            return {
+                "id": str(row.id),
+                "title": row.name,
+                "key": f"{project.identifier}-{row.sequence_id}",
+                "project_id": str(project.id),
+                "parent_id": str(row.parent_id) if row.parent_id else None,
+                "start_date": row.start_date,
+                "target_date": row.target_date,
+                "state": row.state.name if row.state else "",
+                "state_group": row.state.group if row.state else "",
+                "priority": row.priority,
+                "assignee_ids": [str(user.id) for user in assignees],
+                "assignee_names": [user.display_name for user in assignees],
+                "external_dependency": str(row.id) in external,
+            }
+
         return Response(
             {
-                "tasks": [
-                    {
-                        "id": str(r.id),
-                        "title": r.name,
-                        "key": f"{project.identifier}-{r.sequence_id}",
-                        "project_id": str(project.id),
-                        "start_date": r.start_date,
-                        "target_date": r.target_date,
-                        "state": r.state.name if r.state else "",
-                        "state_group": r.state.group if r.state else "",
-                        "external_dependency": str(r.id) in external,
-                    }
-                    for r in rows
-                ],
+                "tasks": [task_payload(row) for row in rows],
                 "dependencies": relations,
             }
         )

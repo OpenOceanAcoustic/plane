@@ -4,6 +4,7 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { observer } from "mobx-react";
+import { useSearchParams } from "react-router";
 import FullCalendar from "@fullcalendar/react";
 import type {
   CalendarRef,
@@ -109,6 +110,7 @@ export const LabCalendar = observer(function LabCalendar({
   openProjectIssue?: LabOpenProjectIssue;
 }) {
   const calendar = useRef<CalendarRef>(null);
+  const [searchParams, setSearchParams] = useSearchParams();
   const days = weekDays(0);
   const [range, setRange] = useState({
     start: days[0]!.toISOString(),
@@ -123,7 +125,19 @@ export const LabCalendar = observer(function LabCalendar({
   const [viewing, setViewing] = useState<{ item: LabItem; block?: LabEvent }>();
   const timeline = view.startsWith("resourceTimeline");
   const [userId, setUserId] = useState("all"),
-    [projectId, setProjectId] = useState("all");
+    [projectId, setProjectId] = useState(() => searchParams.get("project_id") ?? "all");
+  const updateProjectFilter = (value: string) => {
+    setProjectId(value);
+    setSearchParams(
+      (current) => {
+        const next = new URLSearchParams(current);
+        if (value === "all") next.delete("project_id");
+        else next.set("project_id", value);
+        return next;
+      },
+      { replace: true }
+    );
+  };
   const [allMembers, setAllMembers] = useState<LabMember[]>([]);
   const [editing, setEditing] = useState<LabEvent | "new">();
   const [initialStart, setInitialStart] = useState(roundedNow),
@@ -510,7 +524,7 @@ export const LabCalendar = observer(function LabCalendar({
             { value: "all", label: "全部项目及个人事项" },
             ...(store.planner?.projects ?? []).map((project) => ({ value: project.id, label: project.name })),
           ]}
-          onValueChange={setProjectId}
+          onValueChange={updateProjectFilter}
         />
         <Button
           size="sm"
