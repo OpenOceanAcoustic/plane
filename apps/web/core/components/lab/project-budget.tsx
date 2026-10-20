@@ -5,6 +5,8 @@ import { v4 as uuidv4 } from "uuid";
 import type { LabProjectBudgetCategory, LabProjectBudgetItem, LabProjectBudgetReport } from "@plane/types";
 import type { LabStore } from "@plane/shared-state";
 import { Button, labDecimalText, labDecimalUnits, labInputClass } from "@plane/ui";
+import { Coins } from "lucide-react";
+import { Metric } from "./finance-workbench";
 
 const categories: { value: LabProjectBudgetCategory; label: string }[] = [
   { value: "labor", label: "劳务费" },
@@ -118,7 +120,7 @@ export function LabProjectBudget({ store, projectId }: { store: LabStore; projec
     }
   };
   return (
-    <section aria-label="项目启动预算" className="space-y-4">
+    <section aria-label="项目启动预算" className="lab-workbench-panel space-y-4">
       <div className="flex flex-wrap items-center gap-2">
         <h2 className="mr-auto text-16 font-semibold">项目启动预算</h2>
         {editing && (
@@ -170,22 +172,35 @@ export function LabProjectBudget({ store, projectId }: { store: LabStore; projec
       {!editing && data && !report && <p className="text-13 text-secondary">尚未编制项目启动预算</p>}
       {(editing || report) && (
         <>
-          <div className="grid grid-cols-2 gap-3 xl:grid-cols-5">
-            {categories.map(({ value, label }) => (
-              <dl key={value} className="rounded-lg border border-subtle bg-layer-2 p-3">
-                <dt className="text-13 text-secondary">{label}</dt>
-                <dd className="lab-finance-figure mt-1 text-16">
-                  ¥
-                  {labDecimalText(
-                    displayedItems
-                      .filter((row) => row.category === value)
-                      .reduce((sum, row) => sum + (labDecimalUnits(row.amount) ?? 0n), 0n)
-                  )}
-                </dd>
-              </dl>
-            ))}
+          <div className="lab-metric-grid">
+            {categories.map(({ value, label }) => {
+              const tone = (
+                {
+                  labor: "orange",
+                  travel: "indigo",
+                  equipment: "purple",
+                  outsourcing: "emerald",
+                  other: "crimson",
+                } as const
+              )[value];
+              const amount = labDecimalText(
+                displayedItems
+                  .filter((row) => row.category === value)
+                  .reduce((sum, row) => sum + (labDecimalUnits(row.amount) ?? 0n), 0n)
+              );
+              return (
+                <Metric
+                  key={value}
+                  tone={tone}
+                  icon={<Coins size={15} />}
+                  label={label}
+                  value={`¥${amount}`}
+                  hint="预算金额"
+                />
+              );
+            })}
           </div>
-          <div className="overflow-x-auto rounded-lg border border-subtle">
+          <div className="overflow-x-auto">
             <table className="w-full text-left text-13">
               <thead className="bg-layer-2">
                 <tr>

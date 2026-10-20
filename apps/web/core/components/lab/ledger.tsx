@@ -26,7 +26,7 @@ export const LabLedger = observer(function LabLedger({
     setEntries(await store.request<LabLedgerEntry[]>(`ledger/${projectId ? `?project_id=${projectId}` : ""}`));
   }
   return (
-    <section className="rounded-lg border border-subtle p-4">
+    <section className="lab-workbench-panel">
       <div className="flex items-center justify-between">
         <h2 className="text-14 font-semibold">项目贡献账本</h2>
         <Button size="sm" variant="neutral-primary" onClick={() => void store.execute(load)}>
@@ -56,8 +56,10 @@ export const LabLedger = observer(function LabLedger({
                   </td>
                   <td>{entry.participant.name}</td>
                   <td>
-                    {Number(entry.delta) > 0 ? "+" : ""}
-                    {entry.delta}
+                    <span className="lab-status-pill" data-state={Number(entry.delta) >= 0 ? "approved" : "rejected"}>
+                      {Number(entry.delta) > 0 ? "+" : ""}
+                      {entry.delta}
+                    </span>
                   </td>
                   <td>{entry.actor}</td>
                   <td>

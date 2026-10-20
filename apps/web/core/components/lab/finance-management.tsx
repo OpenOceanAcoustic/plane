@@ -1,9 +1,12 @@
 /** Copyright (c) 2026 OpenOceanAcoustic and contributors. SPDX-License-Identifier: AGPL-3.0-only */
 import { useState } from "react";
+import type { ReactNode } from "react";
 import useSWR from "swr";
 import type { LabFinanceManagement, LabManagementRecord } from "@plane/types";
 import type { LabStore } from "@plane/shared-state";
+import { Banknote, Coins, PiggyBank, ReceiptText, ShieldCheck, TrendingUp, Wallet } from "lucide-react";
 import { Button, labDecimalText, labDecimalUnits } from "@plane/ui";
+import { Metric, StatusPill } from "./finance-workbench";
 import { FinanceManagementDialog } from "./finance-management-form";
 import type { FinanceManagementAction } from "./finance-management-form";
 import {
@@ -11,7 +14,6 @@ import {
   ManagementHistory,
   ManagementTable,
   managementCell as cell,
-  managementStates,
   downloadManagement,
 } from "./management-ui";
 
@@ -49,6 +51,81 @@ export function LabFinanceManagement({
     return (
       <p role={error ? "alert" : undefined}>{error instanceof Error ? error.message : "正在读取项目经费与成本…"}</p>
     );
+  const summaryMetrics: {
+    tone: "emerald" | "indigo" | "orange" | "purple" | "crimson";
+    label: string;
+    value: string;
+    hint: string;
+    icon: ReactNode;
+  }[] = data.summary
+    ? [
+        {
+          tone: "emerald",
+          label: "核定项目经费",
+          value: data.summary.funding,
+          hint: "资金来源",
+          icon: <Banknote size={15} />,
+        },
+        {
+          tone: "indigo",
+          label: "核定预算",
+          value: data.summary.budget,
+          hint: "启动预算",
+          icon: <PiggyBank size={15} />,
+        },
+        {
+          tone: "emerald",
+          label: "累计实际到账",
+          value: data.summary.received,
+          hint: "已到账",
+          icon: <Coins size={15} />,
+        },
+        {
+          tone: "emerald",
+          label: "资金可用余额",
+          value: labDecimalText(
+            data.accounts.reduce((sum, account) => sum + (labDecimalUnits(account.available) ?? 0n), 0n)
+          ),
+          hint: "可承诺",
+          icon: <Wallet size={15} />,
+        },
+        {
+          tone: "orange",
+          label: "已认定执行成本",
+          value: data.summary.cost,
+          hint: "已发生",
+          icon: <ReceiptText size={15} />,
+        },
+        {
+          tone: "purple",
+          label: "预算余量",
+          value: data.summary.remaining,
+          hint: "剩余",
+          icon: <TrendingUp size={15} />,
+        },
+        {
+          tone: "purple",
+          label: "工资与报销已支付",
+          value: data.summary.paid,
+          hint: "已支付",
+          icon: <Banknote size={15} />,
+        },
+        {
+          tone: "crimson",
+          label: "审计待追回",
+          value: data.summary.recovery,
+          hint: "待追回",
+          icon: <ShieldCheck size={15} />,
+        },
+        {
+          tone: "emerald",
+          label: "审计已追回",
+          value: data.summary.recovered,
+          hint: "已追回",
+          icon: <Coins size={15} />,
+        },
+      ]
+    : [];
   return (
     <section className="space-y-4" aria-label="项目经费与成本">
       {chosen && (
@@ -98,48 +175,39 @@ export function LabFinanceManagement({
           {error instanceof Error ? error.message : "项目财务读取失败"}
         </p>
       )}
-      {data.summary && (
-        <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
-          {[
-            ["核定项目经费", data.summary.funding],
-            ["核定预算", data.summary.budget],
-            ["累计实际到账", data.summary.received],
-            [
-              "资金可用余额",
-              labDecimalText(
-                data.accounts.reduce((sum, account) => sum + (labDecimalUnits(account.available) ?? 0n), 0n)
-              ),
-            ],
-            ["已认定执行成本", data.summary.cost],
-            ["预算余量", data.summary.remaining],
-            ["工资与报销已支付", data.summary.paid],
-            ["审计待追回", data.summary.recovery],
-            ["审计已追回", data.summary.recovered],
-          ].map(([name, value]) => (
-            <dl key={name} className="rounded-lg border border-subtle bg-layer-2 p-3">
-              <dt className="text-13 text-secondary">{name}（元）</dt>
-              <dd className="lab-finance-figure mt-1 text-18">{value}</dd>
-            </dl>
+      {summaryMetrics.length > 0 && (
+        <div className="lab-metric-grid">
+          {summaryMetrics.map((metric) => (
+            <Metric
+              key={metric.label}
+              tone={metric.tone}
+              icon={metric.icon}
+              label={metric.label}
+              value={`¥${metric.value}`}
+              hint={`${metric.hint}（元）`}
+            />
           ))}
         </div>
       )}
       {tab === "overview" && (
-        <>
-          <div className="flex gap-2">
-            <h2 className="mr-auto font-semibold">经费核定</h2>
-            {data.can_record && !data.closed && (
-              <Button size="sm" onClick={() => setChosen({ kind: "funding", action: "save", row: funding })}>
-                {funding ? "调整核定经费" : "核定项目经费"}
-              </Button>
-            )}
-            {funding && (
-              <Button size="sm" variant="neutral-primary" onClick={() => setHistory(funding)}>
-                核定历史
-              </Button>
-            )}
-          </div>
+        <section className="lab-workbench-panel space-y-3">
+          <header className="lab-workbench-panel-head">
+            <h2>经费核定</h2>
+            <div className="flex flex-wrap gap-2">
+              {data.can_record && !data.closed && (
+                <Button size="sm" onClick={() => setChosen({ kind: "funding", action: "save", row: funding })}>
+                  {funding ? "调整核定经费" : "核定项目经费"}
+                </Button>
+              )}
+              {funding && (
+                <Button size="sm" variant="neutral-primary" onClick={() => setHistory(funding)}>
+                  核定历史
+                </Button>
+              )}
+            </div>
+          </header>
           {funding ? (
-            <div className="space-y-2 rounded border border-subtle p-4 text-13">
+            <div className="space-y-2 rounded-lg border border-subtle bg-layer-1 p-4 text-13">
               <p>项目类型：{funding.data.source_type === "external" ? "外部项目" : "内部项目"}</p>
               <p>合同／决议编号：{funding.data.reference || "—"}</p>
               <p className="whitespace-pre-wrap">核定依据：{funding.data.basis}</p>
@@ -168,53 +236,53 @@ export function LabFinanceManagement({
               ))}
             </ManagementTable>
           )}
-        </>
+        </section>
       )}
       {tab !== "overview" && (
-        <>
-          <div className="flex flex-wrap gap-2">
-            <h2 className="mr-auto font-semibold">
-              {tab === "cost" ? "工时与执行成本" : tab === "payroll" ? "项目工资单" : "财务审计"}
-            </h2>
-            {!data.closed && tab === "cost" && (
-              <Button size="sm" onClick={() => setChosen({ kind: "cost", action: "save" })}>
-                登记工时／费用
-              </Button>
-            )}
-            {!data.closed && tab === "payroll" && (
-              <>
+        <section className="lab-workbench-panel space-y-3">
+          <header className="lab-workbench-panel-head">
+            <h2>{tab === "cost" ? "工时与执行成本" : tab === "payroll" ? "项目工资单" : "财务审计"}</h2>
+            <div className="flex flex-wrap gap-2">
+              {!data.closed && tab === "cost" && (
+                <Button size="sm" onClick={() => setChosen({ kind: "cost", action: "save" })}>
+                  登记工时／费用
+                </Button>
+              )}
+              {!data.closed && tab === "payroll" && (
+                <>
+                  <Button
+                    size="sm"
+                    variant="neutral-primary"
+                    onClick={() => {
+                      setTab("cost");
+                      setChosen({ kind: "cost", action: "save", reimbursement: true });
+                    }}
+                  >
+                    申请报销
+                  </Button>
+                  {data.can_approve && (
+                    <Button size="sm" onClick={() => setChosen({ kind: "payroll", action: "save" })}>
+                      生成工资单
+                    </Button>
+                  )}
+                </>
+              )}
+              {tab === "audit" && data.can_audit && (
+                <Button size="sm" onClick={() => setChosen({ kind: "audit", action: "save" })}>
+                  新增审计调整
+                </Button>
+              )}
+              {tab === "audit" && data.can_recover && (
                 <Button
                   size="sm"
                   variant="neutral-primary"
-                  onClick={() => {
-                    setTab("cost");
-                    setChosen({ kind: "cost", action: "save", reimbursement: true });
-                  }}
+                  onClick={() => setChosen({ kind: "recovery", action: "save" })}
                 >
-                  申请报销
+                  登记审计追回
                 </Button>
-                {data.can_approve && (
-                  <Button size="sm" onClick={() => setChosen({ kind: "payroll", action: "save" })}>
-                    生成工资单
-                  </Button>
-                )}
-              </>
-            )}
-            {tab === "audit" && data.can_audit && (
-              <Button size="sm" onClick={() => setChosen({ kind: "audit", action: "save" })}>
-                新增审计调整
-              </Button>
-            )}
-            {tab === "audit" && data.can_recover && (
-              <Button
-                size="sm"
-                variant="neutral-primary"
-                onClick={() => setChosen({ kind: "recovery", action: "save" })}
-              >
-                登记审计追回
-              </Button>
-            )}
-          </div>
+              )}
+            </div>
+          </header>
           {records.length ? (
             <ManagementTable
               headings={
@@ -263,7 +331,7 @@ export function LabFinanceManagement({
                         {row.data.amount} / {row.recognized_amount}
                       </td>
                       <td className={cell}>
-                        {managementStates[row.state]}
+                        <StatusPill state={row.state} />
                         {row.payroll_id && <p>已计入工资单</p>}
                       </td>
                     </>
@@ -288,7 +356,9 @@ export function LabFinanceManagement({
                       </td>
                       <td className={cell}>{row.data.hours}</td>
                       <td className={cell}>{row.data.amount}</td>
-                      <td className={cell}>{managementStates[row.state]}</td>
+                      <td className={cell}>
+                        <StatusPill state={row.state} />
+                      </td>
                     </>
                   ) : (
                     <>
@@ -370,11 +440,13 @@ export function LabFinanceManagement({
           ) : (
             <p className="text-13 text-secondary">暂无记录</p>
           )}
-        </>
+        </section>
       )}
       {tab === "payroll" && (
-        <section className="space-y-2">
-          <h2 className="font-semibold">项目报销</h2>
+        <section className="lab-workbench-panel space-y-3">
+          <header className="lab-workbench-panel-head">
+            <h2>项目报销</h2>
+          </header>
           <ManagementTable headings={["日期／成员", "报销事项", "金额（元）", "状态", "操作"]}>
             {data.records
               .filter((row) => row.kind === "cost" && row.data.category !== "labor")
@@ -385,7 +457,9 @@ export function LabFinanceManagement({
                   </td>
                   <td className={cell}>{row.data.work}</td>
                   <td className={cell}>{row.recognized_amount}</td>
-                  <td className={cell}>{managementStates[row.state]}</td>
+                  <td className={cell}>
+                    <StatusPill state={row.state} />
+                  </td>
                   <td className={cell}>
                     <div className="flex flex-wrap gap-1">
                       <Button size="sm" variant="neutral-primary" onClick={() => setHistory(row)}>
@@ -418,8 +492,10 @@ export function LabFinanceManagement({
         </section>
       )}
       {tab === "audit" && (
-        <section className="space-y-2">
-          <h2 className="font-semibold">追回记录</h2>
+        <section className="lab-workbench-panel space-y-3">
+          <header className="lab-workbench-panel-head">
+            <h2>追回记录</h2>
+          </header>
           <ManagementTable headings={["成员／事项", "追回金额（元）", "收款流水号", "状态", "操作"]}>
             {data.records
               .filter((row) => row.kind === "recovery")
@@ -430,7 +506,9 @@ export function LabFinanceManagement({
                   </td>
                   <td className={cell}>{row.data.amount}</td>
                   <td className={cell}>{row.data.reference}</td>
-                  <td className={cell}>{managementStates[row.state]}</td>
+                  <td className={cell}>
+                    <StatusPill state={row.state} />
+                  </td>
                   <td className={cell}>
                     <div className="flex gap-1">
                       <Button size="sm" variant="neutral-primary" onClick={() => setHistory(row)}>

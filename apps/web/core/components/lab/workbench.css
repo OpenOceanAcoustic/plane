@@ -720,3 +720,138 @@
     align-items: flex-start;
   }
 }
+
+/* Section banners and shared table surface */
+.lab-subpage-head {
+  --subpage-color: var(--label-emerald-text);
+  --subpage-bg: var(--label-emerald-bg);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 13px 16px;
+  border: 1px solid color-mix(in srgb, var(--subpage-color) 20%, var(--border-color-subtle));
+  border-radius: 12px;
+  background: linear-gradient(
+    110deg,
+    color-mix(in srgb, var(--subpage-bg) 55%, var(--background-color-layer-2)),
+    var(--background-color-layer-2) 62%
+  );
+  box-shadow: var(--shadow-raised-100);
+}
+
+.lab-subpage-head[data-tone="indigo"] {
+  --subpage-color: var(--label-indigo-text);
+  --subpage-bg: var(--label-indigo-bg);
+}
+
+.lab-subpage-head[data-tone="orange"] {
+  --subpage-color: var(--label-orange-text);
+  --subpage-bg: var(--label-orange-bg);
+}
+
+.lab-subpage-head[data-tone="purple"] {
+  --subpage-color: var(--label-purple-text);
+  --subpage-bg: var(--label-purple-bg);
+}
+
+.lab-subpage-head[data-tone="crimson"] {
+  --subpage-color: var(--label-crimson-text);
+  --subpage-bg: var(--label-crimson-bg);
+}
+
+.lab-subpage-icon {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  border-radius: 10px;
+  background: var(--subpage-bg);
+  color: var(--subpage-color);
+}
+
+.lab-subpage-copy {
+  min-width: 0;
+}
+
+.lab-subpage-copy h2 {
+  font-size: 16px;
+  font-weight: 650;
+}
+
+.lab-subpage-copy p {
+  margin-top: 1px;
+  color: var(--text-color-secondary);
+  font-size: 12px;
+}
+
+.lab-workbench-panel .lab-finance-table {
+  border: 0;
+  box-shadow: none;
+}
+
+.lab-management table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.lab-management table thead {
+  background: color-mix(in srgb, var(--label-indigo-bg) 52%, var(--background-color-layer-1));
+}
+
+.lab-management table thead th {
+  padding: 8px 12px;
+  color: var(--text-color-secondary);
+  font-size: 11px;
+  font-weight: 600;
+  text-align: left;
+  white-space: nowrap;
+}
+
+.lab-management table tbody tr {
+  border-top: 1px solid var(--border-color-subtle);
+  transition: background-color 120ms ease;
+}
+
+.lab-management table tbody tr:hover {
+  background: color-mix(in srgb, var(--label-indigo-bg) 22%, transparent);
+}
+
+.lab-management table tbody td {
+  padding: 9px 12px;
+  vertical-align: top;
+}
+
+.lab-quality-stage button {
+  transition:
+    background-color 120ms ease,
+    border-color 120ms ease;
+}
+
+.lab-workbench-panel table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.lab-workbench-panel table thead {
+  background: color-mix(in srgb, var(--label-indigo-bg) 45%, var(--background-color-layer-1));
+}
+
+.lab-workbench-panel table thead th {
+  padding: 8px 12px;
+  font-size: 11px;
+  font-weight: 600;
+  text-align: left;
+}
+
+.lab-workbench-panel table tbody tr {
+  border-top: 1px solid var(--border-color-subtle);
+}
+
+.lab-workbench-panel table tbody tr:hover {
+  background: color-mix(in srgb, var(--label-indigo-bg) 20%, transparent);
+}
+
+.lab-workbench-panel table tbody td {
+  padding: 9px 12px;
+}

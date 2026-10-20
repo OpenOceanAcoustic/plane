@@ -33,7 +33,7 @@ const percentage = (value: bigint, total: bigint) =>
   total > 0n ? Math.min(100, Math.max(0, Number((value * 100n) / total))) : 0;
 const progressTone = (value: number) => (value >= 100 ? "crimson" : value >= 80 ? "orange" : "emerald");
 
-function Metric({
+export function Metric({
   tone,
   icon,
   label,
@@ -93,7 +93,7 @@ function ProgressBar({
   );
 }
 
-function StatusPill({ state }: { state: string }) {
+export function StatusPill({ state }: { state: string }) {
   return (
     <span className="lab-status-pill" data-state={state}>
       {managementStates[state] ?? state}

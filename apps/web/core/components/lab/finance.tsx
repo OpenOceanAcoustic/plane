@@ -1,7 +1,22 @@
 /** Copyright (c) 2026 OpenOceanAcoustic and contributors. SPDX-License-Identifier: AGPL-3.0-only */
 import { useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
-import { Banknote, Plus, Timer, Wallet } from "lucide-react";
+import {
+  Banknote,
+  BookOpen,
+  ClipboardList,
+  Coins,
+  GitBranch,
+  LayoutDashboard,
+  PiggyBank,
+  Plus,
+  ReceiptText,
+  ShieldCheck,
+  Timer,
+  TrendingUp,
+  Wallet,
+} from "lucide-react";
+import type { LucideIcon } from "lucide-react";
 import { observer } from "mobx-react";
 import { useSearchParams } from "react-router";
 import useSWR from "swr";
@@ -13,7 +28,7 @@ import type { LabFinanceDeletion } from "./finance-delete";
 import { LabFinanceActionDialog, accountKindLabels, financeActionLabels } from "./finance-form";
 import { FinanceManagementDialog } from "./finance-management-form";
 import type { FinanceManagementAction } from "./finance-management-form";
-import { FinanceWorkbench } from "./finance-workbench";
+import { FinanceWorkbench, Metric } from "./finance-workbench";
 import type { LabFinanceChosenAction } from "./finance-form";
 import { LabForecastDialog, LabFormulaEditor } from "./finance-formula";
 import { FinancePermissionDialog } from "./finance-permissions";
@@ -79,6 +94,20 @@ const totalMoney = (amounts: string[]) =>
 const currentMonth = () => new Date().toLocaleDateString("sv-SE", { timeZone: "Asia/Shanghai" }).slice(0, 7);
 const recordDate = (row: LabManagementRecord) => row.data.date ?? row.data.start ?? row.created_at.slice(0, 10);
 const recordAmount = (row: LabManagementRecord) => row.recognized_amount ?? row.data.amount ?? "0";
+const financeTabMeta: Record<string, { label: string; hint: string; tone: string; Icon: LucideIcon }> = {
+  home: { label: "总览", hint: "预算、工时、工资与待办", tone: "emerald", Icon: LayoutDashboard },
+  "project-budget": { label: "项目预算", hint: "按费用类别编制、调整与导出", tone: "indigo", Icon: PiggyBank },
+  cost: { label: "工时与费用", hint: "工时登记、费用审核与成本认定", tone: "orange", Icon: Timer },
+  payroll: { label: "工资与报销", hint: "工资单生成、报销与支付", tone: "purple", Icon: Banknote },
+  management: { label: "经费核定", hint: "资金来源与费用分类", tone: "emerald", Icon: ClipboardList },
+  accounts: { label: "资金账户", hint: "余额、承诺、到账与公共池", tone: "emerald", Icon: Wallet },
+  audit: { label: "财务审计", hint: "审计调整与追回", tone: "crimson", Icon: ShieldCheck },
+  ledger: { label: "账目明细", hint: "逐笔资金流水与冲正", tone: "indigo", Icon: BookOpen },
+  forecasts: { label: "预算与参考预测", hint: "阶段预算、奖励公式与参考预测", tone: "purple", Icon: TrendingUp },
+  settlements: { label: "核准与付款", hint: "奖励核准、承诺与付款", tone: "orange", Icon: ReceiptText },
+  "vc-ledger": { label: "VC 明细", hint: "VC 预算、占用与贡献账本", tone: "indigo", Icon: Coins },
+  workflow: { label: "资金与项目流程", hint: "流程节点、待办与历史", tone: "emerald", Icon: GitBranch },
+};
 
 export const LabFinance = observer(function LabFinance({
   store,
@@ -127,10 +156,14 @@ export const LabFinance = observer(function LabFinance({
   } = useSWR(["lab-project-vc-budgets", store.slug, refreshKey], () =>
     store.request<LabBountyBudget[]>("bounties/budgets/")
   );
-  const { data: management, mutate: mutateManagement } = useSWR(
+  const {
+    data: management,
+    error: managementError,
+    mutate: mutateManagement,
+  } = useSWR(
     projectId ? ["lab-finance-management", store.slug, projectId, refreshKey + revision] : null,
     () => store.request<LabFinanceManagement>(`projects/${projectId}/finance-management/`),
-    { keepPreviousData: true }
+    { keepPreviousData: true, shouldRetryOnError: false }
   );
   const visibleBudgets =
     budgets?.filter((budget) => (!projectId || budget.project_id === projectId) && (showDeleted || !budget.deleted)) ??
@@ -144,6 +177,25 @@ export const LabFinance = observer(function LabFinance({
     setQuickAction(undefined);
   };
   const selectedProject = data?.projects.find((project) => project.id === projectId);
+  const projectOptions = (() => {
+    const rows = new Map<
+      string,
+      { id: string; name: string; is_lead: boolean; deleted?: boolean; permissions?: string[] }
+    >();
+    for (const project of store.planner?.projects ?? []) {
+      rows.set(project.id, { id: project.id, name: project.name, is_lead: project.lead });
+    }
+    for (const project of data?.projects ?? []) {
+      rows.set(project.id, {
+        id: project.id,
+        name: project.name,
+        is_lead: project.is_lead,
+        deleted: project.deleted,
+        permissions: project.permissions,
+      });
+    }
+    return [...rows.values()].filter((project) => showDeleted || !project.deleted);
+  })();
   const adjustingEntry = budgets
     ?.find((row) => row.project_id === budgetAdjustment?.projectId)
     ?.entries?.find((row) => row.id === budgetAdjustment?.entryId);
@@ -169,9 +221,18 @@ export const LabFinance = observer(function LabFinance({
     (sum, row) => sum + (labDecimalUnits(recordAmount(row)) ?? 0n),
     0n
   );
+  const scopedAccounts = data?.accounts.filter((account) => !projectId || account.project_id === projectId) ?? [];
   const accountRows =
     management?.accounts ?? data?.accounts.filter((account) => !projectId || account.project_id === projectId) ?? [];
   const availableFunds = accountRows.reduce((sum, account) => sum + (labDecimalUnits(account.available) ?? 0n), 0n);
+  const accountBalanceTotal = scopedAccounts.reduce(
+    (sum, account) => sum + (labDecimalUnits(account.balance) ?? 0n),
+    0n
+  );
+  const accountCommittedTotal = scopedAccounts.reduce(
+    (sum, account) => sum + (labDecimalUnits(account.committed) ?? 0n),
+    0n
+  );
   const canViewFinance = management?.can_view_finance ?? !!selectedProject?.permissions?.includes("view");
   const financeViews = [
     { id: "home", label: "总览" },
@@ -195,6 +256,8 @@ export const LabFinance = observer(function LabFinance({
     (projectId
       ? selectedProject?.permissions?.includes("approve")
       : data?.projects.some((row) => row.permissions?.includes("approve") && !row.deleted));
+  const activeTabMeta = financeTabMeta[tab];
+  const ActiveTabIcon = activeTabMeta?.Icon;
   const memberName = (id: string) => data?.members.find((member) => member.id === id)?.name ?? "本人／历史成员";
   const stageName = (id: string) => data?.stages.find((stage) => stage.stage_id === id)?.name ?? "阶段";
   const accountName = (id: string) => data?.accounts.find((account) => account.id === id)?.label ?? "资金账户";
@@ -279,14 +342,10 @@ export const LabFinance = observer(function LabFinance({
             className={labInputClass}
           >
             <option value="">全部可见资金与公共池</option>
-            {(
-              data?.projects.filter((project) => showDeleted || !project.deleted) ??
-              store.planner?.projects.map((project) => ({ ...project, is_lead: project.lead })) ??
-              []
-            ).map((project) => (
+            {projectOptions.map((project) => (
               <option key={project.id} value={project.id}>
                 {project.name}
-                {"deleted" in project && project.deleted ? " · 已删除" : project.is_lead ? " · 负责人" : ""}
+                {project.deleted ? " · 已删除" : project.is_lead ? " · 负责人" : ""}
               </option>
             ))}
           </select>
@@ -559,6 +618,17 @@ export const LabFinance = observer(function LabFinance({
           </button>
         ))}
       </nav>
+      {data && tab !== "home" && activeTabMeta && ActiveTabIcon && (
+        <div className="lab-subpage-head" data-tone={activeTabMeta.tone}>
+          <span className="lab-subpage-icon" aria-hidden="true">
+            <ActiveTabIcon size={18} />
+          </span>
+          <div className="lab-subpage-copy">
+            <h2>{activeTabMeta.label}</h2>
+            <p>{activeTabMeta.hint}</p>
+          </div>
+        </div>
+      )}
       {isLoading && <p className="text-13 text-secondary">正在读取资金账…</p>}
       {error && (
         <p role="alert" className="text-13 text-danger-primary">
@@ -568,43 +638,57 @@ export const LabFinance = observer(function LabFinance({
       {data &&
         tab === "home" &&
         (projectId ? (
-          <FinanceWorkbench
-            management={management}
-            canViewFinance={management?.can_view_finance ?? false}
-            canRecord={canRecord}
-            canApprove={canApprove ?? false}
-            canPay={management?.can_pay ?? selectedProject?.permissions?.includes("pay") ?? false}
-            closed={financeClosed}
-            onAction={setQuickAction}
-            onTab={setTab}
-          />
+          managementError ? (
+            <section className="lab-workbench-panel space-y-3" aria-label="项目财务不可用">
+              <header className="lab-workbench-panel-head">
+                <h2>无法读取项目财务</h2>
+              </header>
+              <p role="alert" className="text-13 text-danger-primary">
+                {managementError instanceof Error ? managementError.message : "项目财务读取失败"}
+              </p>
+              <Button size="sm" variant="neutral-primary" onClick={() => setProjectId("")}>
+                返回全部项目
+              </Button>
+            </section>
+          ) : (
+            <FinanceWorkbench
+              management={management}
+              canViewFinance={management?.can_view_finance ?? false}
+              canRecord={canRecord}
+              canApprove={canApprove ?? false}
+              canPay={management?.can_pay ?? selectedProject?.permissions?.includes("pay") ?? false}
+              closed={financeClosed}
+              onAction={setQuickAction}
+              onTab={setTab}
+            />
+          )
         ) : (
           <section className="lab-workbench-panel" aria-label="选择财务项目">
             <header className="lab-workbench-panel-head">
               <h2>选择项目</h2>
             </header>
             <div className="lab-project-picker">
-              {data.projects
-                .filter((project) => !project.deleted)
-                .map((project) => (
-                  <button
-                    type="button"
-                    key={project.id}
-                    className="lab-project-option"
-                    onClick={() => setProjectId(project.id)}
-                  >
-                    <strong>{project.name}</strong>
-                    <span>
-                      {project.is_lead
+              {projectOptions.map((project) => (
+                <button
+                  type="button"
+                  key={project.id}
+                  className="lab-project-option"
+                  onClick={() => setProjectId(project.id)}
+                >
+                  <strong>{project.name}</strong>
+                  <span>
+                    {project.deleted
+                      ? "已删除"
+                      : project.is_lead
                         ? "负责人"
                         : project.permissions?.includes("approve")
                           ? "财务审核"
                           : project.permissions?.includes("record")
                             ? "可登记工时"
                             : "成员"}
-                    </span>
-                  </button>
-                ))}
+                  </span>
+                </button>
+              ))}
             </div>
           </section>
         ))}
@@ -648,8 +732,38 @@ export const LabFinance = observer(function LabFinance({
         ))}
       {data && tab === "accounts" && (
         <>
+          <section className="lab-metric-grid" aria-label="账户汇总">
+            <Metric
+              tone="emerald"
+              icon={<Wallet size={15} />}
+              label="可用余额"
+              value={`¥${labDecimalText(availableFunds)}`}
+              hint={`${scopedAccounts.length} 个资金账户`}
+            />
+            <Metric
+              tone="indigo"
+              icon={<PiggyBank size={15} />}
+              label="实际余额"
+              value={`¥${labDecimalText(accountBalanceTotal)}`}
+              hint="含已承诺金额"
+            />
+            <Metric
+              tone="orange"
+              icon={<ReceiptText size={15} />}
+              label="已承诺"
+              value={`¥${labDecimalText(accountCommittedTotal)}`}
+              hint="尚未支付"
+            />
+            <Metric
+              tone="purple"
+              icon={<Coins size={15} />}
+              label="累计到账"
+              value={`¥${receiptTotals.gross}`}
+              hint={`${activeBatches.length} 笔到账`}
+            />
+          </section>
           {!!data.public_summary?.length && (
-            <section aria-label="实验室公共资金汇总" className="space-y-2">
+            <section aria-label="实验室公共资金汇总" className="lab-workbench-panel space-y-3">
               <h2 className="text-14 font-semibold">实验室公共资金池</h2>
               <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
                 {data.public_summary.map((account) => (
@@ -670,7 +784,7 @@ export const LabFinance = observer(function LabFinance({
               </div>
             </section>
           )}
-          <section aria-label="可见账户明细" className="space-y-2">
+          <section aria-label="可见账户明细" className="lab-workbench-panel space-y-3">
             <h2 className="text-14 font-semibold">资金账户实际余额</h2>
             <Records
               rows={data.accounts.filter(
@@ -741,7 +855,7 @@ export const LabFinance = observer(function LabFinance({
               ]}
             />
           </section>
-          <section aria-label="真实到账批次" className="space-y-2">
+          <section aria-label="真实到账批次" className="lab-workbench-panel space-y-3">
             <div className="flex flex-wrap items-center gap-3">
               <h2 className="mr-auto text-14 font-semibold">实际到账与准备金明细</h2>
               {data.stages.some((stage) => stage.can_record && !stage.deleted) && (
@@ -1237,7 +1351,7 @@ export const LabFinance = observer(function LabFinance({
         </>
       )}
       {data && tab === "ledger" && (
-        <>
+        <section className="lab-workbench-panel space-y-3">
           <div className="flex gap-4 text-13">
             <a
               className="text-accent-primary"
@@ -1328,7 +1442,7 @@ export const LabFinance = observer(function LabFinance({
               />
             </div>
           </details>
-        </>
+        </section>
       )}
       {tab === "vc-ledger" && (
         <>
