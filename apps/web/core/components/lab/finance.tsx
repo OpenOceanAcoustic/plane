@@ -1,25 +1,32 @@
 /** Copyright (c) 2026 OpenOceanAcoustic and contributors. SPDX-License-Identifier: AGPL-3.0-only */
 import { useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
+import { Banknote, Plus, Timer, Wallet } from "lucide-react";
 import { observer } from "mobx-react";
 import { useSearchParams } from "react-router";
 import useSWR from "swr";
 import type { LabStore } from "@plane/shared-state";
-import type { LabBountyBudget, LabFinanceOverview } from "@plane/types";
+import type { LabBountyBudget, LabFinanceManagement, LabFinanceOverview, LabManagementRecord } from "@plane/types";
 import { Button, labDecimalText, labDecimalUnits, labInputClass } from "@plane/ui";
 import { LabFinanceDeleteDialog } from "./finance-delete";
 import type { LabFinanceDeletion } from "./finance-delete";
 import { LabFinanceActionDialog, accountKindLabels, financeActionLabels } from "./finance-form";
+import { FinanceManagementDialog } from "./finance-management-form";
+import type { FinanceManagementAction } from "./finance-management-form";
+import { FinanceWorkbench } from "./finance-workbench";
 import type { LabFinanceChosenAction } from "./finance-form";
 import { LabForecastDialog, LabFormulaEditor } from "./finance-formula";
 import { FinancePermissionDialog } from "./finance-permissions";
 import { LabProjectBudget } from "./project-budget";
-import { LabFinanceManagement } from "./finance-management";
+import { LabFinanceManagement as LabFinanceManagementPanel } from "./finance-management";
 import { LabVCBudgetAdjustment } from "./vc-budget-adjustment";
 import { LabLedger } from "./ledger";
 import { LabRecordWorkflowView } from "./record-workflow";
 // oxlint-disable-next-line import/no-unassigned-import -- local financial and task surfaces
+// oxlint-disable-next-line import/no-unassigned-import -- local workbench surfaces
 import "./finance-market.css";
+// oxlint-disable-next-line import/no-unassigned-import -- local workbench surfaces
+import "./workbench.css";
 
 function Money({ amount }: { amount: string | null | undefined }) {
   return (
@@ -69,6 +76,9 @@ function Records<T extends { id: string }>({
 const stamp = (value: string) => new Date(value).toLocaleString("zh-CN", { timeZone: "Asia/Shanghai" });
 const totalMoney = (amounts: string[]) =>
   labDecimalText(amounts.reduce((sum, value) => sum + (labDecimalUnits(value) ?? 0n), 0n));
+const currentMonth = () => new Date().toLocaleDateString("sv-SE", { timeZone: "Asia/Shanghai" }).slice(0, 7);
+const recordDate = (row: LabManagementRecord) => row.data.date ?? row.data.start ?? row.created_at.slice(0, 10);
+const recordAmount = (row: LabManagementRecord) => row.recognized_amount ?? row.data.amount ?? "0";
 
 export const LabFinance = observer(function LabFinance({
   store,
@@ -87,7 +97,7 @@ export const LabFinance = observer(function LabFinance({
       else next.set("project_id", "");
       return next;
     });
-  const tab = searchParams.get("finance_view") ?? (projectId ? "project-budget" : "accounts");
+  const tab = searchParams.get("finance_view") ?? "home";
   const setTab = (value: string) =>
     setSearchParams((current) => {
       const next = new URLSearchParams(current);
@@ -95,6 +105,7 @@ export const LabFinance = observer(function LabFinance({
       return next;
     });
   const [chosen, setChosen] = useState<LabFinanceChosenAction>();
+  const [quickAction, setQuickAction] = useState<FinanceManagementAction>();
   const [permissionsOpen, setPermissionsOpen] = useState(false);
   const [budgetAdjustment, setBudgetAdjustment] = useState<{ projectId: string; entryId: string }>();
   const [formulaOpen, setFormulaOpen] = useState(false);
@@ -116,6 +127,11 @@ export const LabFinance = observer(function LabFinance({
   } = useSWR(["lab-project-vc-budgets", store.slug, refreshKey], () =>
     store.request<LabBountyBudget[]>("bounties/budgets/")
   );
+  const { data: management, mutate: mutateManagement } = useSWR(
+    projectId ? ["lab-finance-management", store.slug, projectId, refreshKey + revision] : null,
+    () => store.request<LabFinanceManagement>(`projects/${projectId}/finance-management/`),
+    { keepPreviousData: true }
+  );
   const visibleBudgets =
     budgets?.filter((budget) => (!projectId || budget.project_id === projectId) && (showDeleted || !budget.deleted)) ??
     [];
@@ -123,8 +139,9 @@ export const LabFinance = observer(function LabFinance({
     void store.execute(store.loadMarket);
   }, [store]);
   const onSaved = async () => {
-    await Promise.all([mutate(), mutateBudgets()]);
+    await Promise.all([mutate(), mutateBudgets(), mutateManagement()]);
     setRevision((value) => value + 1);
+    setQuickAction(undefined);
   };
   const selectedProject = data?.projects.find((project) => project.id === projectId);
   const adjustingEntry = budgets
@@ -140,9 +157,44 @@ export const LabFinance = observer(function LabFinance({
   };
   const allowedActions = new Set(data?.allowed_actions ?? []);
   const canManage = allowedActions.size > 0;
-  const canApprove = projectId
-    ? selectedProject?.permissions?.includes("approve")
-    : data?.projects.some((row) => row.permissions?.includes("approve") && !row.deleted);
+  const canRecord = management?.can_record ?? selectedProject?.permissions?.includes("record") ?? false;
+  const financeClosed = management?.closed ?? false;
+  const monthRecords =
+    management?.records.filter((row) => row.kind === "cost" && recordDate(row).startsWith(currentMonth())) ?? [];
+  const monthHours = monthRecords.reduce((sum, row) => sum + (Number(row.data.hours) || 0), 0);
+  const pendingCostCount =
+    management?.records.filter((row) => row.kind === "cost" && row.state === "submitted").length ?? 0;
+  const pendingPayrolls = management?.records.filter((row) => row.kind === "payroll" && row.state === "ready") ?? [];
+  const pendingPayrollTotal = pendingPayrolls.reduce(
+    (sum, row) => sum + (labDecimalUnits(recordAmount(row)) ?? 0n),
+    0n
+  );
+  const accountRows =
+    management?.accounts ?? data?.accounts.filter((account) => !projectId || account.project_id === projectId) ?? [];
+  const availableFunds = accountRows.reduce((sum, account) => sum + (labDecimalUnits(account.available) ?? 0n), 0n);
+  const canViewFinance = management?.can_view_finance ?? !!selectedProject?.permissions?.includes("view");
+  const financeViews = [
+    { id: "home", label: "总览" },
+    ...(canViewFinance
+      ? [
+          { id: "project-budget", label: "预算" },
+          { id: "cost", label: "工时与费用", count: pendingCostCount },
+          { id: "payroll", label: "工资与报销", count: pendingPayrolls.length },
+          { id: "management", label: "经费核定" },
+        ]
+      : [
+          { id: "cost", label: "工时与费用", count: pendingCostCount },
+          { id: "payroll", label: "工资与报销", count: pendingPayrolls.length },
+        ]),
+    { id: "accounts", label: "资金账户" },
+    ...(management?.can_audit ? [{ id: "audit", label: "审计" }] : []),
+    { id: "ledger", label: "账目明细" },
+  ];
+  const canApprove =
+    management?.can_approve ??
+    (projectId
+      ? selectedProject?.permissions?.includes("approve")
+      : data?.projects.some((row) => row.permissions?.includes("approve") && !row.deleted));
   const memberName = (id: string) => data?.members.find((member) => member.id === id)?.name ?? "本人／历史成员";
   const stageName = (id: string) => data?.stages.find((stage) => stage.stage_id === id)?.name ?? "阶段";
   const accountName = (id: string) => data?.accounts.find((account) => account.id === id)?.label ?? "资金账户";
@@ -197,20 +249,34 @@ export const LabFinance = observer(function LabFinance({
           onSaved={onSaved}
         />
       )}
-      <div className="sticky top-0 z-20 flex flex-wrap items-center gap-2 rounded-lg border border-subtle bg-surface-1 p-3">
-        <label className="flex items-center gap-2 text-13">
-          <span className="whitespace-nowrap">当前项目</span>
+      {quickAction && management && projectId && (
+        <FinanceManagementDialog
+          key={`${quickAction.kind}-${quickAction.action}-${quickAction.row?.id ?? "new"}`}
+          store={store}
+          path={`projects/${projectId}/finance-management/`}
+          data={management}
+          chosen={quickAction}
+          onAccountAction={(action) => open(action, { project_id: projectId, kind: "project" })}
+          accountActions={["opening", "receipt"].filter((action) => allowedActions.has(action))}
+          onClose={() => setQuickAction(undefined)}
+          onSaved={onSaved}
+        />
+      )}
+      <div className="lab-command">
+        <label className="lab-command-project">
+          <span className="whitespace-nowrap">项目</span>
           <select
             aria-label="资金项目"
             value={projectId}
             onChange={(event) => {
               setProjectId(event.target.value);
               setChosen(undefined);
+              setQuickAction(undefined);
               setDeletion(undefined);
               setFormulaOpen(false);
               setForecastOpen(false);
             }}
-            className={`${labInputClass} max-w-72`}
+            className={labInputClass}
           >
             <option value="">全部可见资金与公共池</option>
             {(
@@ -225,12 +291,65 @@ export const LabFinance = observer(function LabFinance({
             ))}
           </select>
         </label>
+        {projectId && management && (
+          <div className="lab-command-chips">
+            <span className="lab-command-chip">
+              <Timer size={12} />
+              本月 <strong>{monthHours}</strong> 小时
+            </span>
+            <span className="lab-command-chip">
+              <Banknote size={12} />
+              待发 <strong>¥{labDecimalText(pendingPayrollTotal)}</strong>
+            </span>
+            {canViewFinance && (
+              <span className="lab-command-chip">
+                <Wallet size={12} />
+                可用 <strong>¥{labDecimalText(availableFunds)}</strong>
+              </span>
+            )}
+          </div>
+        )}
+        <div className="lab-command-actions">
+          {projectId && management && !financeClosed && canRecord && (
+            <Button size="sm" variant="primary" onClick={() => setQuickAction({ kind: "cost", action: "save" })}>
+              <Plus size={14} className="mr-1" />
+              登记工时
+            </Button>
+          )}
+          {projectId && management && !financeClosed && canRecord && (
+            <Button
+              size="sm"
+              variant="neutral-primary"
+              onClick={() => setQuickAction({ kind: "cost", action: "save", reimbursement: true })}
+            >
+              申请报销
+            </Button>
+          )}
+          {projectId && management && !financeClosed && canApprove && (
+            <Button
+              size="sm"
+              variant="neutral-primary"
+              onClick={() => setQuickAction({ kind: "payroll", action: "save" })}
+            >
+              生成工资单
+            </Button>
+          )}
+          {projectId && canViewFinance && (
+            <Button size="sm" variant="neutral-primary" onClick={() => setTab("project-budget")}>
+              项目预算
+            </Button>
+          )}
+        </div>
       </div>
       <details
-        className="rounded-lg border border-subtle p-3"
+        className="lab-workbench-more"
         open={["forecasts", "settlements", "vc-ledger", "workflow"].includes(tab)}
       >
-        <summary className="cursor-pointer text-14 font-medium">贡献、奖励与资金管理</summary>
+        <summary className="cursor-pointer text-13 font-medium">预算、VC 与资金流程</summary>
+        <label className="mt-2 flex items-center gap-2 text-12">
+          <input type="checkbox" checked={showDeleted} onChange={(event) => setShowDeleted(event.target.checked)} />
+          显示已删除记录
+        </label>
         <div className="mt-3 flex flex-wrap items-center gap-2">
           {(projectId
             ? selectedProject?.can_manage_vc
@@ -426,57 +545,69 @@ export const LabFinance = observer(function LabFinance({
           {budgetError instanceof Error ? budgetError.message : "项目 VC 预算加载失败"}
         </p>
       )}
-      <nav aria-label="资金账视图" className="lab-finance-tabs flex flex-wrap gap-2">
-        {[
-          { id: "project-budget", label: "项目启动预算" },
-          { id: "management", label: "项目经费与成本" },
-          { id: "accounts", label: "真实余额与到账" },
-          { id: "cost", label: "工时与费用" },
-          { id: "payroll", label: "工资与报销" },
-          { id: "audit", label: "财务审计" },
-          { id: "ledger", label: "账目明细" },
-        ].map((view) => (
-          <Button
+      <nav aria-label="资金账视图" className="lab-section-tabs">
+        {financeViews.map((view) => (
+          <button
+            type="button"
             key={view.id}
-            size="sm"
-            variant={tab === view.id ? "accent-primary" : "neutral-primary"}
+            className="lab-tab"
             aria-pressed={tab === view.id}
             onClick={() => setTab(view.id)}
           >
             {view.label}
-          </Button>
+            {"count" in view && view.count ? <span className="lab-tab-count">{view.count}</span> : null}
+          </button>
         ))}
       </nav>
-      <label className="flex items-center gap-2 text-13">
-        <input type="checkbox" checked={showDeleted} onChange={(event) => setShowDeleted(event.target.checked)} />
-        显示已删除记录
-      </label>
       {isLoading && <p className="text-13 text-secondary">正在读取资金账…</p>}
       {error && (
         <p role="alert" className="text-13 text-danger-primary">
           {error instanceof Error ? error.message : "资金账加载失败"}
         </p>
       )}
-      {!projectId && data && (
-        <div className="rounded-lg border border-subtle p-5">
-          <h2 className="mb-3 text-16 font-semibold">选择项目</h2>
-          <select
-            aria-label="选择财务项目"
-            className={`${labInputClass} max-w-80`}
-            value=""
-            onChange={(event) => setProjectId(event.target.value)}
-          >
-            <option value="">请选择项目</option>
-            {data.projects
-              .filter((project) => !project.deleted)
-              .map((project) => (
-                <option key={project.id} value={project.id}>
-                  {project.name}
-                </option>
-              ))}
-          </select>
-        </div>
-      )}
+      {data &&
+        tab === "home" &&
+        (projectId ? (
+          <FinanceWorkbench
+            management={management}
+            canViewFinance={management?.can_view_finance ?? false}
+            canRecord={canRecord}
+            canApprove={canApprove ?? false}
+            canPay={management?.can_pay ?? selectedProject?.permissions?.includes("pay") ?? false}
+            closed={financeClosed}
+            onAction={setQuickAction}
+            onTab={setTab}
+          />
+        ) : (
+          <section className="lab-workbench-panel" aria-label="选择财务项目">
+            <header className="lab-workbench-panel-head">
+              <h2>选择项目</h2>
+            </header>
+            <div className="lab-project-picker">
+              {data.projects
+                .filter((project) => !project.deleted)
+                .map((project) => (
+                  <button
+                    type="button"
+                    key={project.id}
+                    className="lab-project-option"
+                    onClick={() => setProjectId(project.id)}
+                  >
+                    <strong>{project.name}</strong>
+                    <span>
+                      {project.is_lead
+                        ? "负责人"
+                        : project.permissions?.includes("approve")
+                          ? "财务审核"
+                          : project.permissions?.includes("record")
+                            ? "可登记工时"
+                            : "成员"}
+                    </span>
+                  </button>
+                ))}
+            </div>
+          </section>
+        ))}
       {data && tab === "accounts" && (
         <div className="flex flex-wrap gap-2">
           {["receipt", "opening"]
@@ -503,7 +634,7 @@ export const LabFinance = observer(function LabFinance({
       {data &&
         ["management", "cost", "payroll", "audit"].includes(tab) &&
         (projectId ? (
-          <LabFinanceManagement
+          <LabFinanceManagementPanel
             key={`${projectId}-${tab}`}
             view={tab === "management" ? "overview" : tab}
             onAccountAction={(action) => open(action, { project_id: projectId, kind: "project" })}

@@ -1,0 +1,42 @@
+# 资金与质量工作台改版
+
+面向一线成员重排「资金与奖励」和「项目与质量」两个页面，常用操作进入首屏，复杂管理功能保留在原有入口。
+
+## 资金与奖励
+
+- 顶部固定命令栏：项目切换、本月工时、待发工资、可用资金，以及「登记工时」「申请报销」「生成工资单」「项目预算」。
+- 首屏总览：核定预算、可用资金、本月工时、待发工资、待我处理五项指标；管理成员看到项目预算执行，普通成员看到本人本月工时与待办。
+- 预算执行按费用类别显示进度和余量，待办列表可直接审核费用或登记工资支付。
+- 原有预算、工时、工资、账户、审计、账目明细、VC 预算和资金流程全部保留；显示已删除记录移入「预算、VC 与资金流程」折叠区。
+- 无项目时先显示项目卡片，避免空白页；普通成员不显示无权限的预算和经费核定标签。
+
+## 项目与质量
+
+- 顶部固定命令栏：项目切换、已通过/待评审/待补数量，以及「登记资料」「编制项目计划」「处理待评审」「导出目录」。
+- 首屏完成度环形图与五个可点击状态卡：未登记、草稿／需修改、待评审、已通过、待复审。
+- 待处理资料直接给出「评审」「继续编辑」「重新提交」；右侧显示项目计划和阶段归档进度。
+- 资料表格保留版本、文档更新时间和评审人信息，主操作从「更多」中提出来。
+
+## 文件
+
+- `apps/web/core/components/lab/finance.tsx`
+- `apps/web/core/components/lab/finance-workbench.tsx`（新增）
+- `apps/web/core/components/lab/project-quality.tsx`
+- `apps/web/core/components/lab/workbench.css`（新增）
+
+## 验证
+
+- `oxlint`：3 个改动文件 0 警告 0 错误。
+- `tsc --noEmit`：改动文件通过；仓库原有 `comments/context.tsx` 的 `lifecycle` 类型错误与本改版无关。
+- `react-router build` 生产构建通过，产物包含「登记工时」「资料完成度」。
+- 组件浏览器检查：1440px 与 390px 均无横向溢出；登记工时、费用审核、资料登记、资料评审对话框均可打开。
+- 部署脚本在隔离目录完成构建、发布、静态服务与冒烟测试。
+
+## 部署
+
+```bash
+curl -fsSL https://gist.githubusercontent.com/Perry44001/82c7d644b1573d2e5761db385a362575/raw/deploy-finance-quality.py -o /tmp/deploy-finance-quality.py
+sudo python3 /tmp/deploy-finance-quality.py
+```
+
+脚本会快进合并 `ooa/main`、构建依赖包和 Web、校验产物包含新界面，先发布哈希资源、最后原子替换 `index.html`，并验证线上 `lab-panel` 资源。
