@@ -16,8 +16,9 @@ import {
 import { calendarInstant } from "./calendar-time";
 
 export const financeActionLabels: Record<string, string> = {
-  stage: "冻结阶段奖励预算",
-  receipt: "登记真实到账",
+  stage: "设置阶段预算",
+  receipt: "外部项目到账",
+  "pool-funding": "内部资金池划入",
   opening: "录入期初余额",
   transfer: "账户划拨",
   expense: "登记实际支出",
@@ -107,6 +108,7 @@ export function LabFinanceActionDialog({
   chosen,
   onClose,
   onSaved,
+  contractAmount,
 }: {
   store: LabStore;
   data: LabFinanceOverview;
@@ -114,6 +116,7 @@ export function LabFinanceActionDialog({
   chosen: LabFinanceChosenAction;
   onClose: () => void;
   onSaved: () => Promise<void>;
+  contractAmount?: string;
 }) {
   const [requestKey] = useState(() => uuidv4());
   const [upgraded, setUpgraded] = useState(false);
@@ -128,7 +131,10 @@ export function LabFinanceActionDialog({
   const action = chosen.action;
   const members = data.members.map((member) => ({ value: member.id, label: member.name }));
   const projectAllowed = (id: string | null) =>
-    data.projects.some((project) => project.id === id && project.allowed_actions?.includes(action));
+    data.projects.some(
+      (project) =>
+        project.id === id && project.allowed_actions?.includes(action === "pool-funding" ? "transfer" : action)
+    );
   const manageable = data.accounts.filter(
     (account) => account.can_manage && (account.project_id ? projectAllowed(account.project_id) : data.is_manager)
   );
@@ -137,7 +143,12 @@ export function LabFinanceActionDialog({
     label: `${account.label} · 可用 ¥${account.available}`,
   }));
   const stages = data.stages
-    .filter((stage) => stage.can_manage && projectAllowed(stage.project_id) && !stage.deleted)
+    .filter(
+      (stage) =>
+        (action === "receipt" ? (stage.can_record ?? stage.can_manage) : stage.can_manage) &&
+        projectAllowed(stage.project_id) &&
+        !stage.deleted
+    )
     .map((stage) => ({ value: stage.stage_id, label: `${stage.name} · 执行实额 ¥${stage.execution_funded}` }));
   const unsettledStages = (store.stages ?? [])
     .filter(
@@ -291,9 +302,9 @@ export function LabFinanceActionDialog({
     case "receipt":
       fields = [
         select("stage_id", "阶段", stages),
-        number("gross", "本次真实到账（元）"),
-        number("costs", "本次成本扣除（元）", true, "0"),
-        number("D", "本次核准可分配 D（元）"),
+        { ...number("gross", "实际到账（元）"), min: "0.01" },
+        number("tax", "税金（元）", false, "0"),
+        number("management_fee", "管理费用（元）", false, "0"),
         { key: "source", label: "到账来源", required: true },
       ];
       break;
@@ -322,6 +333,26 @@ export function LabFinanceActionDialog({
         number("amount", "划拨金额（元）"),
       ];
       break;
+    case "pool-funding": {
+      const poolSources = manageable.filter((account) =>
+        ["future_pool", "public", "future_research", "future_exploration"].includes(account.kind)
+      );
+      const projectAccounts = manageable.filter((account) => account.kind === "project" && account.project_id);
+      fields = [
+        select(
+          "from_account_id",
+          "资金池来源",
+          poolSources.map((account) => ({ value: account.id, label: `${account.label} · 可用 ¥${account.available}` }))
+        ),
+        select(
+          "to_account_id",
+          "项目账户",
+          projectAccounts.map((account) => ({ value: account.id, label: account.label }))
+        ),
+        number("amount", "划入金额（元）"),
+      ];
+      break;
+    }
     case "expense":
       fields = [
         select(
@@ -499,7 +530,7 @@ export function LabFinanceActionDialog({
     data.settlements
       .filter((row) => row.kind === "execution" && row.stage_id === stage && row.user_id !== excludeUser)
       .reduce((total, row) => total + (units(row.amount) ?? 0n), 0n);
-  if (["transfer", "stage-allocation", "dispute", "resolve-dispute", "carryover"].includes(action)) {
+  if (["transfer", "pool-funding", "stage-allocation", "dispute", "resolve-dispute", "carryover"].includes(action)) {
     limits.amount = spendLimit(sourceAccount);
     if (["dispute", "carryover"].includes(action) && sourceAccount?.stage_id) {
       const stage = data.stages.find((row) => row.stage_id === sourceAccount.stage_id);
@@ -565,11 +596,6 @@ export function LabFinanceActionDialog({
       source?.available,
       data.future_plan_limits?.[valueOf("year")] ?? (data.future_plan_limits ? "0" : undefined)
     );
-  } else if (action === "receipt") {
-    limits.costs = valueOf("gross") || undefined;
-    const gross = units(valueOf("gross"));
-    const costs = units(valueOf("costs"));
-    if (gross !== null && costs !== null) limits.D = labDecimalText(positive(gross - costs));
   }
   const numericFields = fields.filter((field) => field.type === "number" && field.key !== "year");
   const numericErrors = numericFields.map((field) =>
@@ -617,7 +643,13 @@ export function LabFinanceActionDialog({
       for (const id of history)
         stageErrors.push(labAmountError(values[`history-vc-${id}`] ?? "", { min: "0.01", unit: "VC" }));
   }
-  const invalid = [...numericErrors, ...stageErrors].some(Boolean);
+  const receiptTax = units(valueOf("tax")) ?? 0n;
+  const receiptManagement = units(valueOf("management_fee")) ?? 0n;
+  const receiptGross = units(valueOf("gross")) ?? 0n;
+  const receiptDeductions = receiptTax + receiptManagement;
+  const receiptNet = positive(receiptGross - receiptDeductions);
+  const receiptInvalid = action === "receipt" && receiptDeductions > receiptGross;
+  const invalid = [...numericErrors, ...stageErrors].some(Boolean) || receiptInvalid;
   return (
     <LabDialog
       title={financeActionLabels[action] ?? "办理资金事项"}
@@ -638,6 +670,14 @@ export function LabFinanceActionDialog({
         for (const field of fields) {
           const value = text(form, field.key);
           if (value && value !== "public") body[field.key] = value;
+        }
+        if (action === "receipt") {
+          const gross = units(text(form, "gross")) ?? 0n;
+          const costs = (units(text(form, "tax")) ?? 0n) + (units(text(form, "management_fee")) ?? 0n);
+          body.costs = labDecimalText(costs);
+          body.D = labDecimalText(positive(gross - costs));
+          delete body.tax;
+          delete body.management_fee;
         }
         const occurredAt = text(form, "occurred_at");
         if (action === "vc-stage") body.append = true;
@@ -671,7 +711,11 @@ export function LabFinanceActionDialog({
             : [];
         }
         try {
-          await store.request(action === "vc-stage" ? "stages/" : `finance/${action}/`, "POST", body);
+          await store.request(
+            action === "vc-stage" ? "stages/" : action === "pool-funding" ? "finance/transfer/" : `finance/${action}/`,
+            "POST",
+            body
+          );
           if (action === "vc-stage") await store.loadMarket();
           await onSaved();
           onClose();
@@ -739,6 +783,35 @@ export function LabFinanceActionDialog({
           )}
         </LabField>
       ))}
+      {action === "receipt" && (
+        <div className="lab-incoming-calculation">
+          <div className="lab-incoming-calculation-reference">
+            <span>合同／核定金额</span>
+            <strong>{contractAmount && contractAmount !== "0.00" ? `¥${contractAmount}` : "未核定"}</strong>
+          </div>
+          <div>
+            <span>实际到账</span>
+            <strong>¥{labDecimalText(receiptGross)}</strong>
+          </div>
+          <div>
+            <span>税金</span>
+            <strong>{receiptTax > 0n ? `−¥${labDecimalText(receiptTax)}` : "—"}</strong>
+          </div>
+          <div>
+            <span>管理费用</span>
+            <strong>{receiptManagement > 0n ? `−¥${labDecimalText(receiptManagement)}` : "—"}</strong>
+          </div>
+          <div className="lab-incoming-calculation-total">
+            <span>可分配净额 D</span>
+            <strong>¥{labDecimalText(receiptNet)}</strong>
+          </div>
+          {receiptInvalid && (
+            <p role="alert" className="lab-incoming-calculation-error">
+              税金与管理费用合计不能超过实际到账。
+            </p>
+          )}
+        </div>
+      )}
       {action === "stage" && (
         <>
           <fieldset className="space-y-3 rounded border border-subtle p-3">

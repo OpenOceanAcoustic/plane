@@ -254,9 +254,18 @@ export const LabFinance = observer(function LabFinance({
     { id: "ledger", label: "账目明细" },
   ];
   const canReceipt =
-    allowedActions.has("receipt") && (data?.stages.some((stage) => stage.can_manage && !stage.deleted) ?? false);
+    allowedActions.has("receipt") &&
+    (data?.stages.some((stage) => (stage.can_record ?? stage.can_manage) && !stage.deleted) ?? false);
   const canOpening = allowedActions.has("opening");
   const canExpense = allowedActions.has("expense") && (data?.accounts.some((account) => account.can_manage) ?? false);
+  const poolSources =
+    data?.accounts.filter(
+      (account) =>
+        account.can_manage && ["future_pool", "public", "future_research", "future_exploration"].includes(account.kind)
+    ) ?? [];
+  const projectTargets =
+    data?.accounts.filter((account) => account.can_manage && account.kind === "project" && account.project_id) ?? [];
+  const canPoolFunding = allowedActions.has("transfer") && poolSources.length > 0 && projectTargets.length > 0;
   const recentBatches = (data?.batches ?? [])
     .filter((batch) => showDeleted || !batch.reversed)
     // oxlint-disable-next-line no-array-sort -- display-only copy
@@ -745,59 +754,92 @@ export const LabFinance = observer(function LabFinance({
             <header className="lab-workbench-panel-head">
               <h2>入账办理</h2>
             </header>
-            <div className="lab-incoming-actions">
-              {canReceipt && (
-                <button
-                  type="button"
-                  className="lab-incoming-action"
-                  data-tone="emerald"
-                  onClick={() => open("receipt")}
-                >
-                  <span className="lab-incoming-action-icon" aria-hidden="true">
-                    <Banknote size={18} />
-                  </span>
-                  <span>
-                    <strong>登记真实到账</strong>
-                    <small>项目回款、阶段到账</small>
-                  </span>
-                </button>
-              )}
-              {canOpening && (
-                <button
-                  type="button"
-                  className="lab-incoming-action"
-                  data-tone="indigo"
-                  onClick={() => open("opening")}
-                >
-                  <span className="lab-incoming-action-icon" aria-hidden="true">
-                    <Wallet size={18} />
-                  </span>
-                  <span>
-                    <strong>录入期初余额</strong>
-                    <small>历史余额与账户初始化</small>
-                  </span>
-                </button>
-              )}
-              {canExpense && (
-                <button
-                  type="button"
-                  className="lab-incoming-action"
-                  data-tone="orange"
-                  onClick={() => open("expense")}
-                >
-                  <span className="lab-incoming-action-icon" aria-hidden="true">
-                    <ReceiptText size={18} />
-                  </span>
-                  <span>
-                    <strong>登记实际支出</strong>
-                    <small>从资金账户登记支出</small>
-                  </span>
-                </button>
+            <div className="lab-incoming-group">
+              <h3>项目收入</h3>
+              <div className="lab-incoming-actions">
+                {canReceipt && (
+                  <button
+                    type="button"
+                    className="lab-incoming-action"
+                    data-tone="emerald"
+                    onClick={() => open("receipt")}
+                  >
+                    <span className="lab-incoming-action-icon" aria-hidden="true">
+                      <Banknote size={18} />
+                    </span>
+                    <span>
+                      <strong>外部项目到账</strong>
+                      <small>合同回款，扣税与管理费</small>
+                    </span>
+                  </button>
+                )}
+                {canPoolFunding && (
+                  <button
+                    type="button"
+                    className="lab-incoming-action"
+                    data-tone="indigo"
+                    onClick={() => open("pool-funding")}
+                  >
+                    <span className="lab-incoming-action-icon" aria-hidden="true">
+                      <Coins size={18} />
+                    </span>
+                    <span>
+                      <strong>内部资金池划入</strong>
+                      <small>从公共池划入项目账户</small>
+                    </span>
+                  </button>
+                )}
+              </div>
+              {!canReceipt && !canPoolFunding && (
+                <div className="flex flex-col items-start gap-2">
+                  <p className="text-12 text-secondary">
+                    还没有可入账的阶段或项目账户。可先设置阶段预算，或录入期初余额建立项目账户。
+                  </p>
+                  {allowedActions.has("stage") && (
+                    <Button size="sm" variant="neutral-primary" onClick={() => open("stage")}>
+                      设置阶段预算
+                    </Button>
+                  )}
+                </div>
               )}
             </div>
-            {!canReceipt && !canOpening && !canExpense && (
-              <p className="text-13 text-secondary">当前没有可办理的入账操作。</p>
-            )}
+            <div className="lab-incoming-group">
+              <h3>期初与支出</h3>
+              <div className="lab-incoming-actions">
+                {canOpening && (
+                  <button
+                    type="button"
+                    className="lab-incoming-action"
+                    data-tone="purple"
+                    onClick={() => open("opening")}
+                  >
+                    <span className="lab-incoming-action-icon" aria-hidden="true">
+                      <Wallet size={18} />
+                    </span>
+                    <span>
+                      <strong>录入期初余额</strong>
+                      <small>历史余额与账户初始化</small>
+                    </span>
+                  </button>
+                )}
+                {canExpense && (
+                  <button
+                    type="button"
+                    className="lab-incoming-action"
+                    data-tone="orange"
+                    onClick={() => open("expense")}
+                  >
+                    <span className="lab-incoming-action-icon" aria-hidden="true">
+                      <ReceiptText size={18} />
+                    </span>
+                    <span>
+                      <strong>登记实际支出</strong>
+                      <small>从资金账户登记支出</small>
+                    </span>
+                  </button>
+                )}
+              </div>
+            </div>
           </section>
           <section className="lab-workbench-panel space-y-3" aria-label="最近到账">
             <header className="lab-workbench-panel-head">
@@ -1647,6 +1689,7 @@ export const LabFinance = observer(function LabFinance({
           data={data}
           projectId={projectId}
           chosen={chosen}
+          contractAmount={management?.summary?.funding}
           onClose={() => setChosen(undefined)}
           onSaved={onSaved}
         />

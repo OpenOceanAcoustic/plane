@@ -856,71 +856,87 @@
   padding: 9px 12px;
 }
 
-/* Incoming money actions */
-.lab-incoming-actions {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
-  gap: 10px;
-}
-
-.lab-incoming-action {
-  --incoming-color: var(--label-emerald-text);
-  --incoming-bg: var(--label-emerald-bg);
+.lab-incoming-group {
   display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 13px 14px;
-  border: 1px solid color-mix(in srgb, var(--incoming-color) 22%, var(--border-color-subtle));
-  border-radius: 10px;
-  background: linear-gradient(
-    135deg,
-    color-mix(in srgb, var(--incoming-bg) 55%, var(--background-color-layer-2)),
-    var(--background-color-layer-2) 72%
-  );
-  text-align: left;
-  transition:
-    border-color 120ms ease,
-    box-shadow 120ms ease,
-    transform 120ms ease;
+  flex-direction: column;
+  gap: 8px;
 }
 
-.lab-incoming-action:hover {
-  border-color: color-mix(in srgb, var(--incoming-color) 45%, var(--border-color-subtle));
-  box-shadow: var(--shadow-raised-100);
-  transform: translateY(-1px);
+.lab-incoming-group + .lab-incoming-group {
+  padding-top: 14px;
+  border-top: 1px dashed var(--border-color-subtle);
 }
 
-.lab-incoming-action[data-tone="indigo"] {
-  --incoming-color: var(--label-indigo-text);
-  --incoming-bg: var(--label-indigo-bg);
-}
-
-.lab-incoming-action[data-tone="orange"] {
-  --incoming-color: var(--label-orange-text);
-  --incoming-bg: var(--label-orange-bg);
-}
-
-.lab-incoming-action-icon {
-  display: grid;
-  flex: none;
-  place-items: center;
-  width: 34px;
-  height: 34px;
-  border-radius: 9px;
-  background: var(--incoming-bg);
-  color: var(--incoming-color);
-}
-
-.lab-incoming-action strong {
-  display: block;
-  color: var(--text-color-primary);
-  font-size: 13px;
-  font-weight: 600;
-}
-
-.lab-incoming-action small {
-  display: block;
-  margin-top: 1px;
+.lab-incoming-group h3 {
   color: var(--text-color-secondary);
   font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.lab-incoming-action[data-tone="purple"] {
+  --incoming-color: var(--label-purple-text);
+  --incoming-bg: var(--label-purple-bg);
+}
+
+.lab-incoming-calculation {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px 16px;
+  padding: 12px 14px;
+  border: 1px solid color-mix(in srgb, var(--label-emerald-border) 22%, var(--border-color-subtle));
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--label-emerald-bg) 30%, var(--background-color-layer-1));
+}
+
+.lab-incoming-calculation > div {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 12px;
+}
+
+.lab-incoming-calculation > div > span {
+  color: var(--text-color-secondary);
+}
+
+.lab-incoming-calculation > div > strong {
+  color: var(--text-color-primary);
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.lab-incoming-calculation-reference,
+.lab-incoming-calculation-total {
+  grid-column: 1 / -1;
+}
+
+.lab-incoming-calculation-reference {
+  padding-bottom: 8px;
+  border-bottom: 1px dashed var(--border-color-subtle);
+}
+
+.lab-incoming-calculation-total {
+  padding-top: 8px;
+  border-top: 1px dashed var(--border-color-subtle);
+  font-size: 13px !important;
+}
+
+.lab-incoming-calculation-total > strong {
+  color: var(--label-emerald-text) !important;
+  font-size: 17px;
+}
+
+.lab-incoming-calculation-error {
+  grid-column: 1 / -1;
+  color: var(--label-crimson-text);
+  font-size: 12px;
+}
+
+@media (max-width: 640px) {
+  .lab-incoming-calculation {
+    grid-template-columns: 1fr;
+  }
 }
