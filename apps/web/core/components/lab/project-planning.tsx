@@ -1,6 +1,6 @@
 /** Copyright (c) 2026 OpenOceanAcoustic and contributors. SPDX-License-Identifier: AGPL-3.0-only */
-import { useEffect, useMemo, useState } from "react";
-import type { CSSProperties } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import type { CSSProperties, KeyboardEvent as ReactKeyboardEvent } from "react";
 import {
   ChevronDown,
   ChevronRight,
@@ -9,14 +9,18 @@ import {
   FolderKanban,
   Layers,
   ListTodo,
+  Plus,
   RefreshCw,
+  X,
 } from "lucide-react";
 import { useSearchParams } from "react-router";
+import { v4 as uuidv4 } from "uuid";
 import useSWR from "swr";
 import type { LabStore } from "@plane/shared-state";
 import { Button, labInputClass } from "@plane/ui";
 import type { LabGanttData, LabGanttTask } from "./gantt-helpers";
 import type { LabOpenProjectIssue } from "./item-details";
+import { IssueService } from "@/services/issue/issue.service";
 // oxlint-disable-next-line import/no-unassigned-import -- multi-level planning board styles
 import "./project-planning.css";
 
@@ -121,9 +125,27 @@ function ProjectPlanning({
   );
   const [scale, setScale] = useState<"week" | "month">("week");
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
+  const [adding, setAdding] = useState<{ parentId: string | null }>();
+  const [addValue, setAddValue] = useState("");
+  const [addError, setAddError] = useState("");
+  const [creating, setCreating] = useState(false);
+  const addInputRef = useRef<HTMLInputElement>(null);
+  const rowRefs = useRef(new Map<string, HTMLDivElement>());
+  const issueService = useMemo(() => new IssueService(), []);
   useEffect(() => {
     setCollapsed(new Set());
+    setAdding(undefined);
+    setAddValue("");
+    setAddError("");
   }, [projectId]);
+  useEffect(() => {
+    if (!adding) return;
+    const frame = requestAnimationFrame(() => {
+      addInputRef.current?.focus();
+      addInputRef.current?.scrollIntoView({ block: "nearest" });
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [adding]);
   const tree = useMemo(() => buildTree(data?.tasks ?? []), [data]);
   const rows = useMemo(() => flatten(tree, collapsed), [tree, collapsed]);
   const tasks = data?.tasks ?? [];
@@ -177,6 +199,119 @@ function ProjectPlanning({
       else next.add(id);
       return next;
     });
+  const startAdding = (row?: PlanningRow) => {
+    setAdding({ parentId: row?.task.id ?? null });
+    setAddValue("");
+    setAddError("");
+    if (row?.children.length)
+      setCollapsed((current) => {
+        const next = new Set(current);
+        next.delete(row.task.id);
+        return next;
+      });
+  };
+  const cancelAdding = () => {
+    setAdding(undefined);
+    setAddValue("");
+    setAddError("");
+  };
+  const submitAdd = async () => {
+    if (!adding || creating) return;
+    const name = addValue.trim();
+    if (!name) {
+      addInputRef.current?.focus();
+      return;
+    }
+    setCreating(true);
+    setAddError("");
+    try {
+      await issueService.createIssue(store.slug, projectId, {
+        id: uuidv4(),
+        name,
+        parent_id: adding.parentId,
+        priority: "none",
+        label_ids: [],
+        assignee_ids: [],
+      });
+      setAddValue("");
+      await mutate();
+      requestAnimationFrame(() => addInputRef.current?.focus());
+    } catch (problem) {
+      setAddError(
+        problem instanceof Error
+          ? problem.message
+          : typeof problem === "string"
+            ? problem
+            : "创建失败，请检查标题和项目权限"
+      );
+    } finally {
+      setCreating(false);
+    }
+  };
+  const focusRow = (id: string) => {
+    const element = rowRefs.current.get(id);
+    element?.focus();
+    element?.scrollIntoView({ block: "nearest" });
+  };
+  const onRowKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>, row: PlanningRow, index: number) => {
+    if (event.key === "ArrowDown") {
+      event.preventDefault();
+      const next = rows[index + 1];
+      if (next) focusRow(next.task.id);
+    } else if (event.key === "ArrowUp") {
+      event.preventDefault();
+      const previous = rows[index - 1];
+      if (previous) focusRow(previous.task.id);
+    } else if (event.key === "ArrowRight") {
+      if (row.children.length) {
+        event.preventDefault();
+        setCollapsed((current) => {
+          const next = new Set(current);
+          next.delete(row.task.id);
+          return next;
+        });
+      }
+    } else if (event.key === "ArrowLeft") {
+      event.preventDefault();
+      if (row.children.length && !collapsed.has(row.task.id)) {
+        setCollapsed((current) => new Set(current).add(row.task.id));
+      } else if (row.task.parent_id) {
+        focusRow(row.task.parent_id);
+      }
+    } else if (event.key === "Enter") {
+      event.preventDefault();
+      openTask(row.task);
+    } else if (event.key === "n" || event.key === "N" || event.key === "+") {
+      event.preventDefault();
+      startAdding(row);
+    }
+  };
+  useEffect(() => {
+    const onGlobalKeyDown = (event: KeyboardEvent) => {
+      if (event.defaultPrevented || event.metaKey || event.ctrlKey || event.altKey) return;
+      const target = event.target as HTMLElement | null;
+      if (target?.closest("input, textarea, select, [contenteditable=true]")) return;
+      if (event.key === "n" || event.key === "N") {
+        event.preventDefault();
+        startAdding();
+      }
+    };
+    window.addEventListener("keydown", onGlobalKeyDown);
+    return () => window.removeEventListener("keydown", onGlobalKeyDown);
+  });
+  const displayRows = useMemo(() => {
+    const result: (
+      | { type: "task"; row: PlanningRow; index: number }
+      | { type: "add"; parentId: string | null; depth: number }
+    )[] = [];
+    rows.forEach((row, index) => {
+      result.push({ type: "task", row, index });
+      if (adding && adding.parentId === row.task.id)
+        result.push({ type: "add", parentId: row.task.id, depth: row.depth + 1 });
+    });
+    if (adding && adding.parentId === null) result.push({ type: "add", parentId: null, depth: 0 });
+    return result;
+  }, [rows, adding]);
   const project = store.planner?.projects.find((row) => row.id === projectId);
   return (
     <section className="lab-planning" aria-label="项目规划">
@@ -211,6 +346,10 @@ function ProjectPlanning({
           </span>
         </div>
         <div className="lab-planning-toolbar-actions">
+          <Button size="sm" variant="primary" onClick={() => startAdding()}>
+            <Plus size={13} className="mr-1" />
+            新增工作项
+          </Button>
           <div className="lab-planning-scale" role="group" aria-label="时间尺度">
             <button type="button" aria-pressed={scale === "week"} onClick={() => setScale("week")}>
               周
@@ -242,7 +381,13 @@ function ProjectPlanning({
           未排期
         </span>
         {project && <span className="ml-auto text-tertiary">{project.name}</span>}
+        <span className="lab-planning-shortcuts">N 新增 · ↑↓ 选择 · → 展开 · ← 收起 · Enter 打开</span>
       </div>
+      {addError && (
+        <p role="alert" className="lab-planning-add-error">
+          {addError}
+        </p>
+      )}
 
       {error && (
         <p role="alert" className="text-13 text-danger-primary">
@@ -250,17 +395,23 @@ function ProjectPlanning({
         </p>
       )}
       {isLoading && <p className="text-13 text-secondary">正在读取项目规划…</p>}
-      {!isLoading && !error && !rows.length && (
+      {!isLoading && !error && !displayRows.length && (
         <div className="lab-planning-empty">
-          <p>当前项目还没有工作项。先在项目里建立阶段、任务和子任务，再回到这里排期。</p>
-          <a className="lab-planning-open" href={`/${store.slug}/projects/${projectId}/issues`}>
-            打开工作项
-            <ExternalLink size={12} />
-          </a>
+          <p>当前项目还没有工作项。先从第一条工作项开始，后续可以继续添加子项。</p>
+          <div className="flex flex-wrap gap-2">
+            <Button size="sm" variant="primary" onClick={() => startAdding()}>
+              <Plus size={13} className="mr-1" />
+              新增工作项
+            </Button>
+            <a className="lab-planning-open" href={`/${store.slug}/projects/${projectId}/issues`}>
+              打开工作项
+              <ExternalLink size={12} />
+            </a>
+          </div>
         </div>
       )}
 
-      {!!rows.length && (
+      {!!displayRows.length && (
         <div className="lab-planning-scroll">
           <div className="lab-planning-grid" style={{ width: TABLE_WIDTH + timelineWidth }}>
             <div className="lab-planning-table">
@@ -272,29 +423,77 @@ function ProjectPlanning({
                 <span>结束</span>
                 <span>状态</span>
               </div>
-              {rows.map((row) => {
+              {displayRows.map((entry) => {
+                if (entry.type === "add")
+                  return (
+                    <div
+                      key={`add-${entry.parentId ?? "root"}`}
+                      className="lab-planning-add-row"
+                      style={{ paddingLeft: 14 + entry.depth * 13 }}
+                    >
+                      <CornerDownRight size={12} className="shrink-0 text-tertiary" aria-hidden="true" />
+                      <input
+                        ref={addInputRef}
+                        className="lab-planning-add-input"
+                        value={addValue}
+                        onChange={(event) => setAddValue(event.target.value)}
+                        onKeyDown={(event) => {
+                          if (event.nativeEvent.isComposing) return;
+                          if (event.key === "Enter") {
+                            event.preventDefault();
+                            void submitAdd();
+                          } else if (event.key === "Escape") {
+                            event.preventDefault();
+                            event.stopPropagation();
+                            cancelAdding();
+                          }
+                        }}
+                        placeholder="输入标题，Enter 确认"
+                        maxLength={255}
+                        aria-label="新工作项标题"
+                        disabled={creating}
+                      />
+                      <span className="lab-planning-add-hint">Enter</span>
+                      <button
+                        type="button"
+                        className="lab-planning-add-submit"
+                        disabled={creating || !addValue.trim()}
+                        onClick={() => void submitAdd()}
+                      >
+                        {creating ? "添加中…" : "添加"}
+                      </button>
+                      <button
+                        type="button"
+                        className="lab-planning-add-cancel"
+                        aria-label="取消新增"
+                        onClick={cancelAdding}
+                      >
+                        <X size={12} />
+                      </button>
+                    </div>
+                  );
+                const { row, index } = entry;
                 const levelIndex = row.children.length ? (row.depth === 0 ? 0 : 1) : row.depth <= 1 ? 2 : 3;
                 const level = levels[levelIndex]!;
                 const LevelIcon = level.Icon;
-                const names = row.task.assignee_names?.filter(Boolean).join("、") || "未指派";
+                const names = row.task.assignee_names?.filter(Boolean) ?? [];
                 return (
                   <div
                     key={row.task.id}
+                    ref={(element) => {
+                      if (element) rowRefs.current.set(row.task.id, element);
+                      else rowRefs.current.delete(row.task.id);
+                    }}
                     className="lab-planning-table-row"
                     data-depth={Math.min(row.depth, 3)}
                     data-level={level.key}
                     style={{ "--depth": Math.min(row.depth, 3) } as CSSProperties}
-                    // oxlint-disable-next-line jsx-a11y/prefer-tag-over-role -- row contains a nested expand button
+                    // oxlint-disable-next-line jsx-a11y/prefer-tag-over-role -- row contains nested action buttons
                     role="button"
                     tabIndex={0}
-                    title={`${row.task.key} · ${row.task.title}`}
+                    title={`${row.task.key} · ${row.task.title} · Enter 打开 · N 新增子项`}
                     onClick={() => openTask(row.task)}
-                    onKeyDown={(event) => {
-                      if (event.key === "Enter" || event.key === " ") {
-                        event.preventDefault();
-                        openTask(row.task);
-                      }
-                    }}
+                    onKeyDown={(event) => onRowKeyDown(event, row, index)}
                   >
                     <span className="lab-planning-key">{row.task.key}</span>
                     <span className="lab-planning-title">
@@ -308,6 +507,7 @@ function ProjectPlanning({
                             event.stopPropagation();
                             toggle(row.task.id);
                           }}
+                          onKeyDown={(event) => event.stopPropagation()}
                         >
                           {collapsed.has(row.task.id) ? <ChevronRight size={13} /> : <ChevronDown size={13} />}
                         </button>
@@ -319,9 +519,34 @@ function ProjectPlanning({
                       <span className="lab-planning-level" data-level={level.key}>
                         {level.label}
                       </span>
+                      <button
+                        type="button"
+                        className="lab-planning-add"
+                        title="在此项下新增子工作项（N）"
+                        aria-label={`在${row.task.title}下新增子工作项`}
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          startAdding(row);
+                        }}
+                        onKeyDown={(event) => event.stopPropagation()}
+                      >
+                        <Plus size={12} />
+                      </button>
                     </span>
-                    <span className="lab-planning-owner" title={names}>
-                      {names}
+                    <span className="lab-planning-owner" title={names.join("、") || "未指派"}>
+                      {names.length ? (
+                        <>
+                          <span className="lab-planning-owner-avatar" aria-hidden="true">
+                            {names[0]!.slice(0, 1)}
+                          </span>
+                          <span>
+                            {names[0]}
+                            {names.length > 1 ? ` +${names.length - 1}` : ""}
+                          </span>
+                        </>
+                      ) : (
+                        "未指派"
+                      )}
                     </span>
                     <span className="lab-planning-date">{shortDate(row.start)}</span>
                     <span className="lab-planning-date">{shortDate(row.end)}</span>
@@ -357,7 +582,18 @@ function ProjectPlanning({
                   ))}
                 </div>
               </div>
-              {rows.map((row) => {
+              {displayRows.map((entry) => {
+                if (entry.type === "add")
+                  return (
+                    <div
+                      key={`add-${entry.parentId ?? "root"}`}
+                      className="lab-planning-timeline-row lab-planning-add-timeline"
+                      style={{ height: ROW_HEIGHT }}
+                    >
+                      <span className="lab-planning-unscheduled">新工作项</span>
+                    </div>
+                  );
+                const { row } = entry;
                 const levelIndex = row.children.length ? (row.depth === 0 ? 0 : 1) : row.depth <= 1 ? 2 : 3;
                 const level = levels[levelIndex]!;
                 const milestone = !!row.start && row.start === row.end;
@@ -404,7 +640,7 @@ function ProjectPlanning({
               {showToday && (
                 <div
                   className="lab-planning-today"
-                  style={{ left: todayOffset, top: HEADER_HEIGHT, height: rows.length * ROW_HEIGHT }}
+                  style={{ left: todayOffset, top: HEADER_HEIGHT, height: displayRows.length * ROW_HEIGHT }}
                 >
                   <span>今天</span>
                 </div>
