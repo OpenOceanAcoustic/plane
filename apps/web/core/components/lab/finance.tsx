@@ -96,6 +96,7 @@ const recordDate = (row: LabManagementRecord) => row.data.date ?? row.data.start
 const recordAmount = (row: LabManagementRecord) => row.recognized_amount ?? row.data.amount ?? "0";
 const financeTabMeta: Record<string, { label: string; hint: string; tone: string; Icon: LucideIcon }> = {
   home: { label: "总览", hint: "预算、工时、工资与待办", tone: "emerald", Icon: LayoutDashboard },
+  income: { label: "入账", hint: "登记到账、期初余额与实际支出", tone: "emerald", Icon: Banknote },
   "project-budget": { label: "项目预算", hint: "按费用类别编制、调整与导出", tone: "indigo", Icon: PiggyBank },
   cost: { label: "工时与费用", hint: "工时登记、费用审核与成本认定", tone: "orange", Icon: Timer },
   payroll: { label: "工资与报销", hint: "工资单生成、报销与支付", tone: "purple", Icon: Banknote },
@@ -236,6 +237,7 @@ export const LabFinance = observer(function LabFinance({
   const canViewFinance = management?.can_view_finance ?? !!selectedProject?.permissions?.includes("view");
   const financeViews = [
     { id: "home", label: "总览" },
+    { id: "income", label: "入账" },
     ...(canViewFinance
       ? [
           { id: "project-budget", label: "预算" },
@@ -251,6 +253,15 @@ export const LabFinance = observer(function LabFinance({
     ...(management?.can_audit ? [{ id: "audit", label: "审计" }] : []),
     { id: "ledger", label: "账目明细" },
   ];
+  const canReceipt =
+    allowedActions.has("receipt") && (data?.stages.some((stage) => stage.can_manage && !stage.deleted) ?? false);
+  const canOpening = allowedActions.has("opening");
+  const canExpense = allowedActions.has("expense") && (data?.accounts.some((account) => account.can_manage) ?? false);
+  const recentBatches = (data?.batches ?? [])
+    .filter((batch) => showDeleted || !batch.reversed)
+    // oxlint-disable-next-line no-array-sort -- display-only copy
+    .sort((left, right) => (right.occurred_at ?? right.created_at).localeCompare(left.occurred_at ?? left.created_at))
+    .slice(0, 8);
   const canApprove =
     management?.can_approve ??
     (projectId
@@ -391,6 +402,12 @@ export const LabFinance = observer(function LabFinance({
               onClick={() => setQuickAction({ kind: "payroll", action: "save" })}
             >
               生成工资单
+            </Button>
+          )}
+          {data && (
+            <Button size="sm" variant="primary" onClick={() => setTab("income")}>
+              <Banknote size={14} className="mr-1" />
+              入账
             </Button>
           )}
           {projectId && canViewFinance && (
@@ -692,6 +709,135 @@ export const LabFinance = observer(function LabFinance({
             </div>
           </section>
         ))}
+      {data && tab === "income" && (
+        <>
+          <section className="lab-metric-grid" aria-label="入账汇总">
+            <Metric
+              tone="emerald"
+              icon={<Banknote size={15} />}
+              label="累计到账"
+              value={`¥${receiptTotals.gross}`}
+              hint={`${activeBatches.length} 笔到账`}
+            />
+            <Metric
+              tone="indigo"
+              icon={<Coins size={15} />}
+              label="累计核准 D"
+              value={`¥${receiptTotals.D}`}
+              hint="可分配金额"
+            />
+            <Metric
+              tone="emerald"
+              icon={<Wallet size={15} />}
+              label="可用资金"
+              value={`¥${labDecimalText(availableFunds)}`}
+              hint={`${scopedAccounts.length} 个账户`}
+            />
+            <Metric
+              tone="orange"
+              icon={<ReceiptText size={15} />}
+              label="已承诺"
+              value={`¥${labDecimalText(accountCommittedTotal)}`}
+              hint="尚未支付"
+            />
+          </section>
+          <section className="lab-workbench-panel space-y-3" aria-label="入账办理">
+            <header className="lab-workbench-panel-head">
+              <h2>入账办理</h2>
+            </header>
+            <div className="lab-incoming-actions">
+              {canReceipt && (
+                <button
+                  type="button"
+                  className="lab-incoming-action"
+                  data-tone="emerald"
+                  onClick={() => open("receipt")}
+                >
+                  <span className="lab-incoming-action-icon" aria-hidden="true">
+                    <Banknote size={18} />
+                  </span>
+                  <span>
+                    <strong>登记真实到账</strong>
+                    <small>项目回款、阶段到账</small>
+                  </span>
+                </button>
+              )}
+              {canOpening && (
+                <button
+                  type="button"
+                  className="lab-incoming-action"
+                  data-tone="indigo"
+                  onClick={() => open("opening")}
+                >
+                  <span className="lab-incoming-action-icon" aria-hidden="true">
+                    <Wallet size={18} />
+                  </span>
+                  <span>
+                    <strong>录入期初余额</strong>
+                    <small>历史余额与账户初始化</small>
+                  </span>
+                </button>
+              )}
+              {canExpense && (
+                <button
+                  type="button"
+                  className="lab-incoming-action"
+                  data-tone="orange"
+                  onClick={() => open("expense")}
+                >
+                  <span className="lab-incoming-action-icon" aria-hidden="true">
+                    <ReceiptText size={18} />
+                  </span>
+                  <span>
+                    <strong>登记实际支出</strong>
+                    <small>从资金账户登记支出</small>
+                  </span>
+                </button>
+              )}
+            </div>
+            {!canReceipt && !canOpening && !canExpense && (
+              <p className="text-13 text-secondary">当前没有可办理的入账操作。</p>
+            )}
+          </section>
+          <section className="lab-workbench-panel space-y-3" aria-label="最近到账">
+            <header className="lab-workbench-panel-head">
+              <h2>最近到账</h2>
+              <Button size="sm" variant="neutral-primary" onClick={() => setTab("accounts")}>
+                全部到账
+              </Button>
+            </header>
+            <Records
+              rows={recentBatches}
+              empty="暂无到账记录。"
+              columns={[
+                {
+                  label: "来源／阶段",
+                  cell: (row) => (
+                    <>
+                      {row.source}
+                      <p className="text-secondary">
+                        {stageName(row.stage_id)} · {stamp(row.occurred_at ?? row.created_at)}
+                      </p>
+                      {row.reversed && <span className="text-secondary">已删除</span>}
+                    </>
+                  ),
+                },
+                { label: "本次到账", cell: (row) => <Money amount={row.gross} /> },
+                { label: "成本", cell: (row) => <Money amount={row.costs} /> },
+                { label: "核准 D", cell: (row) => <Money amount={row.D} /> },
+                {
+                  label: "风险金／未释放",
+                  cell: (row) => (
+                    <>
+                      <Money amount={row.risk} />／<Money amount={row.risk_remaining} />
+                    </>
+                  ),
+                },
+              ]}
+            />
+          </section>
+        </>
+      )}
       {data && tab === "accounts" && (
         <div className="flex flex-wrap gap-2">
           {["receipt", "opening"]

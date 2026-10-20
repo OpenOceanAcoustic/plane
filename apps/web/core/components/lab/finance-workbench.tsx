@@ -378,6 +378,7 @@ export function FinanceWorkbench({
             </div>
           )}
           <div className="lab-quick-links" aria-label="快捷入口">
+            <QuickLink icon={<Banknote size={14} />} label="入账" onClick={() => onTab("income")} />
             {managerView && (
               <QuickLink icon={<PiggyBank size={14} />} label="项目预算" onClick={() => onTab("project-budget")} />
             )}

@@ -474,11 +474,11 @@
   align-items: center;
   gap: 14px;
   padding: 15px 16px;
-  border: 1px solid color-mix(in srgb, var(--label-blue-border) 22%, var(--border-color-subtle));
+  border: 1px solid color-mix(in srgb, var(--label-pink-border) 22%, var(--border-color-subtle));
   border-radius: 12px;
   background: linear-gradient(
     140deg,
-    color-mix(in srgb, var(--label-blue-bg) 55%, var(--background-color-layer-2)),
+    color-mix(in srgb, var(--label-pink-bg) 55%, var(--background-color-layer-2)),
     var(--background-color-layer-2) 72%
   );
   box-shadow: var(--shadow-raised-100);
@@ -668,9 +668,9 @@
 }
 
 .lab-quality-stage button[aria-pressed="true"] {
-  border-color: color-mix(in srgb, var(--label-blue-border) 45%, var(--border-color-subtle));
-  background: color-mix(in srgb, var(--label-blue-bg) 55%, var(--background-color-layer-2));
-  color: var(--label-blue-text);
+  border-color: color-mix(in srgb, var(--label-pink-border) 45%, var(--border-color-subtle));
+  background: color-mix(in srgb, var(--label-pink-bg) 55%, var(--background-color-layer-2));
+  color: var(--label-pink-text);
   font-weight: 600;
 }
 
@@ -854,4 +854,73 @@
 
 .lab-workbench-panel table tbody td {
   padding: 9px 12px;
+}
+
+/* Incoming money actions */
+.lab-incoming-actions {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: 10px;
+}
+
+.lab-incoming-action {
+  --incoming-color: var(--label-emerald-text);
+  --incoming-bg: var(--label-emerald-bg);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 13px 14px;
+  border: 1px solid color-mix(in srgb, var(--incoming-color) 22%, var(--border-color-subtle));
+  border-radius: 10px;
+  background: linear-gradient(
+    135deg,
+    color-mix(in srgb, var(--incoming-bg) 55%, var(--background-color-layer-2)),
+    var(--background-color-layer-2) 72%
+  );
+  text-align: left;
+  transition:
+    border-color 120ms ease,
+    box-shadow 120ms ease,
+    transform 120ms ease;
+}
+
+.lab-incoming-action:hover {
+  border-color: color-mix(in srgb, var(--incoming-color) 45%, var(--border-color-subtle));
+  box-shadow: var(--shadow-raised-100);
+  transform: translateY(-1px);
+}
+
+.lab-incoming-action[data-tone="indigo"] {
+  --incoming-color: var(--label-indigo-text);
+  --incoming-bg: var(--label-indigo-bg);
+}
+
+.lab-incoming-action[data-tone="orange"] {
+  --incoming-color: var(--label-orange-text);
+  --incoming-bg: var(--label-orange-bg);
+}
+
+.lab-incoming-action-icon {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 9px;
+  background: var(--incoming-bg);
+  color: var(--incoming-color);
+}
+
+.lab-incoming-action strong {
+  display: block;
+  color: var(--text-color-primary);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.lab-incoming-action small {
+  display: block;
+  margin-top: 1px;
+  color: var(--text-color-secondary);
+  font-size: 11px;
 }
