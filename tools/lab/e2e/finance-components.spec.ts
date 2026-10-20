@@ -2236,7 +2236,7 @@ for (const result of ["approved", "rejected"] as const) {
     });
     await mount(page, "finance", `/test/lab/finance?project_id=${projectId}`);
     await page.getByRole("button", { name: "项目经费与成本", exact: true }).click();
-    await page.getByRole("button", { name: "工时与执行成本", exact: true }).click();
+    await page.getByRole("button", { name: "工时与费用", exact: true }).click();
     await page.getByRole("button", { name: "审核", exact: true }).click();
     const dialog = page.getByRole("dialog");
     await expect(dialog.getByLabel("审核结果", { exact: true })).toHaveValue("approved");
@@ -2263,7 +2263,7 @@ test("labor defaults to today and multiplies a week with optional notes empty", 
   });
   await mount(page, "finance", `/test/lab/finance?project_id=${projectId}`);
   await page.getByRole("button", { name: "项目经费与成本", exact: true }).click();
-  await page.getByRole("button", { name: "工时与执行成本", exact: true }).click();
+  await page.getByRole("button", { name: "工时与费用", exact: true }).click();
   await page.getByRole("button", { name: "登记工时／费用", exact: true }).click();
   const dialog = page.getByRole("dialog");
   await expect(dialog.getByLabel("发生日期", { exact: true })).toHaveValue("2026-10-19");
@@ -2307,7 +2307,7 @@ test("multi-person labor totals each person and preserves the whole draft on rej
   });
   await mount(page, "finance", `/test/lab/finance?project_id=${projectId}`);
   await page.getByRole("button", { name: "项目经费与成本", exact: true }).click();
-  await page.getByRole("button", { name: "工时与执行成本", exact: true }).click();
+  await page.getByRole("button", { name: "工时与费用", exact: true }).click();
   await page.getByRole("button", { name: "登记工时／费用", exact: true }).click();
   const dialog = page.getByRole("dialog");
   await dialog.getByRole("button", { name: "多人", exact: true }).click();
@@ -2348,7 +2348,7 @@ test("labor creates a reusable team and loads its members into the grid", async 
   });
   await mount(page, "finance", `/test/lab/finance?project_id=${projectId}`);
   await page.getByRole("button", { name: "项目经费与成本", exact: true }).click();
-  await page.getByRole("button", { name: "工时与执行成本", exact: true }).click();
+  await page.getByRole("button", { name: "工时与费用", exact: true }).click();
   await page.getByRole("button", { name: "登记工时／费用", exact: true }).click();
   await page.getByRole("button", { name: "团队", exact: true }).click();
   await page.getByRole("button", { name: "新建团队", exact: true }).click();
@@ -2412,7 +2412,7 @@ test("management travel reimbursement adds actual spending and separately rounde
   });
   await mount(page, "finance", `/test/lab/finance?project_id=${projectId}`);
   await page.getByRole("button", { name: "项目经费与成本", exact: true }).click();
-  await page.getByRole("button", { name: "工资及报销", exact: true }).click();
+  await page.getByRole("button", { name: "工资与报销", exact: true }).click();
   await page.getByRole("button", { name: "申请报销", exact: true }).click();
   const dialog = page.getByRole("dialog");
   await expect(dialog.getByLabel("费用类别", { exact: true })).toHaveValue("travel");
@@ -2466,7 +2466,7 @@ test("management payroll prevents payment above the real project account balance
   await page.route("**/lab/projects/*/finance-management/", (route) => route.fulfill({ json: data }));
   await mount(page, "finance", `/test/lab/finance?project_id=${projectId}`);
   await page.getByRole("button", { name: "项目经费与成本", exact: true }).click();
-  await page.getByRole("button", { name: "工资及报销", exact: true }).click();
+  await page.getByRole("button", { name: "工资与报销", exact: true }).click();
   await page.getByRole("button", { name: "登记支付", exact: true }).click();
   const dialog = page.getByRole("dialog");
   await dialog.getByLabel("项目资金账户", { exact: true }).selectOption("project-account");
@@ -2494,6 +2494,7 @@ function qualityFixture() {
   };
 }
 
+/* oxlint-disable no-await-in-loop -- Check each navigation result before changing the shared page or viewport. */
 test("daily finance starts with yuan budget and exposes direct labor without VC setup", async ({ page }) => {
   await common(page);
   await page.route("**/lab/finance/overview/**", (route) => route.fulfill({ json: overview() }));
@@ -2504,6 +2505,26 @@ test("daily finance starts with yuan budget and exposes direct labor without VC 
   await mount(page, "finance", `/test/lab/finance?project_id=${projectId}`, planner, origin, [bounty], true);
   await expect(page.getByRole("button", { name: "编制预算", exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "设置 VC 预算", exact: true })).not.toBeVisible();
+  const navigation = page.getByRole("navigation", { name: "资金账视图", exact: true });
+  for (const width of [1440, 390]) {
+    await page.setViewportSize({ width, height: 1000 });
+    for (const [label, heading] of [
+      ["项目经费与成本", "经费核定"],
+      ["工时与费用", "工时与执行成本"],
+      ["工资与报销", "项目工资单"],
+      ["财务审计", "财务审计"],
+    ]) {
+      const button = navigation.getByRole("button", { name: label, exact: true });
+      await button.click();
+      await expect(button).toHaveAttribute("aria-pressed", "true");
+      await expect(page.getByRole("heading", { name: heading, exact: true })).toBeVisible();
+      await expect(page.getByRole("button", { name: label, exact: true })).toHaveCount(1);
+      await expect(page.getByRole("button", { name: "导出财务报表", exact: true })).toBeVisible();
+      await expect(page.getByRole("button", { name: "经费与预算执行", exact: true })).toHaveCount(0);
+      await expect(page.getByRole("button", { name: "工时与执行成本", exact: true })).toHaveCount(0);
+      await expect(page.getByRole("button", { name: "工资及报销", exact: true })).toHaveCount(0);
+    }
+  }
   await page.getByRole("button", { name: "工时与费用", exact: true }).click();
   await page.getByRole("button", { name: "登记工时／费用", exact: true }).click();
   await expect(page.getByRole("button", { name: "团队", exact: true })).toBeVisible();
@@ -2512,6 +2533,8 @@ test("daily finance starts with yuan budget and exposes direct labor without VC 
     true
   );
 });
+
+/* oxlint-enable no-await-in-loop */
 
 test("startup budget preserves structured calculation and rounds currency exactly", async ({ page }) => {
   await common(page);

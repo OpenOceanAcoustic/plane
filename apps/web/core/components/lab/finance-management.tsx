@@ -69,28 +69,8 @@ export function LabFinanceManagement({
       {history && (
         <ManagementHistory store={store} path={path} record={history} onClose={() => setHistory(undefined)} />
       )}
-      <div className="flex flex-wrap gap-2" role="navigation" aria-label="项目财务管理视图">
-        {view === "overview" && (
-          <>
-            {[
-              { id: "overview", label: "经费与预算执行" },
-              { id: "cost", label: "工时与执行成本" },
-              { id: "payroll", label: "工资及报销" },
-              { id: "audit", label: "财务审计" },
-            ].map((entry) => (
-              <Button
-                key={entry.id}
-                size="sm"
-                variant={tab === entry.id ? "accent-primary" : "neutral-primary"}
-                onClick={() => setTab(entry.id)}
-              >
-                {entry.label}
-              </Button>
-            ))}
-          </>
-        )}
+      <div className="flex justify-end">
         <Button
-          className="ml-auto"
           size="sm"
           variant="neutral-primary"
           disabled={exporting}
