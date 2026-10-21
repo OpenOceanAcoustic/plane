@@ -63,7 +63,7 @@ export function LabQuickActions({ workspaceSlug }: { workspaceSlug: string }) {
     <details className="lab-quick-actions">
       <summary className="lab-quick-actions-trigger">
         <Plus size={14} aria-hidden="true" />
-        快速操作
+        全部入口
       </summary>
       <div className="lab-quick-actions-panel">
         {groups(base).map((group) => (

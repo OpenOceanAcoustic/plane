@@ -826,7 +826,7 @@ export const LabFinance = observer(function LabFinance({
                     onClick={() => open("receipt")}
                   >
                     <span className="lab-incoming-action-icon" aria-hidden="true">
-                      <Banknote size={18} />
+                      <Banknote size={22} />
                     </span>
                     <span>
                       <strong>外部项目到账</strong>
@@ -842,7 +842,7 @@ export const LabFinance = observer(function LabFinance({
                     onClick={() => open("pool-funding")}
                   >
                     <span className="lab-incoming-action-icon" aria-hidden="true">
-                      <Coins size={18} />
+                      <Coins size={22} />
                     </span>
                     <span>
                       <strong>内部资金池划入</strong>
@@ -885,7 +885,7 @@ export const LabFinance = observer(function LabFinance({
                     onClick={() => open("opening")}
                   >
                     <span className="lab-incoming-action-icon" aria-hidden="true">
-                      <Wallet size={18} />
+                      <Wallet size={22} />
                     </span>
                     <span>
                       <strong>录入期初余额</strong>
@@ -901,7 +901,7 @@ export const LabFinance = observer(function LabFinance({
                     onClick={() => open("expense")}
                   >
                     <span className="lab-incoming-action-icon" aria-hidden="true">
-                      <ReceiptText size={18} />
+                      <ReceiptText size={22} />
                     </span>
                     <span>
                       <strong>登记实际支出</strong>

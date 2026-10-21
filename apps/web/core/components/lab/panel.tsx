@@ -10,6 +10,7 @@ import { API_BASE_URL } from "@plane/constants";
 import { LabStore } from "@plane/shared-state";
 import { Button } from "@plane/ui";
 import type { LabOpenProjectIssue } from "./item-details";
+import { LabCoreActions } from "./core-actions";
 import { LabQuickActions } from "./quick-actions";
 import { labSections } from "./sections";
 // oxlint-disable-next-line import/no-unassigned-import -- scoped lab page accents
@@ -113,6 +114,7 @@ export const LabPanel = observer(function LabPanel({
         </Button>
       </header>
       <div className="flex flex-col gap-5 p-6">
+        <LabCoreActions workspaceSlug={workspaceSlug} />
         {store.error && section !== "contributions" && (
           <p
             role="alert"
