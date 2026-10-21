@@ -31,7 +31,7 @@ import { useCalendarViewportHeight } from "./calendar-size";
 import { useCalendarTimelinePan } from "./calendar-pan";
 import { calendarFolderColors, useCalendarFolders } from "./calendar-folders";
 import { calendarColor, calendarContrast, calendarLegend } from "./calendar-colors";
-import { LabItemDetails, labCanOpenProjectIssue } from "./item-details";
+import { LabItemDetails, labCanOpenProjectIssue, labHoursHref } from "./item-details";
 import type { LabOpenProjectIssue } from "./item-details";
 import { LabTaskOverview } from "./task-overview";
 // oxlint-disable-next-line import/no-unassigned-import -- bundled FullCalendar layout styles
@@ -746,6 +746,7 @@ export const LabCalendar = observer(function LabCalendar({
             item={viewing.item}
             block={viewing.block}
             folderName={folders.find((folder) => folder.id === viewing.item.folder_id)?.name}
+            hoursHref={labHoursHref(store.slug, viewing.item)}
             onClose={() => setViewing(undefined)}
             onSchedule={() => {
               setViewing(undefined);

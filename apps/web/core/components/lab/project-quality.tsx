@@ -2,7 +2,7 @@
 import { useState } from "react";
 import type { CSSProperties } from "react";
 import { CheckCircle2, ClipboardCheck, FilePlus2, FileWarning, Plus, RefreshCw, ShieldCheck } from "lucide-react";
-import { useSearchParams } from "react-router";
+import { Link, useSearchParams } from "react-router";
 import useSWR from "swr";
 import type { LabManagementRecord, LabProjectQuality as QualityData } from "@plane/types";
 import type { LabStore } from "@plane/shared-state";
@@ -61,7 +61,12 @@ export function LabProjectQuality({ store, refreshKey }: { store: LabStore; refr
             ))}
           </div>
         ) : (
-          <p className="text-13 text-secondary">暂无可查看项目。</p>
+          <div className="lab-empty-state">
+            <p className="text-13 text-secondary">暂无可查看项目。</p>
+            <Link className="text-13 text-accent-primary" to={`/${store.slug}/lab/participation`}>
+              去参与管理
+            </Link>
+          </div>
         )}
       </section>
     );

@@ -5,7 +5,7 @@
 
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { observer } from "mobx-react";
-import { useParams } from "react-router";
+import { Link, useParams } from "react-router";
 import { API_BASE_URL } from "@plane/constants";
 import { LabStore } from "@plane/shared-state";
 import { Button } from "@plane/ui";
@@ -146,7 +146,13 @@ export const LabPanel = observer(function LabPanel({
                 openProjectIssue={openProjectIssue}
               />
             ) : (
-              <p className="text-13 text-secondary">暂无团队排期查看权限</p>
+              <div className="lab-empty-state">
+                <p className="text-13 text-secondary">暂无团队排期查看权限</p>
+                <p className="text-12 text-secondary">可以先用个人规划安排工作，或联系项目负责人开通团队排期。</p>
+                <Link className="text-13 text-accent-primary" to={`/${workspaceSlug}/lab/planner`}>
+                  去个人规划
+                </Link>
+              </div>
             ))}
           {store.planner && section === "planning" && (
             <LabProjectPlanning store={store} refreshKey={refreshKey} openProjectIssue={openProjectIssue} />

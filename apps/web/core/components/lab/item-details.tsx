@@ -3,12 +3,18 @@
 import { useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { createPortal } from "react-dom";
+import { Link } from "react-router";
 import { ArrowRight, CalendarDays, Clock3, Globe2, LockKeyhole, Maximize2, Minimize2, Pencil } from "lucide-react";
 import type { LabEvent, LabItem, LabStatus } from "@plane/types";
 import { Button, LabBountyBadge, labPlanningVisibilityLabel } from "@plane/ui";
 
 export type LabProjectIssueRef = { issue_id: string; project_id: string; archived?: boolean };
 export type LabOpenProjectIssue = (issue: LabProjectIssueRef) => void;
+
+export function labHoursHref(workspaceSlug: string, item: LabItem): string | undefined {
+  if (!item.issue_id || !item.project_id) return undefined;
+  return `/${workspaceSlug}/lab/finance?project_id=${item.project_id}&finance_view=cost&log_issue=${item.issue_id}&log_work=${encodeURIComponent(item.title)}`;
+}
 
 export function labCanOpenProjectIssue(item: LabItem): item is LabItem & { issue_id: string; project_id: string } {
   return Boolean(
@@ -123,6 +129,7 @@ export function LabItemDetails({
   onSchedule,
   onAdjust,
   onEdit,
+  hoursHref,
   busy = false,
 }: {
   item: LabItem;
@@ -132,6 +139,7 @@ export function LabItemDetails({
   onSchedule: () => void;
   onAdjust?: () => void;
   onEdit?: () => void;
+  hoursHref?: string;
   busy?: boolean;
 }) {
   return (
@@ -225,6 +233,14 @@ export function LabItemDetails({
           <Button variant="neutral-primary" prependIcon={<Pencil size={14} />} onClick={onEdit} disabled={busy}>
             编辑事项
           </Button>
+        )}
+        {hoursHref && (
+          <Link
+            className="inline-flex items-center gap-1 rounded border border-subtle px-3 py-1.5 text-13 hover:bg-layer-1"
+            to={hoursHref}
+          >
+            <Clock3 size={14} /> 记工时
+          </Link>
         )}
         <Button
           type="button"

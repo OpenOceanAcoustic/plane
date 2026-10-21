@@ -935,7 +935,12 @@ export const LabFinance = observer(function LabFinance({
         (projectId && selectedProject?.permissions?.includes("view") ? (
           <LabProjectBudget key={projectId} store={store} projectId={projectId} />
         ) : (
-          <p className="text-13 text-secondary">{projectId ? "无项目预算查看权限" : "请选择资金项目"}</p>
+          <div className="lab-empty-state">
+            <p className="text-13 text-secondary">{projectId ? "无项目预算查看权限" : "请选择资金项目"}</p>
+            <Button size="sm" variant="neutral-primary" onClick={() => setTab("home")}>
+              从项目列表选择
+            </Button>
+          </div>
         ))}
       {data &&
         ["management", "cost", "payroll", "audit"].includes(tab) &&
@@ -950,7 +955,12 @@ export const LabFinance = observer(function LabFinance({
             refreshKey={refreshKey + revision}
           />
         ) : (
-          <p className="text-13 text-secondary">请选择资金项目</p>
+          <div className="lab-empty-state">
+            <p className="text-13 text-secondary">请选择资金项目</p>
+            <Button size="sm" variant="neutral-primary" onClick={() => setTab("home")}>
+              从项目列表选择
+            </Button>
+          </div>
         ))}
       {data && tab === "accounts" && (
         <>

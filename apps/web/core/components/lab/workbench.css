@@ -1081,3 +1081,14 @@
   margin-top: 6px;
   line-height: 1.6;
 }
+
+.lab-empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 18px;
+  border: 1px dashed var(--border-color-subtle);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--label-blue-bg) 18%, var(--background-color-surface-1));
+}

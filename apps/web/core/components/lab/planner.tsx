@@ -14,7 +14,7 @@ import { TOAST_TYPE, setToast } from "@plane/propel/toast";
 import type { LabFolder, LabItem, LabStatus, LabTask } from "@plane/types";
 import type { LabStore } from "@plane/shared-state";
 import { LabDialog, LabField, LabSelect, labInputClass } from "@plane/ui";
-import { LabItemDetails, labCanOpenProjectIssue } from "./item-details";
+import { LabItemDetails, labCanOpenProjectIssue, labHoursHref } from "./item-details";
 import type { LabOpenProjectIssue } from "./item-details";
 import { LabTaskOverview } from "./task-overview";
 import { LabBountyPlanningDialog } from "./bounty-planning-dialog";
@@ -740,6 +740,7 @@ export const LabPlannerBoard = observer(function LabPlannerBoard({
             key={viewing.id}
             item={viewing}
             folderName={planner.folders.find((folder) => folder.id === viewing.folder_id)?.name}
+            hoursHref={labHoursHref(store.slug, viewing)}
             onClose={() => setViewing(undefined)}
             onSchedule={() => {
               setViewing(undefined);

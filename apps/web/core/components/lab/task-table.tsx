@@ -1,6 +1,7 @@
 /** Copyright (c) 2026 OpenOceanAcoustic and contributors. SPDX-License-Identifier: AGPL-3.0-only */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { observer } from "mobx-react";
+import { Link } from "react-router";
 import {
   flexRender,
   getCoreRowModel,
@@ -397,7 +398,29 @@ export const LabTaskTable = observer(function LabTaskTable({
               </div>
             </article>
           ))}
-          {!table.getRowModel().rows.length && <p className="lab-task-card-empty">没有符合筛选条件的任务</p>}
+          {!table.getRowModel().rows.length && (
+            <div className="lab-task-card-empty">
+              <p>{fieldsStore.tasks.length ? "没有符合筛选条件的任务" : "没有可访问的任务"}</p>
+              {fieldsStore.tasks.length ? (
+                <Button
+                  size="sm"
+                  variant="neutral-primary"
+                  onClick={() => {
+                    setQuery("");
+                    setFilters([]);
+                    setProjectId("");
+                    setGrouping([]);
+                  }}
+                >
+                  清除筛选
+                </Button>
+              ) : (
+                <Link className="text-accent-primary" to={`/${store.slug}/lab/planning`}>
+                  去项目规划
+                </Link>
+              )}
+            </div>
+          )}
         </div>
       )}
       <div
@@ -462,9 +485,30 @@ export const LabTaskTable = observer(function LabTaskTable({
             ))}
           </tbody>
         </table>
-        {!fieldsStore.tasks.length && <p className="p-8 text-center text-13 text-secondary">没有可访问的任务</p>}
+        {!fieldsStore.tasks.length && (
+          <div className="p-8 text-center text-13 text-secondary">
+            <p>没有可访问的任务</p>
+            <Link className="mt-2 inline-flex text-accent-primary" to={`/${store.slug}/lab/planning`}>
+              去项目规划
+            </Link>
+          </div>
+        )}
         {fieldsStore.tasks.length > 0 && !table.getRowModel().rows.length && (
-          <p className="p-8 text-center text-13 text-secondary">没有符合筛选条件的任务</p>
+          <div className="p-8 text-center text-13 text-secondary">
+            <p>没有符合筛选条件的任务</p>
+            <Button
+              size="sm"
+              variant="neutral-primary"
+              onClick={() => {
+                setQuery("");
+                setFilters([]);
+                setProjectId("");
+                setGrouping([]);
+              }}
+            >
+              清除筛选
+            </Button>
+          </div>
         )}
       </div>
       <footer className="flex items-center gap-3 text-13 text-secondary">

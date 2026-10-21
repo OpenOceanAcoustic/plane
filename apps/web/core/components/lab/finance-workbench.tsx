@@ -327,12 +327,8 @@ export function FinanceWorkbench({
                   <div className="flex flex-col items-end gap-1">
                     <span className="lab-todo-amount">{money(cents(amountOf(row)))}</span>
                     {canApprove && !closed ? (
-                      <Button
-                        size="sm"
-                        variant="primary"
-                        onClick={() => onAction({ kind: "cost", action: "review", row })}
-                      >
-                        审核
+                      <Button size="sm" variant="primary" onClick={() => onTab("cost")}>
+                        去审核
                       </Button>
                     ) : (
                       <StatusPill state={row.state} />
@@ -357,8 +353,8 @@ export function FinanceWorkbench({
                   <div className="flex flex-col items-end gap-1">
                     <span className="lab-todo-amount">{money(cents(amountOf(row)))}</span>
                     {canPay && !closed ? (
-                      <Button size="sm" onClick={() => onAction({ kind: "payroll", action: "pay", row })}>
-                        登记支付
+                      <Button size="sm" onClick={() => onTab("payroll")}>
+                        去支付
                       </Button>
                     ) : (
                       <StatusPill state={row.state} />
