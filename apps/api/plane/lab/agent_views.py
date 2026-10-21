@@ -173,16 +173,16 @@ def _draft(user, project, members, payload, today):
 
 
 class TimeAgentView(LabView):
-    def post(self, request):
+    def post(self, request, slug):
         try:
-            return self._post(request)
+            return self._post(request, slug)
         except (APIException, PermissionDenied, ValidationError):
             raise
         except Exception as exc:
             logger.exception("lab time agent unexpected failure")
             raise APIException(f"AI 服务内部错误：{type(exc).__name__}", code=500)
 
-    def _post(self, request):
+    def _post(self, request, slug):
         message = str(request.data.get("message", "")).strip()
         if not message:
             raise ValidationError("请用一句话描述工时")
@@ -238,7 +238,7 @@ class TimeAgentView(LabView):
 
 
 class TimeAgentHealthView(LabView):
-    def get(self, request):
+    def get(self, request, slug):
         configured, detail, model = False, "", ""
         try:
             _key, _base, model = _config()
