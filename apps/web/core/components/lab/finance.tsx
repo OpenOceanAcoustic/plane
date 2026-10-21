@@ -12,6 +12,7 @@ import {
   Plus,
   ReceiptText,
   ShieldCheck,
+  Sparkles,
   Timer,
   TrendingUp,
   Wallet,
@@ -37,6 +38,7 @@ import { LabFinanceManagement as LabFinanceManagementPanel } from "./finance-man
 import { LabVCBudgetAdjustment } from "./vc-budget-adjustment";
 import { LabLedger } from "./ledger";
 import { LabRecordWorkflowView } from "./record-workflow";
+import { TimeAgentDialog } from "./time-agent";
 // oxlint-disable-next-line import/no-unassigned-import -- local financial and task surfaces
 // oxlint-disable-next-line import/no-unassigned-import -- local workbench surfaces
 import "./finance-market.css";
@@ -143,6 +145,8 @@ export const LabFinance = observer(function LabFinance({
   const [forecastOpen, setForecastOpen] = useState(false);
   const [deletion, setDeletion] = useState<LabFinanceDeletion>();
   const [showDeleted, setShowDeleted] = useState(false);
+  const [incomeHint, setIncomeHint] = useState(false);
+  const [timeAgentOpen, setTimeAgentOpen] = useState(false);
   const currentProject = useRef(projectId);
   currentProject.current = projectId;
   const [revision, setRevision] = useState(0);
@@ -424,37 +428,24 @@ export const LabFinance = observer(function LabFinance({
                   open("receipt");
                   return;
                 }
-                if (canPoolFunding) {
-                  open("pool-funding");
-                  return;
-                }
-                if (allowedActions.has("stage")) {
-                  open("stage", { reason: "设置阶段预算" });
-                  return;
-                }
-                if (canOpening) {
-                  open("opening");
-                  return;
-                }
                 setTab("income");
+                setIncomeHint(true);
               }}
             >
               <Banknote size={14} className="mr-1" />
-              {canReceipt
-                ? "登记到账"
-                : canPoolFunding
-                  ? "资金池划入"
-                  : allowedActions.has("stage")
-                    ? "设置阶段预算"
-                    : canOpening
-                      ? "录入期初余额"
-                      : "入账"}
+              {canReceipt ? "登记到账" : "入账"}
             </Button>
           )}
           {projectId && management && !financeClosed && canRecord && (
             <Button size="sm" variant="primary" onClick={() => setQuickAction({ kind: "cost", action: "save" })}>
               <Plus size={14} className="mr-1" />
               登记工时
+            </Button>
+          )}
+          {projectId && management && !financeClosed && canRecord && (
+            <Button size="sm" variant="neutral-primary" onClick={() => setTimeAgentOpen(true)}>
+              <Sparkles size={14} className="mr-1" />
+              AI 登记工时
             </Button>
           )}
           {projectId && management && !financeClosed && canRecord && (
@@ -780,6 +771,11 @@ export const LabFinance = observer(function LabFinance({
         ))}
       {data && tab === "income" && (
         <>
+          {incomeHint && (
+            <p role="status" className="rounded border border-subtle p-3 text-13">
+              请选择入账方式：外部项目到账、录入期初余额，或先设置阶段预算。若顶部项目是“全部”，请先选择具体项目。
+            </p>
+          )}
           <section className="lab-metric-grid" aria-label="入账汇总">
             <Metric
               tone="emerald"
@@ -861,7 +857,7 @@ export const LabFinance = observer(function LabFinance({
                     还没有可入账的阶段或项目账户。VC
                     预算只是贡献点额度，不等于项目现金预算；请先设置阶段预算，或录入期初余额建立项目账户。
                   </p>
-                  {allowedActions.has("stage") && (
+                  {allowedActions.has("stage") && projectId && (
                     <Button
                       size="sm"
                       variant="neutral-primary"
@@ -869,6 +865,11 @@ export const LabFinance = observer(function LabFinance({
                     >
                       设置阶段预算
                     </Button>
+                  )}
+                  {!projectId && (
+                    <p className="text-12 text-secondary">
+                      请先在上方项目选择器里选中具体项目，再设置阶段预算或录入期初余额。
+                    </p>
                   )}
                 </div>
               )}
@@ -1783,6 +1784,27 @@ export const LabFinance = observer(function LabFinance({
           onSaved={async () => {
             await Promise.all([onSaved(), store.loadMarket()]);
             if (deletion.kind === "project" && currentProject.current === deletion.id) setProjectId("");
+          }}
+        />
+      )}
+      {timeAgentOpen && projectId && (
+        <TimeAgentDialog
+          store={store}
+          projectId={projectId}
+          onClose={() => setTimeAgentOpen(false)}
+          onDraft={(draft) => {
+            setTimeAgentOpen(false);
+            setQuickAction({
+              kind: "cost",
+              action: "save",
+              prefill: {
+                date: draft.date,
+                hours: draft.hours,
+                work: draft.work,
+                user_id: draft.user_id,
+                ...(draft.rate ? { rate: draft.rate } : {}),
+              },
+            });
           }}
         />
       )}
