@@ -61,6 +61,14 @@ export const CreateProjectForm = observer(function CreateProjectForm(props: TCre
   };
 
   const onSubmit = async (formData: Partial<TProject>) => {
+    if (!formData.project_lead) {
+      setToast({
+        type: TOAST_TYPE.ERROR,
+        title: "请选择项目负责人",
+        message: "项目负责人负责审批成员加入、现金悬赏和项目财务。",
+      });
+      return;
+    }
     // Upper case identifier
     formData.identifier = formData.identifier?.toUpperCase();
     const coverImage = formData.cover_image_url;

@@ -269,3 +269,464 @@
     border-radius: 0;
   }
 }
+
+.lab-agent-threads {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 7px 14px 0;
+}
+
+.lab-agent-threads label {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  align-items: center;
+  gap: 7px;
+  color: var(--text-color-secondary);
+  font-size: 11px;
+}
+
+.lab-agent-threads select {
+  flex: 1;
+  min-width: 0;
+  min-height: 28px;
+  font-size: 11px;
+}
+
+.lab-agent-threads button {
+  flex: none;
+  min-height: 28px;
+  padding: 0 9px;
+  border: 1px solid var(--border-color-subtle);
+  border-radius: 7px;
+  background: var(--background-color-layer-1);
+  color: var(--text-color-secondary);
+  font-size: 11px;
+}
+
+.lab-agent-threads button:hover {
+  border-color: color-mix(in srgb, var(--label-emerald-border) 45%, var(--border-color-subtle));
+  color: var(--label-emerald-text);
+}
+
+.lab-agent-link {
+  align-self: flex-start;
+  color: var(--label-emerald-text);
+  font-size: 12px;
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.lab-agent-plan {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  max-height: 260px;
+  overflow: auto;
+  padding-right: 2px;
+}
+
+.lab-agent-plan-stage {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 7px 8px;
+  border: 1px solid var(--border-color-subtle);
+  border-radius: 8px;
+  background: var(--background-color-layer-1);
+}
+
+.lab-agent-plan-stage > strong {
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.lab-agent-plan-stage > small {
+  color: var(--text-color-secondary);
+  font-size: 10px;
+}
+
+.lab-agent-plan-task {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 4px 0 3px 7px;
+  border-left: 2px solid color-mix(in srgb, var(--label-indigo-border) 45%, var(--border-color-subtle));
+  font-size: 11px;
+}
+
+.lab-agent-plan-task span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lab-agent-plan-task small {
+  color: var(--text-color-secondary);
+  font-size: 10px;
+}
+
+.lab-agent-brief {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  width: 100%;
+  padding: 9px;
+  border: 1px solid color-mix(in srgb, var(--label-orange-border) 28%, var(--border-color-subtle));
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--label-orange-bg) 22%, var(--background-color-surface-1));
+}
+
+.lab-agent-brief-counts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 9px;
+  color: var(--text-color-secondary);
+  font-size: 11px;
+}
+
+.lab-agent-brief-counts strong {
+  color: var(--label-orange-text);
+  font-size: 13px;
+}
+
+.lab-agent-brief ul {
+  margin: 0;
+  padding-left: 15px;
+  color: var(--label-crimson-text);
+  font-size: 11px;
+}
+
+.lab-agent-brief-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 10.5px;
+}
+
+.lab-agent-brief-list strong {
+  color: var(--text-color-secondary);
+  font-size: 10px;
+}
+
+.lab-agent-brief-list span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lab-agent-brief-team {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.lab-agent-brief-team span {
+  padding: 1px 5px;
+  border-radius: 999px;
+  background: var(--background-color-layer-1);
+  color: var(--text-color-secondary);
+  font-size: 10px;
+}
+
+.lab-agent-brief > small {
+  color: var(--text-color-secondary);
+  font-size: 10px;
+}
+
+.lab-agent-reminder-toggle {
+  flex: none;
+  min-height: 28px;
+  padding: 0 8px;
+  border: 1px solid var(--border-color-subtle);
+  border-radius: 7px;
+  background: var(--background-color-layer-1);
+  color: var(--text-color-secondary);
+  font-size: 11px;
+}
+
+.lab-agent-reminder-toggle[aria-pressed="true"] {
+  border-color: color-mix(in srgb, var(--label-emerald-border) 50%, var(--border-color-subtle));
+  color: var(--label-emerald-text);
+}
+
+.lab-agent-reminder-settings {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  margin: 0 14px 8px;
+  padding: 8px;
+  border: 1px dashed var(--border-color-subtle);
+  border-radius: 8px;
+  background: var(--background-color-layer-1);
+}
+
+.lab-agent-reminder-settings label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-color-primary);
+  font-size: 11px;
+}
+
+.lab-agent-reminder-settings > button {
+  align-self: flex-start;
+  min-height: 26px;
+  padding: 0 9px;
+  border-radius: 6px;
+  background: var(--label-emerald-bg);
+  color: var(--label-emerald-text);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.lab-agent-retro {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  width: 100%;
+  padding: 9px;
+  border: 1px solid color-mix(in srgb, var(--label-purple-border) 28%, var(--border-color-subtle));
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--label-purple-bg) 22%, var(--background-color-surface-1));
+}
+
+.lab-agent-retro-suggestions {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 11px;
+}
+
+.lab-agent-retro-suggestions > strong {
+  color: var(--text-color-secondary);
+  font-size: 10px;
+}
+
+.lab-agent-retro-suggestions > div {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.lab-agent-retro-suggestions span {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lab-agent-retro-suggestions button {
+  flex: none;
+  min-height: 22px;
+  padding: 0 7px;
+  border: 1px solid color-mix(in srgb, var(--label-purple-border) 40%, var(--border-color-subtle));
+  border-radius: 5px;
+  color: var(--label-purple-text);
+  font-size: 10px;
+}
+
+.lab-agent-retro > small {
+  color: var(--text-color-secondary);
+  font-size: 10px;
+}
+
+.lab-agent-quality {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  width: 100%;
+  padding: 9px;
+  border: 1px solid color-mix(in srgb, var(--label-teal-border) 28%, var(--border-color-subtle));
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--label-teal-bg) 22%, var(--background-color-surface-1));
+}
+
+.lab-agent-team {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  width: 100%;
+  padding: 9px;
+  border: 1px solid color-mix(in srgb, var(--label-blue-border) 28%, var(--border-color-subtle));
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--label-blue-bg) 22%, var(--background-color-surface-1));
+}
+
+.lab-agent-knowledge {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  width: 100%;
+  padding: 8px;
+  border: 1px solid var(--border-color-subtle);
+  border-radius: 9px;
+  background: var(--background-color-layer-1);
+}
+
+.lab-agent-knowledge-item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px 7px;
+  border-radius: 6px;
+  background: var(--background-color-surface-1);
+  text-decoration: none;
+}
+
+.lab-agent-knowledge-item strong {
+  color: var(--label-indigo-text);
+  font-size: 11px;
+}
+
+.lab-agent-knowledge-item span {
+  display: -webkit-box;
+  overflow: hidden;
+  color: var(--text-color-secondary);
+  font-size: 10px;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  line-height: 1.45;
+}
+
+.lab-agent-knowledge > small {
+  color: var(--text-color-secondary);
+  font-size: 10px;
+}
+
+.lab-agent-finance {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  width: 100%;
+  padding: 9px;
+  border: 1px solid color-mix(in srgb, var(--label-yellow-border) 30%, var(--border-color-subtle));
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--label-yellow-bg) 20%, var(--background-color-surface-1));
+}
+
+.lab-agent-finance-categories {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.lab-agent-finance-categories span {
+  padding: 1px 5px;
+  border-radius: 999px;
+  background: var(--background-color-layer-1);
+  color: var(--text-color-secondary);
+  font-size: 10px;
+}
+
+.lab-agent-finance-categories span[data-negative="true"] {
+  color: var(--label-crimson-text);
+}
+
+.lab-agent-finance > small {
+  color: var(--text-color-secondary);
+  font-size: 10px;
+}
+
+.lab-agent-meeting {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  width: 100%;
+  padding: 9px;
+  border: 1px solid color-mix(in srgb, var(--label-indigo-border) 28%, var(--border-color-subtle));
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--label-indigo-bg) 18%, var(--background-color-surface-1));
+}
+
+.lab-agent-meeting > p {
+  margin: 0;
+  font-size: 11px;
+}
+
+.lab-agent-meeting-tasks {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 11px;
+}
+
+.lab-agent-meeting-tasks > strong {
+  color: var(--text-color-secondary);
+  font-size: 10px;
+}
+
+.lab-agent-meeting-tasks > div {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.lab-agent-meeting-tasks span {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lab-agent-meeting-tasks button {
+  flex: none;
+  min-height: 22px;
+  padding: 0 7px;
+  border: 1px solid color-mix(in srgb, var(--label-indigo-border) 40%, var(--border-color-subtle));
+  border-radius: 5px;
+  color: var(--label-indigo-text);
+  font-size: 10px;
+}
+
+.lab-agent-proposals {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 100%;
+}
+
+.lab-agent-proposal {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  width: 100%;
+  padding: 9px;
+  border: 1px solid color-mix(in srgb, var(--label-crimson-border) 26%, var(--border-color-subtle));
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--label-crimson-bg) 16%, var(--background-color-surface-1));
+}
+
+.lab-agent-proposal > p {
+  margin: 0;
+  color: var(--text-color-secondary);
+  font-size: 10.5px;
+}
+
+.lab-agent-proposal > small {
+  color: var(--text-color-secondary);
+  font-size: 10px;
+}
+
+.lab-agent-proposal-approvals {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.lab-agent-proposal-approvals button {
+  min-height: 24px;
+  padding: 0 7px;
+  border: 1px solid var(--border-color-subtle);
+  border-radius: 5px;
+  color: var(--text-color-secondary);
+  font-size: 10px;
+}
+
+.lab-agent-proposal-approvals button:disabled {
+  opacity: 0.6;
+}

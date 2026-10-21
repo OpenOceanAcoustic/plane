@@ -71,6 +71,12 @@ function ProjectAttributes(props: Props) {
           );
         }}
       />
+      <span className="inline-flex h-7 items-center gap-1.5 rounded-md border border-subtle bg-surface-1 px-2 text-12 font-medium">
+        项目负责人
+        <span className="text-danger-primary" aria-hidden="true">
+          *
+        </span>
+      </span>
       <Controller
         name="project_lead"
         control={control}
@@ -81,7 +87,7 @@ function ProjectAttributes(props: Props) {
                 <MemberDropdown
                   value={value ?? null}
                   onChange={(lead) => onChange(lead === value ? null : lead)}
-                  placeholder={t("lead")}
+                  placeholder="选择项目负责人"
                   multiple={false}
                   buttonVariant="border-with-text"
                   tabIndex={getIndex("lead")}

@@ -69,6 +69,7 @@ function FinanceActionDialog({
       ({
         ...(chosen.reimbursement ? { category: "travel" } : {}),
         ...Object.fromEntries(Object.entries(row?.data ?? {}).filter(([, value]) => typeof value === "string")),
+        ...chosen.prefill,
       }) as Record<string, string>
   );
   const [requestKey, setRequestKey] = useState(() => uuidv4());

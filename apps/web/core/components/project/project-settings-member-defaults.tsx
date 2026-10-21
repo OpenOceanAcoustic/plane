@@ -137,29 +137,49 @@ export const ProjectSettingsMemberDefaults = observer(function ProjectSettingsMe
       });
   };
 
+  const lead = currentProjectDetails?.project_lead as IUserLite | null | undefined;
+  const leadName = lead?.display_name?.trim() || "未设置";
   return (
     <div className="my-6 flex flex-col gap-y-6">
-      <DefaultSettingItem title="Project Lead" description="Select the project lead for the project.">
-        {currentProjectDetails ? (
-          <Controller
-            control={control}
-            name="project_lead"
-            render={({ field: { value } }) => (
-              <MemberSelect
-                value={value}
-                onChange={(val: string) => {
-                  submitChanges({ project_lead: val });
-                }}
-                isDisabled={!isAdmin}
-              />
-            )}
-          />
-        ) : (
-          <Loader className="h-9 w-full">
-            <Loader.Item width="100%" height="100%" />
-          </Loader>
-        )}
-      </DefaultSettingItem>
+      <section
+        aria-label="项目负责人"
+        className="border-emerald-500/30 bg-emerald-500/5 flex flex-col gap-4 rounded-xl border p-4 sm:flex-row sm:items-center sm:justify-between"
+      >
+        <div className="min-w-0">
+          <p className="text-emerald-600 flex items-center gap-2 text-11 font-semibold tracking-wide uppercase">
+            项目负责人
+            <span className="bg-emerald-500/15 rounded px-1.5 py-0.5 text-10 font-medium normal-case">
+              Project Lead
+            </span>
+          </p>
+          <h2 className="mt-1 truncate text-18 font-semibold">{leadName}</h2>
+          <p className="mt-1 text-12 text-secondary">
+            负责人审批成员加入、现金悬赏和项目财务；只有项目管理员可以变更。
+          </p>
+        </div>
+        <div className="w-full sm:max-w-64">
+          {currentProjectDetails ? (
+            <Controller
+              control={control}
+              name="project_lead"
+              render={({ field: { value } }) => (
+                <MemberSelect
+                  value={value}
+                  onChange={(val: string) => {
+                    submitChanges({ project_lead: val });
+                  }}
+                  isDisabled={!isAdmin}
+                />
+              )}
+            />
+          ) : (
+            <Loader className="h-9 w-full">
+              <Loader.Item width="100%" height="100%" />
+            </Loader>
+          )}
+          {!isAdmin && <p className="mt-2 text-11 text-tertiary">你没有项目管理员权限，无法变更负责人。</p>}
+        </div>
+      </section>
       <DefaultSettingItem title="Default Assignee" description="Select the default assignee for the project.">
         {currentProjectDetails ? (
           <Controller

@@ -351,3 +351,76 @@ class CashBounty(Record):
             ),
         ]
         indexes = [models.Index(fields=["workspace", "project", "status"], name="lab_cash_bounty_scope")]
+
+class AgentThread(Record):
+    workspace = models.ForeignKey("db.Workspace", on_delete=models.CASCADE, related_name="lab_agent_threads")
+    project = models.ForeignKey("db.Project", on_delete=models.SET_NULL, null=True, related_name="lab_agent_threads")
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="lab_agent_threads")
+    title = models.CharField(max_length=160)
+    last_message_at = models.DateTimeField(null=True)
+
+    class Meta:
+        indexes = [models.Index(fields=["workspace", "user", "last_message_at"], name="lab_agent_thread_scope")]
+        ordering = ("-last_message_at", "-created_at")
+
+
+class AgentMessage(Record):
+    thread = models.ForeignKey(AgentThread, on_delete=models.CASCADE, related_name="messages")
+    role = models.CharField(max_length=12)
+    content = models.TextField()
+    intent = models.CharField(max_length=24, blank=True)
+    draft = models.JSONField(default=dict, blank=True)
+
+    class Meta:
+        indexes = [models.Index(fields=["thread", "created_at"], name="lab_agent_message_thread")]
+        ordering = ("created_at", "id")
+
+
+class AgentReminder(Record):
+    KINDS = ("daily_brief", "weekly_brief", "payroll")
+
+    workspace = models.ForeignKey("db.Workspace", on_delete=models.CASCADE, related_name="lab_agent_reminders")
+    project = models.ForeignKey("db.Project", on_delete=models.CASCADE, related_name="lab_agent_reminders")
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="lab_agent_reminders")
+    kind = models.CharField(max_length=20)
+    enabled = models.BooleanField(default=True)
+    hour = models.PositiveSmallIntegerField(default=9)
+    weekday = models.PositiveSmallIntegerField(null=True)
+    day_of_month = models.PositiveSmallIntegerField(null=True)
+    last_run_at = models.DateTimeField(null=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["workspace", "project", "user", "kind"], name="lab_agent_reminder_unique"
+            )
+        ]
+        indexes = [models.Index(fields=["enabled", "kind"], name="lab_agent_reminder_scope")]
+
+
+class AgentProposal(Record):
+    CATEGORIES = ("process", "plan", "quality", "allocation", "policy")
+
+    workspace = models.ForeignKey("db.Workspace", on_delete=models.CASCADE, related_name="lab_agent_proposals")
+    project = models.ForeignKey("db.Project", on_delete=models.CASCADE, related_name="lab_agent_proposals")
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="lab_agent_proposals")
+    title = models.CharField(max_length=200)
+    description = models.TextField(blank=True)
+    category = models.CharField(max_length=20, default="process")
+    status = models.CharField(max_length=20, default="review")
+    lead_approved_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, related_name="lab_agent_proposals_lead"
+    )
+    lead_approved_at = models.DateTimeField(null=True)
+    member_approved_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, related_name="lab_agent_proposals_member"
+    )
+    member_approved_at = models.DateTimeField(null=True)
+    technical_approved_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, related_name="lab_agent_proposals_technical"
+    )
+    technical_approved_at = models.DateTimeField(null=True)
+
+    class Meta:
+        indexes = [models.Index(fields=["project", "status"], name="lab_agent_proposal_scope")]
+        ordering = ("-created_at",)

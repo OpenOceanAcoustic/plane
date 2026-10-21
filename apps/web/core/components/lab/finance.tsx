@@ -140,6 +140,8 @@ export const LabFinance = observer(function LabFinance({
   const [quickAction, setQuickAction] = useState<FinanceManagementAction>();
   const handledLogIssue = useRef("");
   const handledAiTime = useRef("");
+  const handledAiReceipt = useRef("");
+  const handledAiPayroll = useRef("");
   const [permissionsOpen, setPermissionsOpen] = useState(false);
   const [budgetAdjustment, setBudgetAdjustment] = useState<{ projectId: string; entryId: string }>();
   const [formulaOpen, setFormulaOpen] = useState(false);
@@ -243,6 +245,57 @@ export const LabFinance = observer(function LabFinance({
       { replace: true }
     );
   }, [aiTime, projectId, management, setSearchParams]);
+  const aiReceipt = searchParams.get("ai_receipt");
+  useEffect(() => {
+    if (!aiReceipt || !projectId || !data || handledAiReceipt.current === aiReceipt) return;
+    handledAiReceipt.current = aiReceipt;
+    try {
+      const draft = JSON.parse(aiReceipt) as Record<string, string>;
+      setChosen({
+        action: "receipt",
+        body: {
+          gross: draft.gross ?? "",
+          tax: draft.tax ?? "0",
+          management_fee: draft.management_fee ?? "0",
+          source: draft.source ?? "",
+          ...(draft.stage_id ? { stage_id: draft.stage_id } : {}),
+        },
+      });
+    } catch {
+      setIncomeHint(true);
+    }
+    setSearchParams(
+      (current) => {
+        const next = new URLSearchParams(current);
+        next.delete("ai_receipt");
+        return next;
+      },
+      { replace: true }
+    );
+  }, [aiReceipt, data, projectId, setSearchParams]);
+  const aiPayroll = searchParams.get("ai_payroll");
+  useEffect(() => {
+    if (!aiPayroll || !projectId || !management || handledAiPayroll.current === aiPayroll) return;
+    handledAiPayroll.current = aiPayroll;
+    try {
+      const draft = JSON.parse(aiPayroll) as Record<string, string>;
+      setQuickAction({
+        kind: "payroll",
+        action: "save",
+        prefill: { user_id: draft.user_id ?? "", start: draft.start ?? "", end: draft.end ?? "" },
+      });
+    } catch {
+      setIncomeHint(true);
+    }
+    setSearchParams(
+      (current) => {
+        const next = new URLSearchParams(current);
+        next.delete("ai_payroll");
+        return next;
+      },
+      { replace: true }
+    );
+  }, [aiPayroll, management, projectId, setSearchParams]);
   const selectedProject = data?.projects.find((project) => project.id === projectId);
   const projectOptions = (() => {
     const rows = new Map<
