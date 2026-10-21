@@ -86,7 +86,7 @@ export const LabVCWallets = observer(function LabVCWallets({
 
   return (
     <LabDialog
-      title="我的 VC"
+      title="我的贡献点"
       busy={busy}
       error={error}
       onClose={onClose}
@@ -148,7 +148,7 @@ export const LabVCWallets = observer(function LabVCWallets({
       </LabField>
       {loading && <p role="status">正在加载 VC 余额</p>}
       {source?.wallet && (
-        <dl className="grid grid-cols-2 gap-2 text-13" aria-label="我的 VC 余额">
+        <dl className="grid grid-cols-2 gap-2 text-13" aria-label="我的贡献点余额">
           <dt>项目分配可用 VC</dt>
           <dd>{source.wallet.project_available}</dd>
           <dt>悬赏收入可用 VC</dt>

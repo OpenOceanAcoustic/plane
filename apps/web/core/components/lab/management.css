@@ -65,3 +65,47 @@
     min-height: 44px;
   }
 }
+
+.lab-management-cards {
+  display: none;
+}
+
+@media (max-width: 640px) {
+  .lab-management-table {
+    display: none;
+  }
+
+  .lab-management-cards {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .lab-management-card {
+    padding: 10px 12px;
+    border: 1px solid var(--border-color-subtle);
+    border-radius: 10px;
+    background: var(--background-color-surface-1);
+  }
+
+  .lab-management-card-row {
+    display: grid;
+    grid-template-columns: 6.5rem minmax(0, 1fr);
+    gap: 8px;
+    padding: 6px 0;
+    border-bottom: 1px dashed var(--border-color-subtle);
+    font-size: 12px;
+  }
+
+  .lab-management-card-row:last-child {
+    border-bottom: 0;
+  }
+
+  .lab-management-card-row > span {
+    color: var(--text-color-secondary);
+  }
+
+  .lab-management-card-row > div {
+    word-break: break-word;
+  }
+}

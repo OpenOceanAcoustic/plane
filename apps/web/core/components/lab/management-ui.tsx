@@ -1,6 +1,7 @@
 /** Copyright (c) 2026 OpenOceanAcoustic and contributors. SPDX-License-Identifier: AGPL-3.0-only */
-import { useEffect, useState } from "react";
-import type { ReactNode } from "react";
+/* oxlint-disable react/no-array-index-key -- mobile cards mirror table row order */
+import { Children, isValidElement, useEffect, useState } from "react";
+import type { ReactElement, ReactNode } from "react";
 import type { LabManagementRecord } from "@plane/types";
 import type { LabStore } from "@plane/shared-state";
 import { LabDialog } from "@plane/ui";
@@ -26,21 +27,46 @@ export const costCategories = [
   { value: "other", label: "其他费用" },
 ];
 export function ManagementTable({ headings, children }: { headings: string[]; children: ReactNode }) {
+  const rows = Children.toArray(children);
   return (
-    <div className="overflow-x-auto rounded-lg border border-subtle">
-      <table className="w-full text-left text-13">
-        <thead className="bg-layer-2">
-          <tr>
-            {headings.map((label) => (
-              <th className="px-3 py-2 font-medium whitespace-nowrap" key={label}>
-                {label}
-              </th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>{children}</tbody>
-      </table>
-    </div>
+    <>
+      <div className="lab-management-table overflow-x-auto rounded-lg border border-subtle">
+        <table className="w-full text-left text-13">
+          <thead className="bg-layer-2">
+            <tr>
+              {headings.map((label) => (
+                <th className="px-3 py-2 font-medium whitespace-nowrap" key={label}>
+                  {label}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>{children}</tbody>
+        </table>
+      </div>
+      <div className="lab-management-cards" aria-label="移动端表格卡片">
+        {rows.map((row, rowIndex) => {
+          if (!isValidElement(row)) return row;
+          const cells = Children.toArray((row as ReactElement<{ children?: ReactNode }>).props.children);
+          return (
+            <article className="lab-management-card" key={row.key ?? rowIndex}>
+              {cells.map((cell, index) => {
+                const content = isValidElement(cell)
+                  ? (cell as ReactElement<{ children?: ReactNode }>).props.children
+                  : cell;
+                if (content === null || content === undefined || content === "") return null;
+                return (
+                  <div className="lab-management-card-row" key={index}>
+                    <span>{headings[index] ?? ""}</span>
+                    <div>{content}</div>
+                  </div>
+                );
+              })}
+            </article>
+          );
+        })}
+      </div>
+    </>
   );
 }
 export const managementCell = "border-t border-subtle px-3 py-2 align-top";

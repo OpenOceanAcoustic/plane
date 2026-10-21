@@ -6,6 +6,7 @@
 import { useEffect, useState } from "react";
 import type { CSSProperties } from "react";
 import { observer } from "mobx-react";
+import { ArrowRight } from "lucide-react";
 import { useSearchParams } from "react-router";
 import { v4 as uuidv4 } from "uuid";
 import { useSWRConfig } from "swr";
@@ -33,6 +34,21 @@ const labels: Record<string, string> = {
   rejected: "不通过",
   done: "完成",
   cancelled: "已取消",
+};
+const bountyStep = (bounty: LabBounty, mine: LabBounty["allocations"][number] | undefined) => {
+  if (["review", "acceptance_review", "done"].includes(bounty.status)) return 4;
+  if (mine?.confirmed && ["active", "rework", "partial"].includes(bounty.status)) return 3;
+  if (mine?.approved && !mine.confirmed) return 2;
+  if (bounty.has_quote || mine) return 1;
+  return 0;
+};
+const bountyCta = (bounty: LabBounty, mine: LabBounty["allocations"][number] | undefined) => {
+  const step = bountyStep(bounty, mine);
+  if (step === 4) return "查看验收";
+  if (step === 3) return "提交交付";
+  if (step === 2) return "确认参与";
+  if (step === 1) return bounty.has_quote ? "继续报价" : "等待负责人批准";
+  return bounty.is_lead ? "查看详情" : "查看并参与";
 };
 const bountyCardStyle = (color?: string | null): CSSProperties =>
   ({
@@ -133,7 +149,7 @@ export const LabMarket = observer(function LabMarket({ store }: { store: LabStor
           发布悬赏
         </Button>
         <Button variant="neutral-primary" onClick={() => setWalletsOpen(true)}>
-          我的 VC
+          我的贡献点
         </Button>
         <select
           aria-label="按项目查看"
@@ -204,38 +220,56 @@ export const LabMarket = observer(function LabMarket({ store }: { store: LabStor
                 (view === "mine" &&
                   (row.has_quote || row.allocations.some((allocation) => allocation.user_id === planner.user_id))))
           )
-          .map((bounty) => (
-            <button
-              key={bounty.id}
-              type="button"
-              onClick={() => openDetail(bounty.id)}
-              style={bountyCardStyle(bounty.category_color)}
-              className={`lab-market-card rounded-lg border bg-surface-1 p-4 text-left ${detailId === bounty.id ? "ring-accent-primary ring-2" : ""}`}
-              aria-label={`查看悬赏 ${bounty.title}`}
-            >
-              <div className="flex items-center gap-2 text-12">
-                <LabBountyBadge color={bounty.category_color} />
-                <span className="lab-bounty-status ml-auto" data-status={bounty.status}>
-                  {labels[bounty.status] ?? bounty.status}
+          .map((bounty) => {
+            const mine = bounty.allocations.find((allocation) => allocation.user_id === planner.user_id);
+            const step = bountyStep(bounty, mine);
+            return (
+              <button
+                key={bounty.id}
+                type="button"
+                onClick={() => openDetail(bounty.id)}
+                style={bountyCardStyle(bounty.category_color)}
+                className={`lab-market-card rounded-lg border bg-surface-1 p-4 text-left ${detailId === bounty.id ? "ring-accent-primary ring-2" : ""}`}
+                aria-label={`查看悬赏 ${bounty.title}`}
+              >
+                <div className="flex items-center gap-2 text-12">
+                  <LabBountyBadge color={bounty.category_color} />
+                  <span className="lab-bounty-status ml-auto" data-status={bounty.status}>
+                    {labels[bounty.status] ?? bounty.status}
+                  </span>
+                </div>
+                <p className="mt-2 text-12 text-secondary">
+                  {bounty.project}
+                  {bounty.issue_key ? ` · ${bounty.issue_key}` : ""}
+                  {bounty.major ? " · 重大任务" : ""}
+                </p>
+                <h2 className="mt-1 line-clamp-2 text-14 font-semibold">{bounty.title}</h2>
+                <p className="mt-2 line-clamp-2 text-12 text-secondary">
+                  {bounty.public_summary || bounty.deliverable}
+                </p>
+                <p className="lab-bounty-quota mt-3 text-12">
+                  贡献点配额 <strong className="font-mono font-semibold">{bounty.budget}</strong>
+                </p>
+                <p className="mt-1 text-12 text-accent-primary">
+                  {(bounty.reward_estimate?.amount ?? bounty.estimated_reward)
+                    ? `预计 ¥${bounty.reward_estimate?.amount ?? bounty.estimated_reward} · 公式 v${bounty.reward_estimate?.formula_version ?? bounty.reward_formula_version ?? "—"}`
+                    : bounty.reward_estimate?.error || "预计奖励待负责人配置"}
+                </p>
+                <div className="lab-bounty-progress" aria-label="悬赏参与进度">
+                  {["待批准", "待确认", "进行中", "待验收"].map((label, index) => (
+                    <span className="lab-bounty-step" data-active={index + 1 <= step} key={label}>
+                      <i aria-hidden="true" />
+                      {label}
+                    </span>
+                  ))}
+                </div>
+                <span className="lab-bounty-cta">
+                  {bountyCta(bounty, mine)}
+                  <ArrowRight size={13} aria-hidden="true" />
                 </span>
-              </div>
-              <p className="mt-2 text-12 text-secondary">
-                {bounty.project}
-                {bounty.issue_key ? ` · ${bounty.issue_key}` : ""}
-                {bounty.major ? " · 重大任务" : ""}
-              </p>
-              <h2 className="mt-1 line-clamp-2 text-14 font-semibold">{bounty.title}</h2>
-              <p className="mt-2 line-clamp-2 text-12 text-secondary">{bounty.public_summary || bounty.deliverable}</p>
-              <p className="lab-bounty-quota mt-3 text-12">
-                VC 配额 <strong className="font-mono font-semibold">{bounty.budget}</strong>
-              </p>
-              <p className="mt-1 text-12 text-accent-primary">
-                {(bounty.reward_estimate?.amount ?? bounty.estimated_reward)
-                  ? `预计 ¥${bounty.reward_estimate?.amount ?? bounty.estimated_reward} · 公式 v${bounty.reward_estimate?.formula_version ?? bounty.reward_formula_version ?? "—"}`
-                  : bounty.reward_estimate?.error || "预计奖励待负责人配置"}
-              </p>
-            </button>
-          ))}
+              </button>
+            );
+          })}
       </div>
       {detailId && (
         <div className="flex items-center justify-between">

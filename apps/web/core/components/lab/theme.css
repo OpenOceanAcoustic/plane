@@ -91,3 +91,10 @@
   --lab-section-text: var(--label-purple-text);
   --lab-section-border: var(--label-purple-border);
 }
+
+.lab-page[data-lab-section="participation"],
+.lab-navigation-item[data-lab-section="participation"] {
+  --lab-section-bg: var(--label-blue-bg);
+  --lab-section-text: var(--label-blue-text);
+  --lab-section-border: var(--label-blue-border);
+}

@@ -35,7 +35,7 @@ export const financeActionLabels: Record<string, string> = {
   carryover: "结转未用余额",
   reverse: "冲正资金操作",
   manager: "指定公共资金管理员",
-  "vc-stage": "设置项目 VC 预算",
+  "vc-stage": "设置项目贡献点预算",
   "exploration-allocation": "拨付探索阶段奖励",
   "stage-allocation": "拨付留存至新阶段奖励",
   "risk-use": "登记风险事项实际支出",
@@ -120,6 +120,7 @@ export function LabFinanceActionDialog({
 }) {
   const [requestKey] = useState(() => uuidv4());
   const [upgraded, setUpgraded] = useState(false);
+  const [simpleStage, setSimpleStage] = useState(true);
   const [purposes, setPurposes] = useState(() => [uuidv4()]);
   const [shares, setShares] = useState(() => [uuidv4()]);
   const [history, setHistory] = useState(() => [uuidv4()]);
@@ -157,7 +158,7 @@ export function LabFinanceActionDialog({
         !data.stages.some((row) => row.stage_id === stage.id) &&
         data.projects.some((project) => project.id === stage.project_id && project.allowed_actions?.includes("stage"))
     )
-    .map((stage) => ({ value: stage.id, label: `${stage.project} · ${stage.name} · B ${stage.budget} VC` }));
+    .map((stage) => ({ value: stage.id, label: `${stage.project} · ${stage.name}` }));
   const settlements = data.settlements
     .filter((row) => row.can_pay)
     .map((row) => ({
@@ -271,7 +272,7 @@ export function LabFinanceActionDialog({
             .map((project) => ({ value: project.id, label: project.name }))
         ),
         { key: "name", label: "预算名称", required: true, value: "当前预算" },
-        number("budget", "VC 预算"),
+        number("budget", "贡献点预算"),
       ];
       break;
     case "exploration-allocation":
@@ -297,7 +298,7 @@ export function LabFinanceActionDialog({
       ];
       break;
     case "stage":
-      fields = [select("stage_id", "事前冻结的 VC 阶段 B", unsettledStages), number("E", "阶段执行奖励预算 E（元）")];
+      fields = [select("stage_id", "阶段", unsettledStages), number("E", "阶段奖励预算（元）")];
       break;
     case "receipt":
       fields = [
@@ -511,6 +512,10 @@ export function LabFinanceActionDialog({
     setError("");
     setValues((current) => ({ ...current, [key]: value }));
   };
+  if (action === "stage") {
+    const stageField = fields.find((field) => field.key === "stage_id");
+    if (stageField?.options?.length === 1 && !stageField.value) stageField.value = stageField.options[0].value;
+  }
   const limits: Record<string, string | undefined> = {};
   const minimums: Record<string, string | undefined> = {};
   const selectedStage = data.stages.find((row) => row.stage_id === valueOf("stage_id"));
@@ -608,7 +613,7 @@ export function LabFinanceActionDialog({
   const purposeLimits: Record<string, string | undefined> = {};
   const shareLimits: Record<string, string | undefined> = {};
   const stageErrors: string[] = [];
-  if (action === "stage") {
+  if (action === "stage" && !simpleStage) {
     const E = units(valueOf("E"));
     const B = units(store.stages?.find((row) => row.id === valueOf("stage_id"))?.budget);
     for (const id of purposes) {
@@ -683,32 +688,39 @@ export function LabFinanceActionDialog({
         if (action === "vc-stage") body.append = true;
         if (occurredAt) body.occurred_at = calendarInstant(occurredAt);
         if (action === "stage") {
-          body.upgraded = upgraded;
-          body.purposes = purposes.map((id) => ({
-            name: text(form, `purpose-name-${id}`),
-            amount: text(form, `purpose-amount-${id}`),
-          }));
-          body.members = shares
-            .filter((id) => text(form, `share-user-${id}`))
-            .map((id) => ({
-              user_id: text(form, `share-user-${id}`),
-              b: text(form, `share-b-${id}`),
-              r: text(form, `share-r-${id}`),
-              planned_vc: text(form, `share-vc-${id}`),
+          if (simpleStage) {
+            body.upgraded = false;
+            body.purposes = [{ name: "项目执行", amount: text(form, "E") || "0" }];
+            body.members = [];
+            body.history = [];
+          } else {
+            body.upgraded = upgraded;
+            body.purposes = purposes.map((id) => ({
+              name: text(form, `purpose-name-${id}`),
+              amount: text(form, `purpose-amount-${id}`),
             }));
-          body.history = upgraded
-            ? history
-                .filter((id) => text(form, `history-user-${id}`))
-                .map((id) => ({
-                  user_id: text(form, `history-user-${id}`),
-                  vc: text(form, `history-vc-${id}`),
-                  funding_source: text(form, `history-source-${id}`),
-                  inherited_from: text(form, `history-inherit-${id}`) || undefined,
-                  source_basis: text(form, `history-inherit-basis-${id}`) || undefined,
-                  qualified_at: text(form, `history-date-${id}`),
-                  basis: text(form, `history-basis-${id}`),
-                }))
-            : [];
+            body.members = shares
+              .filter((id) => text(form, `share-user-${id}`))
+              .map((id) => ({
+                user_id: text(form, `share-user-${id}`),
+                b: text(form, `share-b-${id}`),
+                r: text(form, `share-r-${id}`),
+                planned_vc: text(form, `share-vc-${id}`),
+              }));
+            body.history = upgraded
+              ? history
+                  .filter((id) => text(form, `history-user-${id}`))
+                  .map((id) => ({
+                    user_id: text(form, `history-user-${id}`),
+                    vc: text(form, `history-vc-${id}`),
+                    funding_source: text(form, `history-source-${id}`),
+                    inherited_from: text(form, `history-inherit-${id}`) || undefined,
+                    source_basis: text(form, `history-inherit-basis-${id}`) || undefined,
+                    qualified_at: text(form, `history-date-${id}`),
+                    basis: text(form, `history-basis-${id}`),
+                  }))
+              : [];
+          }
         }
         try {
           await store.request(
@@ -783,6 +795,9 @@ export function LabFinanceActionDialog({
           )}
         </LabField>
       ))}
+      {action === "stage" && !fields.find((field) => field.key === "stage_id")?.options?.length && (
+        <p className="text-12 text-secondary">当前项目还没有可冻结的阶段。请先在项目中创建阶段，再回来设置阶段预算。</p>
+      )}
       {action === "receipt" && (
         <div className="lab-incoming-calculation">
           <div className="lab-incoming-calculation-reference">
@@ -814,168 +829,184 @@ export function LabFinanceActionDialog({
       )}
       {action === "stage" && (
         <>
-          <fieldset className="space-y-3 rounded border border-subtle p-3">
-            <legend className="text-13 font-medium">预算用途条目（金额之和须等于 E）</legend>
-            {purposes.map((id) => (
-              <div key={id} className="grid grid-cols-2 gap-2">
-                <LabField label="用途">
-                  <input name={`purpose-name-${id}`} required className={labInputClass} />
-                </LabField>
-                <LabField label="用途金额（元）">
-                  <LabAmountInput
-                    name={`purpose-amount-${id}`}
-                    aria-label="用途金额（元）"
-                    value={values[`purpose-amount-${id}`] ?? ""}
-                    onValueChange={(value) => changeValue(`purpose-amount-${id}`, value)}
-                    limit={purposeLimits[`purpose-amount-${id}`]}
-                    required
-                    className={labInputClass}
-                  />
-                </LabField>
-                <Button
-                  size="sm"
-                  variant="neutral-primary"
-                  disabled={purposes.length === 1}
-                  onClick={() => setPurposes((rows) => rows.filter((row) => row !== id))}
-                >
-                  删除用途
-                </Button>
-              </div>
-            ))}
-            <Button size="sm" variant="neutral-primary" onClick={() => setPurposes((rows) => [...rows, uuidv4()])}>
-              添加用途条目
-            </Button>
-          </fieldset>
-          <fieldset className="space-y-3 rounded border border-subtle p-3">
-            <legend className="text-13 font-medium">事前冻结成员参数</legend>
-            {shares.map((id) => (
-              <div key={id} className="grid grid-cols-2 gap-2">
-                <LabField label="成员">
-                  <select
-                    name={`share-user-${id}`}
-                    className={labInputClass}
-                    value={values[`share-user-${id}`] ?? ""}
-                    onChange={(event) => changeValue(`share-user-${id}`, event.target.value)}
-                  >
-                    <option value="">不添加</option>
-                    {members.map((member) => (
-                      <option key={member.value} value={member.value}>
-                        {member.label}
-                      </option>
-                    ))}
-                  </select>
-                </LabField>
-                <LabField label="计划 VC">
-                  <LabAmountInput
-                    name={`share-vc-${id}`}
-                    aria-label="计划 VC"
-                    value={values[`share-vc-${id}`] ?? "0"}
-                    onValueChange={(value) => changeValue(`share-vc-${id}`, value)}
-                    limit={shareLimits[`share-vc-${id}`]}
-                    unit="VC"
-                    disabled={!values[`share-user-${id}`]}
-                    className={labInputClass}
-                  />
-                </LabField>
-                <LabField label="基础份额 b（0–1）">
-                  <LabAmountInput
-                    name={`share-b-${id}`}
-                    aria-label="基础份额 b（0–1）"
-                    value={values[`share-b-${id}`] ?? "0"}
-                    onValueChange={(value) => changeValue(`share-b-${id}`, value)}
-                    limit={shareLimits[`share-b-${id}`]}
-                    precision={4}
-                    unit="份额"
-                    disabled={!values[`share-user-${id}`]}
-                    className={labInputClass}
-                  />
-                </LabField>
-                <LabField label="职责份额 r（0–1）">
-                  <LabAmountInput
-                    name={`share-r-${id}`}
-                    aria-label="职责份额 r（0–1）"
-                    value={values[`share-r-${id}`] ?? "0"}
-                    onValueChange={(value) => changeValue(`share-r-${id}`, value)}
-                    limit={shareLimits[`share-r-${id}`]}
-                    precision={4}
-                    unit="份额"
-                    disabled={!values[`share-user-${id}`]}
-                    className={labInputClass}
-                  />
-                </LabField>
-                <Button
-                  size="sm"
-                  variant="neutral-primary"
-                  onClick={() => setShares((rows) => rows.filter((row) => row !== id))}
-                >
-                  删除成员参数
-                </Button>
-              </div>
-            ))}
-            <Button size="sm" variant="neutral-primary" onClick={() => setShares((rows) => [...rows, uuidv4()])}>
-              添加成员参数
-            </Button>
-          </fieldset>
+          {simpleStage && (
+            <div className="rounded-lg border border-subtle bg-layer-1 p-3 text-12">
+              <p className="font-medium text-primary">快速设置</p>
+              <p className="mt-1 text-secondary">
+                自动生成一条「项目执行」用途，金额等于阶段奖励预算。成员 VC 比例可在高级设置中填写。
+              </p>
+            </div>
+          )}
           <label className="flex items-center gap-2 text-13">
-            <input type="checkbox" checked={upgraded} onChange={(event) => setUpgraded(event.target.checked)} />
-            升级项目，冻结历史孵化资格
+            <input type="checkbox" checked={!simpleStage} onChange={(event) => setSimpleStage(!event.target.checked)} />
+            自定义用途与成员分配（高级）
           </label>
-          {upgraded && (
-            <fieldset className="space-y-3 rounded border border-subtle p-3">
-              <legend className="text-13 font-medium">历史奖励资格（须提供凭证）</legend>
-              {history.map((id) => (
-                <div key={id} className="grid grid-cols-2 gap-2">
-                  <LabField label="历史成员">
-                    <select name={`history-user-${id}`} required className={labInputClass}>
-                      <option value="">请选择</option>
-                      {members.map((member) => (
-                        <option key={member.value} value={member.value}>
-                          {member.label}
-                        </option>
-                      ))}
-                    </select>
-                  </LabField>
-                  <LabField label="历史有效 VC">
-                    <LabAmountInput
-                      name={`history-vc-${id}`}
-                      aria-label="历史有效 VC"
-                      value={values[`history-vc-${id}`] ?? ""}
-                      onValueChange={(value) => changeValue(`history-vc-${id}`, value)}
-                      unit="VC"
-                      min="0.01"
-                      required
-                      className={labInputClass}
-                    />
-                  </LabField>
-                  <LabField label="具体资金来源（与到账来源一致）">
-                    <input name={`history-source-${id}`} required className={labInputClass} />
-                  </LabField>
-                  <LabField label="授权继承的原来源（后续独立来源可选）">
-                    <input name={`history-inherit-${id}`} className={labInputClass} />
-                  </LabField>
-                  <LabField label="继承授权依据（填原来源时必填）">
-                    <input name={`history-inherit-basis-${id}`} className={labInputClass} />
-                  </LabField>
-                  <LabField label="资格形成日期">
-                    <input name={`history-date-${id}`} type="date" required className={labInputClass} />
-                  </LabField>
-                  <LabField label="资格依据">
-                    <input name={`history-basis-${id}`} required className={labInputClass} />
-                  </LabField>
-                  <Button
-                    size="sm"
-                    variant="neutral-primary"
-                    disabled={history.length === 1}
-                    onClick={() => setHistory((rows) => rows.filter((row) => row !== id))}
-                  >
-                    删除历史资格
+          {!simpleStage && (
+            <>
+              <fieldset className="space-y-3 rounded border border-subtle p-3">
+                <legend className="text-13 font-medium">预算用途条目（金额合计须等于阶段奖励预算）</legend>
+                {purposes.map((id) => (
+                  <div key={id} className="grid grid-cols-2 gap-2">
+                    <LabField label="用途">
+                      <input name={`purpose-name-${id}`} required className={labInputClass} />
+                    </LabField>
+                    <LabField label="用途金额（元）">
+                      <LabAmountInput
+                        name={`purpose-amount-${id}`}
+                        aria-label="用途金额（元）"
+                        value={values[`purpose-amount-${id}`] ?? ""}
+                        onValueChange={(value) => changeValue(`purpose-amount-${id}`, value)}
+                        limit={purposeLimits[`purpose-amount-${id}`]}
+                        required
+                        className={labInputClass}
+                      />
+                    </LabField>
+                    <Button
+                      size="sm"
+                      variant="neutral-primary"
+                      disabled={purposes.length === 1}
+                      onClick={() => setPurposes((rows) => rows.filter((row) => row !== id))}
+                    >
+                      删除用途
+                    </Button>
+                  </div>
+                ))}
+                <Button size="sm" variant="neutral-primary" onClick={() => setPurposes((rows) => [...rows, uuidv4()])}>
+                  添加用途条目
+                </Button>
+              </fieldset>
+              <fieldset className="space-y-3 rounded border border-subtle p-3">
+                <legend className="text-13 font-medium">事前冻结成员参数</legend>
+                {shares.map((id) => (
+                  <div key={id} className="grid grid-cols-2 gap-2">
+                    <LabField label="成员">
+                      <select
+                        name={`share-user-${id}`}
+                        className={labInputClass}
+                        value={values[`share-user-${id}`] ?? ""}
+                        onChange={(event) => changeValue(`share-user-${id}`, event.target.value)}
+                      >
+                        <option value="">不添加</option>
+                        {members.map((member) => (
+                          <option key={member.value} value={member.value}>
+                            {member.label}
+                          </option>
+                        ))}
+                      </select>
+                    </LabField>
+                    <LabField label="计划 VC">
+                      <LabAmountInput
+                        name={`share-vc-${id}`}
+                        aria-label="计划 VC"
+                        value={values[`share-vc-${id}`] ?? "0"}
+                        onValueChange={(value) => changeValue(`share-vc-${id}`, value)}
+                        limit={shareLimits[`share-vc-${id}`]}
+                        unit="VC"
+                        disabled={!values[`share-user-${id}`]}
+                        className={labInputClass}
+                      />
+                    </LabField>
+                    <LabField label="基础份额 b（0–1）">
+                      <LabAmountInput
+                        name={`share-b-${id}`}
+                        aria-label="基础份额 b（0–1）"
+                        value={values[`share-b-${id}`] ?? "0"}
+                        onValueChange={(value) => changeValue(`share-b-${id}`, value)}
+                        limit={shareLimits[`share-b-${id}`]}
+                        precision={4}
+                        unit="份额"
+                        disabled={!values[`share-user-${id}`]}
+                        className={labInputClass}
+                      />
+                    </LabField>
+                    <LabField label="职责份额 r（0–1）">
+                      <LabAmountInput
+                        name={`share-r-${id}`}
+                        aria-label="职责份额 r（0–1）"
+                        value={values[`share-r-${id}`] ?? "0"}
+                        onValueChange={(value) => changeValue(`share-r-${id}`, value)}
+                        limit={shareLimits[`share-r-${id}`]}
+                        precision={4}
+                        unit="份额"
+                        disabled={!values[`share-user-${id}`]}
+                        className={labInputClass}
+                      />
+                    </LabField>
+                    <Button
+                      size="sm"
+                      variant="neutral-primary"
+                      onClick={() => setShares((rows) => rows.filter((row) => row !== id))}
+                    >
+                      删除成员参数
+                    </Button>
+                  </div>
+                ))}
+                <Button size="sm" variant="neutral-primary" onClick={() => setShares((rows) => [...rows, uuidv4()])}>
+                  添加成员参数
+                </Button>
+              </fieldset>
+              <label className="flex items-center gap-2 text-13">
+                <input type="checkbox" checked={upgraded} onChange={(event) => setUpgraded(event.target.checked)} />
+                升级项目，冻结历史孵化资格
+              </label>
+              {upgraded && (
+                <fieldset className="space-y-3 rounded border border-subtle p-3">
+                  <legend className="text-13 font-medium">历史奖励资格（须提供凭证）</legend>
+                  {history.map((id) => (
+                    <div key={id} className="grid grid-cols-2 gap-2">
+                      <LabField label="历史成员">
+                        <select name={`history-user-${id}`} required className={labInputClass}>
+                          <option value="">请选择</option>
+                          {members.map((member) => (
+                            <option key={member.value} value={member.value}>
+                              {member.label}
+                            </option>
+                          ))}
+                        </select>
+                      </LabField>
+                      <LabField label="历史有效 VC">
+                        <LabAmountInput
+                          name={`history-vc-${id}`}
+                          aria-label="历史有效 VC"
+                          value={values[`history-vc-${id}`] ?? ""}
+                          onValueChange={(value) => changeValue(`history-vc-${id}`, value)}
+                          unit="VC"
+                          min="0.01"
+                          required
+                          className={labInputClass}
+                        />
+                      </LabField>
+                      <LabField label="具体资金来源（与到账来源一致）">
+                        <input name={`history-source-${id}`} required className={labInputClass} />
+                      </LabField>
+                      <LabField label="授权继承的原来源（后续独立来源可选）">
+                        <input name={`history-inherit-${id}`} className={labInputClass} />
+                      </LabField>
+                      <LabField label="继承授权依据（填原来源时必填）">
+                        <input name={`history-inherit-basis-${id}`} className={labInputClass} />
+                      </LabField>
+                      <LabField label="资格形成日期">
+                        <input name={`history-date-${id}`} type="date" required className={labInputClass} />
+                      </LabField>
+                      <LabField label="资格依据">
+                        <input name={`history-basis-${id}`} required className={labInputClass} />
+                      </LabField>
+                      <Button
+                        size="sm"
+                        variant="neutral-primary"
+                        disabled={history.length === 1}
+                        onClick={() => setHistory((rows) => rows.filter((row) => row !== id))}
+                      >
+                        删除历史资格
+                      </Button>
+                    </div>
+                  ))}
+                  <Button size="sm" variant="neutral-primary" onClick={() => setHistory((rows) => [...rows, uuidv4()])}>
+                    添加历史资格
                   </Button>
-                </div>
-              ))}
-              <Button size="sm" variant="neutral-primary" onClick={() => setHistory((rows) => [...rows, uuidv4()])}>
-                添加历史资格
-              </Button>
-            </fieldset>
+                </fieldset>
+              )}
+            </>
           )}
         </>
       )}

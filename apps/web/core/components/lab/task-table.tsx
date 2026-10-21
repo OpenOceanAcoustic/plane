@@ -102,12 +102,22 @@ export const LabTaskTable = observer(function LabTaskTable({
         accessorKey: "title",
         header: "任务",
         cell: ({ row, getValue }) => (
-          <a
-            href={`/${store.slug}/projects/${row.original.project_id}/${row.original.archived_at ? "archives/" : ""}issues/${row.original.id}`}
-            className="hover:text-accent-primary"
-          >
-            {String(getValue())}
-          </a>
+          <div className="flex flex-wrap items-center gap-2">
+            <a
+              href={`/${store.slug}/projects/${row.original.project_id}/${row.original.archived_at ? "archives/" : ""}issues/${row.original.id}`}
+              className="hover:text-accent-primary"
+            >
+              {String(getValue())}
+            </a>
+            {!row.original.archived_at && (
+              <a
+                className="rounded border border-subtle px-2 py-0.5 text-11 whitespace-nowrap"
+                href={`/${store.slug}/lab/finance?project_id=${row.original.project_id}&finance_view=cost&log_issue=${row.original.id}&log_work=${encodeURIComponent(row.original.title)}`}
+              >
+                记工时
+              </a>
+            )}
+          </div>
         ),
       },
       { accessorKey: "project", header: "项目" },
@@ -354,7 +364,46 @@ export const LabTaskTable = observer(function LabTaskTable({
       {manage && !archived && (
         <LabFieldManager store={store} projectId={projectId} changed={() => void store.execute(load)} />
       )}
-      <div className="lab-task-table-surface overflow-auto rounded-lg border border-subtle">
+      {!grouping.length && (
+        <div className="lab-task-cards" data-mobile-cards="true" aria-label="任务卡片视图">
+          {table.getRowModel().rows.map((row) => (
+            <article className="lab-task-card" key={row.id}>
+              <div className="lab-task-card-head">
+                <a
+                  className="lab-task-card-title"
+                  href={`/${store.slug}/projects/${row.original.project_id}/${row.original.archived_at ? "archives/" : ""}issues/${row.original.id}`}
+                >
+                  {row.original.title}
+                </a>
+                <span className="lab-task-card-state">{row.original.state}</span>
+              </div>
+              <p className="lab-task-card-meta">
+                {row.original.project} · {row.original.key}
+                {row.original.target_date ? ` · 截止 ${row.original.target_date}` : ""}
+              </p>
+              <div className="lab-task-card-actions">
+                {!row.original.archived_at && (
+                  <a
+                    href={`/${store.slug}/lab/finance?project_id=${row.original.project_id}&finance_view=cost&log_issue=${row.original.id}&log_work=${encodeURIComponent(row.original.title)}`}
+                  >
+                    记工时
+                  </a>
+                )}
+                <a
+                  href={`/${store.slug}/projects/${row.original.project_id}/${row.original.archived_at ? "archives/" : ""}issues/${row.original.id}`}
+                >
+                  打开任务
+                </a>
+              </div>
+            </article>
+          ))}
+          {!table.getRowModel().rows.length && <p className="lab-task-card-empty">没有符合筛选条件的任务</p>}
+        </div>
+      )}
+      <div
+        className="lab-task-table-surface overflow-auto rounded-lg border border-subtle"
+        data-mobile-cards={!grouping.length ? "true" : "false"}
+      >
         <table className="w-full border-collapse text-left text-13">
           <thead className="bg-layer-1">
             {table.getHeaderGroups().map((group) => (

@@ -18,6 +18,7 @@ export function CostEntryDialog({
   data,
   row,
   reimbursement,
+  prefill,
   onClose,
   onSaved,
 }: {
@@ -26,6 +27,7 @@ export function CostEntryDialog({
   data: LabFinanceManagement;
   row?: LabManagementRecord;
   reimbursement?: boolean;
+  prefill?: Record<string, string>;
   onClose: () => void;
   onSaved: () => Promise<void>;
 }) {
@@ -33,13 +35,14 @@ export function CostEntryDialog({
     category: reimbursement ? "travel" : "labor",
     date: data.today ?? localToday(store.planner?.timezone),
     ...Object.fromEntries(Object.entries(row?.data ?? {}).filter(([, value]) => typeof value === "string")),
+    ...prefill,
   }));
   const [lines, setLines] = useState<Line[]>(() => [
     {
       key: uuidv4(),
-      user_id: row?.data.user_id ?? data.user_id,
-      hours: row?.data.hours_expression || row?.data.hours || "",
-      rate: row?.data.rate ?? "",
+      user_id: prefill?.user_id ?? row?.data.user_id ?? data.user_id,
+      hours: prefill?.hours ?? (row?.data.hours_expression || row?.data.hours || ""),
+      rate: prefill?.rate ?? row?.data.rate ?? "",
     },
   ]);
   const [mode, setMode] = useState("single");

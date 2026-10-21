@@ -3,26 +3,44 @@
  * SPDX-License-Identifier: AGPL-3.0-only
  */
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { observer } from "mobx-react";
 import { useParams } from "react-router";
 import { API_BASE_URL } from "@plane/constants";
 import { LabStore } from "@plane/shared-state";
 import { Button } from "@plane/ui";
-import { LabCalendar } from "./calendar";
-import { LabAnalyticsPanel } from "./analytics";
-import { LabMarket } from "./market";
-import { LabFinance } from "./finance";
-import { LabProjectQuality } from "./project-quality";
-import { LabPlanningWorkbench } from "./planner-workbench";
-import { LabProjectPlanning } from "./project-planning";
-import { LabTaskTable } from "./task-table";
-import { LabContributions } from "./contributions";
 import type { LabOpenProjectIssue } from "./item-details";
-import { LabChat } from "./chat";
+import { LabQuickActions } from "./quick-actions";
 import { labSections } from "./sections";
 // oxlint-disable-next-line import/no-unassigned-import -- scoped lab page accents
 import "./theme.css";
+
+const LabChat = lazy(() => import("./chat").then((module) => ({ default: module.LabChat })));
+const LabCalendar = lazy(() => import("./calendar").then((module) => ({ default: module.LabCalendar })));
+const LabFinance = lazy(() => import("./finance").then((module) => ({ default: module.LabFinance })));
+const LabProjectQuality = lazy(() =>
+  import("./project-quality").then((module) => ({ default: module.LabProjectQuality }))
+);
+const LabPlanningWorkbench = lazy(() =>
+  import("./planner-workbench").then((module) => ({ default: module.LabPlanningWorkbench }))
+);
+const LabProjectPlanning = lazy(() =>
+  import("./project-planning").then((module) => ({ default: module.LabProjectPlanning }))
+);
+const LabTaskTable = lazy(() => import("./task-table").then((module) => ({ default: module.LabTaskTable })));
+const LabMarket = lazy(() => import("./market").then((module) => ({ default: module.LabMarket })));
+const LabAnalyticsPanel = lazy(() => import("./analytics").then((module) => ({ default: module.LabAnalyticsPanel })));
+const LabContributions = lazy(() => import("./contributions").then((module) => ({ default: module.LabContributions })));
+const LabParticipation = lazy(() => import("./participation").then((module) => ({ default: module.LabParticipation })));
+
+function SectionLoading({ label }: { label: string }) {
+  return (
+    <div className="lab-workbench-panel lab-section-loading" role="status" aria-live="polite">
+      <span className="lab-section-loading-dot" aria-hidden="true" />
+      <p className="text-13 text-secondary">正在加载{label}…</p>
+    </div>
+  );
+}
 
 export const LabPanel = observer(function LabPanel({
   openProjectIssue,
@@ -44,18 +62,23 @@ export const LabPanel = observer(function LabPanel({
   }, [projectDetailsOpen, section, store]);
   useEffect(() => {
     if (section === "contributions" || section === "chat") return;
-    void store.execute(store.loadPlanner);
+    if (!store.planner) void store.execute(store.loadPlanner);
     const refresh = () => {
       if (document.visibilityState === "visible") void store.execute(store.loadPlanner);
     };
     window.addEventListener("focus", refresh);
-    const timer = window.setInterval(refresh, 30000);
+    const timer = window.setInterval(refresh, 60000);
     return () => {
       window.removeEventListener("focus", refresh);
       window.clearInterval(timer);
     };
   }, [section, store]);
-  if (section === "chat") return <LabChat openProjectIssue={openProjectIssue} />;
+  if (section === "chat")
+    return (
+      <Suspense fallback={<SectionLoading label="聊天" />}>
+        <LabChat openProjectIssue={openProjectIssue} />
+      </Suspense>
+    );
   const currentSection = labSections.find((entry) => entry.key === section) ?? labSections[0];
   const SectionIcon = currentSection.Icon;
   return (
@@ -70,6 +93,7 @@ export const LabPanel = observer(function LabPanel({
           </span>
           {currentSection.name}
         </h1>
+        <LabQuickActions workspaceSlug={workspaceSlug} />
         <Button
           size="sm"
           variant="neutral-primary"
@@ -104,33 +128,36 @@ export const LabPanel = observer(function LabPanel({
         {!store.planner && !store.error && section !== "contributions" && (
           <p className="text-13 text-tertiary">正在读取实验室规划…</p>
         )}
-        {section === "contributions" && (
-          <LabContributions store={store} refreshKey={refreshKey} openProjectIssue={openProjectIssue} />
-        )}
-        {store.planner && section === "planner" && (
-          <LabPlanningWorkbench store={store} openProjectIssue={openProjectIssue} />
-        )}
-        {store.planner &&
-          section === "team" &&
-          ((store.planner.team_calendar_access ?? store.planner.team_access) ? (
-            <LabCalendar
-              key="team"
-              store={store}
-              team
-              clearScheduled={() => undefined}
-              openProjectIssue={openProjectIssue}
-            />
-          ) : (
-            <p className="text-13 text-secondary">暂无团队排期查看权限</p>
-          ))}
-        {store.planner && section === "planning" && (
-          <LabProjectPlanning store={store} refreshKey={refreshKey} openProjectIssue={openProjectIssue} />
-        )}
-        {store.planner && section === "bounties" && <LabMarket store={store} />}
-        {store.planner && section === "tasks" && <LabTaskTable store={store} refreshKey={refreshKey} />}
-        {store.planner && section === "analytics" && <LabAnalyticsPanel store={store} refreshKey={refreshKey} />}
-        {store.planner && section === "quality" && <LabProjectQuality store={store} refreshKey={refreshKey} />}
-        {store.planner && section === "finance" && <LabFinance store={store} refreshKey={refreshKey} />}
+        <Suspense fallback={<SectionLoading label={currentSection.name} />}>
+          {section === "contributions" && (
+            <LabContributions store={store} refreshKey={refreshKey} openProjectIssue={openProjectIssue} />
+          )}
+          {store.planner && section === "planner" && (
+            <LabPlanningWorkbench store={store} openProjectIssue={openProjectIssue} />
+          )}
+          {store.planner &&
+            section === "team" &&
+            ((store.planner.team_calendar_access ?? store.planner.team_access) ? (
+              <LabCalendar
+                key="team"
+                store={store}
+                team
+                clearScheduled={() => undefined}
+                openProjectIssue={openProjectIssue}
+              />
+            ) : (
+              <p className="text-13 text-secondary">暂无团队排期查看权限</p>
+            ))}
+          {store.planner && section === "planning" && (
+            <LabProjectPlanning store={store} refreshKey={refreshKey} openProjectIssue={openProjectIssue} />
+          )}
+          {store.planner && section === "bounties" && <LabMarket store={store} />}
+          {store.planner && section === "tasks" && <LabTaskTable store={store} refreshKey={refreshKey} />}
+          {store.planner && section === "analytics" && <LabAnalyticsPanel store={store} refreshKey={refreshKey} />}
+          {store.planner && section === "quality" && <LabProjectQuality store={store} refreshKey={refreshKey} />}
+          {store.planner && section === "finance" && <LabFinance store={store} refreshKey={refreshKey} />}
+          {store.planner && section === "participation" && <LabParticipation store={store} refreshKey={refreshKey} />}
+        </Suspense>
       </div>
     </main>
   );

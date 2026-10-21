@@ -280,7 +280,7 @@ export const LabContributions = observer(function LabContributions({
                     // replacement is an interactive control and must be exposed.
                     button?.parentElement?.removeAttribute("aria-hidden");
                   }}
-                  aria-label={`查看 ${day} 的 VC 明细`}
+                  aria-label={`查看 ${day} 的 贡献点明细`}
                   aria-pressed={contributions.selectedDay === day}
                   className="lab-contributions-day"
                   onClick={() => selectDay(day)}
@@ -294,7 +294,7 @@ export const LabContributions = observer(function LabContributions({
               return (
                 <button
                   type="button"
-                  aria-label={`查看 ${day.day} · ${day.project}的 VC 明细`}
+                  aria-label={`查看 ${day.day} · ${day.project}的 贡献点明细`}
                   title={`${day.project} · 获得 ${day.earned} VC · 冲正 ${day.reversed} VC`}
                   className="lab-contributions-day-project"
                   style={projectStyle(day.project_id)}
@@ -311,10 +311,10 @@ export const LabContributions = observer(function LabContributions({
           />
         </div>
       </section>
-      <section aria-label="VC 明细" className="lab-contributions-entries-section">
+      <section aria-label="贡献点明细" className="lab-contributions-entries-section">
         <div className="lab-contributions-section-heading">
           <h2 className="text-14 font-semibold">
-            VC 明细{contributions.selectedDay ? ` · ${contributions.selectedDay}` : ""}
+            贡献点明细{contributions.selectedDay ? ` · ${contributions.selectedDay}` : ""}
           </h2>
           {contributions.selectedDay && (
             <Button size="sm" variant="neutral-primary" onClick={() => selectDay("")}>

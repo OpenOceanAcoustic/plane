@@ -107,7 +107,7 @@ export function ProjectQualityDialog({
             record_id: recordId,
             expected_version: row?.version ?? 0,
             request_key: requestKey,
-            reason,
+            reason: action === "review" ? note : reason,
             data:
               action === "review"
                 ? { result, note }
@@ -383,18 +383,20 @@ export function ProjectQualityDialog({
             </LabField>
           </>
         )}
-        <LabField label="操作说明">
-          <textarea
-            className={labInputClass}
-            value={reason}
-            required
-            maxLength={2000}
-            onChange={(event) => {
-              setReason(event.target.value);
-              changed();
-            }}
-          />
-        </LabField>
+        {action !== "review" && (
+          <LabField label="操作说明">
+            <textarea
+              className={labInputClass}
+              value={reason}
+              required
+              maxLength={2000}
+              onChange={(event) => {
+                setReason(event.target.value);
+                changed();
+              }}
+            />
+          </LabField>
+        )}
       </fieldset>
     </LabDialog>
   );

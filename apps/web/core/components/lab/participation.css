@@ -1,0 +1,202 @@
+/* Copyright (c) 2026 OpenOceanAcoustic and contributors. SPDX-License-Identifier: AGPL-3.0-only */
+.lab-participation-form {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  border: 1px dashed color-mix(in srgb, var(--label-blue-border) 30%, var(--border-color-subtle));
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--label-blue-bg) 22%, var(--background-color-layer-1));
+}
+
+.lab-participation-fields {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.lab-participation-submit {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.lab-participation-submit p {
+  flex: 1;
+  min-width: 180px;
+}
+
+.lab-participation-messages {
+  display: flex;
+  flex-direction: column;
+}
+
+.lab-participation-message {
+  padding: 10px 0;
+  border-top: 1px dashed var(--border-color-subtle);
+}
+
+.lab-participation-message:first-child {
+  padding-top: 0;
+  border-top: 0;
+}
+
+.lab-participation-message header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 7px;
+}
+
+.lab-participation-message header strong {
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.lab-participation-message time {
+  margin-left: auto;
+  color: var(--text-color-tertiary);
+  font-size: 11px;
+}
+
+.lab-participation-message p {
+  margin-top: 4px;
+  color: var(--text-color-primary);
+  font-size: 13px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.lab-participation-tag {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--label-orange-bg);
+  color: var(--label-orange-text);
+  font-size: 11px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.lab-participation-tag[data-kind="流程简化"] {
+  background: var(--label-emerald-bg);
+  color: var(--label-emerald-text);
+}
+
+.lab-participation-tag[data-kind="三方会审"] {
+  background: var(--label-purple-bg);
+  color: var(--label-purple-text);
+}
+
+.lab-participation-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 4px;
+  color: var(--text-color-accent-primary);
+  font-size: 12px;
+}
+
+.lab-participation-link:hover {
+  text-decoration: underline;
+}
+
+.lab-participation-stats {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.lab-participation-stats > div {
+  padding: 9px 10px;
+  border: 1px solid var(--border-color-subtle);
+  border-radius: 8px;
+  background: var(--background-color-layer-1);
+}
+
+.lab-participation-stats dt {
+  color: var(--text-color-secondary);
+  font-size: 11px;
+}
+
+.lab-participation-stats dd {
+  margin-top: 2px;
+  font-size: 15px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+
+.lab-participation-structure {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.lab-participation-structure > div {
+  display: grid;
+  grid-template-columns: 6.5rem minmax(0, 1fr);
+  gap: 8px;
+  font-size: 12px;
+}
+
+.lab-participation-structure dt {
+  color: var(--text-color-secondary);
+}
+
+.lab-participation-structure dd {
+  color: var(--text-color-primary);
+  word-break: break-word;
+}
+
+.lab-participation-review {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 8px 10px;
+  border: 1px solid var(--border-color-subtle);
+  border-radius: 8px;
+  background: var(--background-color-layer-1);
+}
+
+.lab-participation-review p {
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.lab-participation-review small {
+  color: var(--text-color-secondary);
+  font-size: 11px;
+}
+
+.lab-participation-check {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  color: var(--text-color-primary);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.lab-participation-check svg {
+  flex: none;
+  margin-top: 1px;
+  color: var(--label-emerald-text);
+}
+
+@media (max-width: 760px) {
+  .lab-participation-fields {
+    grid-template-columns: 1fr;
+  }
+
+  .lab-participation-stats {
+    grid-template-columns: 1fr;
+  }
+
+  .lab-participation-structure > div {
+    grid-template-columns: 1fr;
+    gap: 2px;
+  }
+}

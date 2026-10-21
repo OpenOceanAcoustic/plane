@@ -11,6 +11,7 @@ export type FinanceManagementAction = {
   action: string;
   row?: LabManagementRecord;
   reimbursement?: boolean;
+  prefill?: Record<string, string>;
 };
 const labels: Record<string, string> = {
   funding: "核定项目经费与预算",
@@ -45,6 +46,7 @@ export function FinanceManagementDialog(props: FinanceDialogProps) {
         data={props.data}
         row={props.chosen.row}
         reimbursement={props.chosen.reimbursement}
+        prefill={props.chosen.prefill}
         onClose={props.onClose}
         onSaved={props.onSaved}
       />

@@ -106,7 +106,7 @@ const financeTabMeta: Record<string, { label: string; hint: string; tone: string
   ledger: { label: "账目明细", hint: "逐笔资金流水与冲正", tone: "indigo", Icon: BookOpen },
   forecasts: { label: "预算与参考预测", hint: "阶段预算、奖励公式与参考预测", tone: "purple", Icon: TrendingUp },
   settlements: { label: "核准与付款", hint: "奖励核准、承诺与付款", tone: "orange", Icon: ReceiptText },
-  "vc-ledger": { label: "VC 明细", hint: "VC 预算、占用与贡献账本", tone: "indigo", Icon: Coins },
+  "vc-ledger": { label: "贡献点明细", hint: "贡献点预算、占用与贡献账本", tone: "indigo", Icon: Coins },
   workflow: { label: "资金与项目流程", hint: "流程节点、待办与历史", tone: "emerald", Icon: GitBranch },
 };
 
@@ -136,6 +136,7 @@ export const LabFinance = observer(function LabFinance({
     });
   const [chosen, setChosen] = useState<LabFinanceChosenAction>();
   const [quickAction, setQuickAction] = useState<FinanceManagementAction>();
+  const handledLogIssue = useRef("");
   const [permissionsOpen, setPermissionsOpen] = useState(false);
   const [budgetAdjustment, setBudgetAdjustment] = useState<{ projectId: string; entryId: string }>();
   const [formulaOpen, setFormulaOpen] = useState(false);
@@ -177,6 +178,31 @@ export const LabFinance = observer(function LabFinance({
     setRevision((value) => value + 1);
     setQuickAction(undefined);
   };
+  const logIssue = searchParams.get("log_issue");
+  const logWork = searchParams.get("log_work") ?? "";
+  useEffect(() => {
+    if (!logIssue || !projectId || !management || handledLogIssue.current === logIssue) return;
+    handledLogIssue.current = logIssue;
+    setQuickAction({
+      kind: "cost",
+      action: "save",
+      prefill: {
+        user_id: management.user_id,
+        date: management.today ?? new Date().toLocaleDateString("sv-SE", { timeZone: "Asia/Shanghai" }),
+        work: logWork,
+        issue_id: logIssue,
+      },
+    });
+    setSearchParams(
+      (current) => {
+        const next = new URLSearchParams(current);
+        next.delete("log_issue");
+        next.delete("log_work");
+        return next;
+      },
+      { replace: true }
+    );
+  }, [logIssue, logWork, projectId, management, setSearchParams]);
   const selectedProject = data?.projects.find((project) => project.id === projectId);
   const projectOptions = (() => {
     const rows = new Map<
@@ -334,7 +360,7 @@ export const LabFinance = observer(function LabFinance({
       )}
       {quickAction && management && projectId && (
         <FinanceManagementDialog
-          key={`${quickAction.kind}-${quickAction.action}-${quickAction.row?.id ?? "new"}`}
+          key={`${quickAction.kind}-${quickAction.action}-${quickAction.row?.id ?? "new"}-${JSON.stringify(quickAction.prefill ?? {})}`}
           store={store}
           path={`projects/${projectId}/finance-management/`}
           data={management}
@@ -426,11 +452,15 @@ export const LabFinance = observer(function LabFinance({
           )}
         </div>
       </div>
+      <details className="lab-glossary">
+        <summary>术语说明</summary>
+        <p>贡献点（VC）：项目内奖励额度；核准 D：可分配额；b/r：基础/职责权重；E：阶段奖励预算。</p>
+      </details>
       <details
         className="lab-workbench-more"
         open={["forecasts", "settlements", "vc-ledger", "workflow"].includes(tab)}
       >
-        <summary className="cursor-pointer text-13 font-medium">预算、VC 与资金流程</summary>
+        <summary className="cursor-pointer text-13 font-medium">预算、贡献点与资金流程</summary>
         <label className="mt-2 flex items-center gap-2 text-12">
           <input type="checkbox" checked={showDeleted} onChange={(event) => setShowDeleted(event.target.checked)} />
           显示已删除记录
@@ -441,8 +471,8 @@ export const LabFinance = observer(function LabFinance({
             : data?.projects.some((project) => project.can_manage_vc && !project.deleted)) && (
             <Button variant="primary" size="sm" onClick={() => open("vc-stage")}>
               {projectId && budgets?.some((budget) => budget.project_id === projectId && budget.configured)
-                ? "追加 VC 预算"
-                : "设置 VC 预算"}
+                ? "追加贡献点预算"
+                : "设置贡献点预算"}
             </Button>
           )}
           {selectedProject?.can_manage_permissions && (
@@ -514,8 +544,8 @@ export const LabFinance = observer(function LabFinance({
           )}
         </div>
         {!!visibleBudgets.length && (
-          <section aria-label="项目 VC 预算" className="space-y-2">
-            <h2 className="text-14 font-semibold">项目 VC 预算</h2>
+          <section aria-label="项目贡献点预算" className="space-y-2">
+            <h2 className="text-14 font-semibold">项目贡献点预算</h2>
             <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
               {visibleBudgets.map((budget) => (
                 <article
@@ -531,7 +561,7 @@ export const LabFinance = observer(function LabFinance({
                         variant="primary"
                         onClick={() => open("vc-stage", { project_id: budget.project_id })}
                       >
-                        追加 VC 预算
+                        追加贡献点预算
                       </Button>
                     )}
                     {budget.deleted && <span className="text-13 text-secondary">已删除</span>}
@@ -580,7 +610,7 @@ export const LabFinance = observer(function LabFinance({
                       </dl>
                     </>
                   ) : (
-                    <p className="mt-2 text-13 text-secondary">尚未设置 VC 预算</p>
+                    <p className="mt-2 text-13 text-secondary">尚未设置贡献点预算</p>
                   )}
                   {!!budget.entries?.length && (
                     <div className="mt-3 space-y-2" aria-label={`${budget.project}预算明细`}>
@@ -611,7 +641,7 @@ export const LabFinance = observer(function LabFinance({
           {[
             { id: "forecasts", label: "预算与参考预测" },
             { id: "settlements", label: "核准与付款" },
-            { id: "vc-ledger", label: "VC 明细" },
+            { id: "vc-ledger", label: "贡献点明细" },
             { id: "workflow", label: "资金与项目流程" },
           ].map((entry) => (
             <Button
@@ -627,7 +657,7 @@ export const LabFinance = observer(function LabFinance({
       </details>
       {budgetError && (
         <p role="alert" className="text-13 text-danger-primary">
-          {budgetError instanceof Error ? budgetError.message : "项目 VC 预算加载失败"}
+          {budgetError instanceof Error ? budgetError.message : "项目贡献点预算加载失败"}
         </p>
       )}
       <nav aria-label="资金账视图" className="lab-section-tabs">
@@ -796,7 +826,11 @@ export const LabFinance = observer(function LabFinance({
                     还没有可入账的阶段或项目账户。可先设置阶段预算，或录入期初余额建立项目账户。
                   </p>
                   {allowedActions.has("stage") && (
-                    <Button size="sm" variant="neutral-primary" onClick={() => open("stage")}>
+                    <Button
+                      size="sm"
+                      variant="neutral-primary"
+                      onClick={() => open("stage", { reason: "设置阶段预算" })}
+                    >
                       设置阶段预算
                     </Button>
                   )}
