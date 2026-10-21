@@ -416,9 +416,39 @@ export const LabFinance = observer(function LabFinance({
         )}
         <div className="lab-command-actions">
           {data && (
-            <Button size="sm" variant="primary" onClick={() => (canReceipt ? open("receipt") : setTab("income"))}>
+            <Button
+              size="sm"
+              variant="primary"
+              onClick={() => {
+                if (canReceipt) {
+                  open("receipt");
+                  return;
+                }
+                if (canPoolFunding) {
+                  open("pool-funding");
+                  return;
+                }
+                if (allowedActions.has("stage")) {
+                  open("stage", { reason: "设置阶段预算" });
+                  return;
+                }
+                if (canOpening) {
+                  open("opening");
+                  return;
+                }
+                setTab("income");
+              }}
+            >
               <Banknote size={14} className="mr-1" />
-              {canReceipt ? "登记到账" : "入账"}
+              {canReceipt
+                ? "登记到账"
+                : canPoolFunding
+                  ? "资金池划入"
+                  : allowedActions.has("stage")
+                    ? "设置阶段预算"
+                    : canOpening
+                      ? "录入期初余额"
+                      : "入账"}
             </Button>
           )}
           {projectId && management && !financeClosed && canRecord && (
