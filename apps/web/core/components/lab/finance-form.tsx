@@ -658,7 +658,7 @@ export function LabFinanceActionDialog({
   return (
     <LabDialog
       title={financeActionLabels[action] ?? "办理资金事项"}
-      busy={store.busy || saving}
+      busy={saving}
       onClose={onClose}
       error={error}
       submitDisabled={invalid}
