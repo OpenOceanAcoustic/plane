@@ -29,6 +29,19 @@ export const LabVCWallets = observer(function LabVCWallets({
   const member = quotas?.members.find((row) => row.id === memberId);
   const limit = kind === "grant" ? source?.available : (member?.reclaimable ?? member?.wallet.project_available);
   const amountError = labAmountError(amount, { limit, min: "0.01", unit: "VC" });
+  const blocker = !loading
+    ? !source
+      ? "当前项目没有贡献点预算"
+      : source.deleted
+        ? "贡献点预算已删除，请先恢复"
+        : !source.configured
+          ? "项目尚未配置贡献点预算，请先到资金与奖励配置"
+          : !source.can_allocate
+            ? "当前项目不能分配贡献点"
+            : !member
+              ? "请选择成员"
+              : amountError
+    : "";
 
   useEffect(() => {
     let current = true;
@@ -88,7 +101,7 @@ export const LabVCWallets = observer(function LabVCWallets({
     <LabDialog
       title="我的贡献点"
       busy={busy}
-      error={error}
+      error={error || blocker}
       onClose={onClose}
       submitLabel={kind === "grant" ? "分配额度" : "收回额度"}
       submitDisabled={loading || !!amountError || !member || !source?.configured || !!source.deleted}

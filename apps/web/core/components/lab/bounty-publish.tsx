@@ -132,6 +132,22 @@ export const LabBountyPublish = observer(function LabBountyPublish({
       : "";
   const quotaError = labAmountError(budget, { limit: paymentLimit, min: "0.01", unit: "VC" });
   const financeUrl = `/${store.slug}/lab/finance${projectId ? `?project_id=${encodeURIComponent(projectId)}` : ""}`;
+  const blocker =
+    !loadingBudgets && !loadingTasks
+      ? !source
+        ? "当前项目还没有预算记录，请先配置 VC 预算"
+        : source.deleted
+          ? "资金预算已删除，请先恢复"
+          : !source.configured
+            ? "项目尚未配置 VC 预算，请先到资金与奖励配置后再发布"
+            : quota === null || quota <= 0n
+              ? "请填写大于 0 的 VC 配额"
+              : quotaError || paymentError
+                ? quotaError || paymentError
+                : !task
+                  ? "请选择当前项目的工作项"
+                  : ""
+      : "";
 
   return (
     <LabDialog
@@ -152,11 +168,12 @@ export const LabBountyPublish = observer(function LabBountyPublish({
       error={
         store.error ||
         budgetError ||
+        taskError ||
         (source?.deleted
           ? source.project_deleted
             ? "资金项目已删除，请先恢复资金项目"
             : "阶段预算已删除，请先恢复阶段预算"
-          : taskError)
+          : blocker)
       }
       onClose={onClose}
       onSubmit={async (data) => {
@@ -226,6 +243,7 @@ export const LabBountyPublish = observer(function LabBountyPublish({
                 .map((row) => (
                   <option key={row.project_id} value={row.project_id}>
                     {row.project}
+                    {row.configured ? "" : " · 未配置预算"}
                   </option>
                 ))}
             </>
@@ -393,6 +411,16 @@ export const LabBountyPublish = observer(function LabBountyPublish({
             ))}
           </select>
         </LabField>
+      )}
+      {blocker && (
+        <p role="status" className="flex flex-wrap items-center gap-2 text-12 text-danger-primary">
+          {blocker}
+          {(!source?.configured || source?.deleted) && (
+            <Link to={financeUrl} className="text-accent-primary">
+              去资金与奖励配置
+            </Link>
+          )}
+        </p>
       )}
     </LabDialog>
   );

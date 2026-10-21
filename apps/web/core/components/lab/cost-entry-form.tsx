@@ -142,6 +142,27 @@ export function CostEntryDialog({
     })
       ? "工时超出所选期间，请调整结束日期或工时"
       : "";
+  const blocker = !labor
+    ? ""
+    : !lines.length
+      ? "请添加至少一名成员"
+      : lines.some((line) => !line.user_id)
+        ? "请选择成员"
+        : new Set(lines.map((line) => line.user_id)).size !== lines.length
+          ? "成员不能重复"
+          : lines.some((line) => !line.hours.trim())
+            ? "请填写工时，例如 5×8（5 天 × 8 小时）"
+            : lines.some((line) => !laborHours(line.hours))
+              ? "工时请填数字或天数×每日小时"
+              : lines.some((line) => !/^[0-9]{1,12}(?:\.[0-9]{1,2})?$/.test(line.rate) || cents(line.rate) <= 0n)
+                ? "请填写工时单价"
+                : !Number.isFinite(duration) || duration < 1
+                  ? "结束日期不能早于发生日期"
+                  : duration > 366
+                    ? "一次登记的日期跨度不能超过 366 天"
+                    : mode === "team" && !teamId
+                      ? "请选择团队"
+                      : periodError;
   const hourError =
     labor && lines.some((line) => line.hours && !laborHours(line.hours)) ? "工时请填数字或天数×每日小时，例如5×8" : "";
   const field = (name: string, label: string, type = "text", fallback = "", required = true) => (
@@ -363,11 +384,12 @@ export function CostEntryDialog({
                           <input
                             aria-label={`工时 ${name}`}
                             className={labInputClass}
-                            placeholder="5×8"
+                            placeholder="如 5×8"
                             required
                             value={line.hours}
                             onChange={(event) => updateLine(line.key, "hours", event.target.value)}
                           />
+                          {!line.hours && <span className="text-11 text-secondary">请填写工时，例如 5×8</span>}
                           {parsed && (
                             <span className="text-12 text-secondary">
                               {line.hours}＝{labDecimalText(parsed.units)} 小时
@@ -491,6 +513,12 @@ export function CostEntryDialog({
           </p>
         )}
       </fieldset>
+      {blocker && (
+        <p role="status" className="text-12 text-secondary">
+          <strong>保存前：</strong>
+          {blocker}
+        </p>
+      )}
     </LabDialog>
   );
 }

@@ -52,13 +52,18 @@ function QuoteApplication({
       : files.some(({ file }) => !file.size || file.size > data.file_size_limit)
         ? `附件须非空且不超过 ${(data.file_size_limit / 1024 / 1024).toFixed(1)} MB`
         : "";
+  const blocker =
+    amountError ||
+    fileError ||
+    (!deliverable.trim() ? "请填写交付说明" : "") ||
+    (kind === "negotiated" && !basis.trim() && !files.length ? "议价请填写依据或上传附件" : "");
   return (
     <LabDialog
       title={kind === "original" ? "按原价申请" : "议价申请"}
       busy={busy}
       onClose={onClose}
       submitLabel="提交申请"
-      error={fileError || error}
+      error={blocker || error}
       submitDisabled={
         !!amountError || !!fileError || !deliverable.trim() || (kind === "negotiated" && !basis.trim() && !files.length)
       }

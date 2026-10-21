@@ -646,7 +646,7 @@ export const LabMarket = observer(function LabMarket({ store }: { store: LabStor
         <LabDialog
           title="独立验收与累计贡献"
           busy={store.busy}
-          error={store.error}
+          error={store.error || (acceptanceInvalid ? "累计贡献不能低于已发放，也不能超过认领额度" : "")}
           submitDisabled={acceptanceInvalid}
           onClose={close}
           onSubmit={(data) =>
