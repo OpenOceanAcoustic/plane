@@ -98,3 +98,10 @@
   --lab-section-text: var(--label-blue-text);
   --lab-section-border: var(--label-blue-border);
 }
+
+.lab-page[data-lab-section="cash"],
+.lab-navigation-item[data-lab-section="cash"] {
+  --lab-section-bg: var(--label-orange-bg);
+  --lab-section-text: var(--label-orange-text);
+  --lab-section-border: var(--label-orange-border);
+}

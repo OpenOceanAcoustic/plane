@@ -8,6 +8,7 @@ from .field_urls import field_patterns
 from .gantt_urls import gantt_patterns
 from .workflow_urls import workflow_patterns
 from .bounty_urls import bounty_patterns
+from .cash_bounties import CashBountyActionView, CashBountyDetailView, CashBountyView
 from .lifecycle_workflow import lifecycle_patterns
 from .finance_urls import finance_patterns
 from .project_management import ProjectFinanceManagementView
@@ -75,6 +76,9 @@ business_patterns = [
     path("analytics/", AnalyticsView.as_view()),
     path("analytics/drilldown/", AnalyticsDrilldownView.as_view()),
     *workflow_patterns,
+    path("cash-bounties/", CashBountyView.as_view()),
+    path("cash-bounties/<uuid:pk>/", CashBountyDetailView.as_view()),
+    path("cash-bounties/<uuid:pk>/<str:action>/", CashBountyActionView.as_view()),
     *bounty_patterns,
     *lifecycle_patterns,
     *finance_patterns,

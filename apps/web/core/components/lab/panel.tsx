@@ -29,6 +29,7 @@ const LabProjectPlanning = lazy(() =>
 );
 const LabTaskTable = lazy(() => import("./task-table").then((module) => ({ default: module.LabTaskTable })));
 const LabMarket = lazy(() => import("./market").then((module) => ({ default: module.LabMarket })));
+const LabCashBounties = lazy(() => import("./cash-bounty").then((module) => ({ default: module.LabCashBounties })));
 const LabAnalyticsPanel = lazy(() => import("./analytics").then((module) => ({ default: module.LabAnalyticsPanel })));
 const LabContributions = lazy(() => import("./contributions").then((module) => ({ default: module.LabContributions })));
 const LabParticipation = lazy(() => import("./participation").then((module) => ({ default: module.LabParticipation })));
@@ -158,6 +159,7 @@ export const LabPanel = observer(function LabPanel({
             <LabProjectPlanning store={store} refreshKey={refreshKey} openProjectIssue={openProjectIssue} />
           )}
           {store.planner && section === "bounties" && <LabMarket store={store} />}
+          {store.planner && section === "cash" && <LabCashBounties store={store} refreshKey={refreshKey} />}
           {store.planner && section === "tasks" && <LabTaskTable store={store} refreshKey={refreshKey} />}
           {store.planner && section === "analytics" && <LabAnalyticsPanel store={store} refreshKey={refreshKey} />}
           {store.planner && section === "quality" && <LabProjectQuality store={store} refreshKey={refreshKey} />}

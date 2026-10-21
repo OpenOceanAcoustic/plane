@@ -39,6 +39,7 @@ const groups = (base: string): { title: string; links: QuickLink[] }[] => [
       { href: `${base}/finance?finance_view=project-budget`, label: "预算", icon: <PiggyBank size={14} /> },
       { href: `${base}/quality`, label: "质量资料", icon: <ClipboardCheck size={14} /> },
       { href: `${base}/bounties`, label: "悬赏大厅", icon: <Target size={14} /> },
+      { href: `${base}/cash`, label: "现金悬赏", icon: <Banknote size={14} /> },
     ],
   },
   {

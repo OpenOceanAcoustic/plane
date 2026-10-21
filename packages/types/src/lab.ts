@@ -321,3 +321,31 @@ export type LabBountyQuotes = {
   reviewers: LabMember[];
   file_size_limit: number;
 };
+
+export type LabCashBountyStatus = "open" | "claimed" | "submitted" | "accepted" | "paid" | "cancelled";
+
+export type LabCashBounty = {
+  id: string;
+  project_id: string;
+  project: string;
+  title: string;
+  deliverable: string;
+  criteria: string;
+  amount: string;
+  status: LabCashBountyStatus;
+  publisher: { id: string; name: string } | null;
+  reviewer: { id: string; name: string } | null;
+  claimed_by: { id: string; name: string } | null;
+  claimed_at: string | null;
+  submitted_at: string | null;
+  accepted_at: string | null;
+  paid_at: string | null;
+  due_at: string | null;
+  evidence: string;
+  acceptance_note: string;
+  can_claim: boolean;
+  can_submit: boolean;
+  can_accept: boolean;
+  can_pay: boolean;
+  can_cancel: boolean;
+};

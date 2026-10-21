@@ -308,3 +308,44 @@ from .finance_models import (  # noqa: E402,F401
     StageBudget,
 )
 from .management_models import ProjectManagementRecord  # noqa: E402,F401
+
+class CashBounty(Record):
+    """Simple fixed-cash task: first member claims, lead accepts, cash paid from project account."""
+
+    STATUSES = ("open", "claimed", "submitted", "accepted", "paid", "cancelled")
+    workspace = models.ForeignKey("db.Workspace", on_delete=models.CASCADE, related_name="lab_cash_bounties")
+    project = models.ForeignKey("db.Project", on_delete=models.CASCADE, related_name="lab_cash_bounties")
+    title = models.CharField(max_length=255)
+    deliverable = models.TextField()
+    criteria = models.TextField(blank=True)
+    amount = models.DecimalField(max_digits=14, decimal_places=2)
+    status = models.CharField(max_length=20, default="open")
+    publisher = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, related_name="lab_cash_bounties_published"
+    )
+    reviewer = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, related_name="lab_cash_bounties_reviewing"
+    )
+    claimed_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, related_name="lab_cash_bounties_claimed"
+    )
+    claimed_at = models.DateTimeField(null=True)
+    submitted_at = models.DateTimeField(null=True)
+    accepted_at = models.DateTimeField(null=True)
+    paid_at = models.DateTimeField(null=True)
+    due_at = models.DateTimeField(null=True)
+    evidence = models.TextField(blank=True)
+    acceptance_note = models.TextField(blank=True)
+    payment_operation = models.ForeignKey(
+        "lab.FinancialOperation", on_delete=models.SET_NULL, null=True, related_name="lab_cash_bounties"
+    )
+
+    class Meta:
+        constraints = [
+            models.CheckConstraint(condition=models.Q(amount__gt=0), name="lab_cash_bounty_positive"),
+            models.CheckConstraint(
+                condition=models.Q(status__in=("open", "claimed", "submitted", "accepted", "paid", "cancelled")),
+                name="lab_cash_bounty_status",
+            ),
+        ]
+        indexes = [models.Index(fields=["workspace", "project", "status"], name="lab_cash_bounty_scope")]
