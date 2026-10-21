@@ -415,6 +415,12 @@ export const LabFinance = observer(function LabFinance({
           </div>
         )}
         <div className="lab-command-actions">
+          {data && (
+            <Button size="sm" variant="primary" onClick={() => (canReceipt ? open("receipt") : setTab("income"))}>
+              <Banknote size={14} className="mr-1" />
+              {canReceipt ? "登记到账" : "入账"}
+            </Button>
+          )}
           {projectId && management && !financeClosed && canRecord && (
             <Button size="sm" variant="primary" onClick={() => setQuickAction({ kind: "cost", action: "save" })}>
               <Plus size={14} className="mr-1" />
@@ -437,12 +443,6 @@ export const LabFinance = observer(function LabFinance({
               onClick={() => setQuickAction({ kind: "payroll", action: "save" })}
             >
               生成工资单
-            </Button>
-          )}
-          {data && (
-            <Button size="sm" variant="primary" onClick={() => setTab("income")}>
-              <Banknote size={14} className="mr-1" />
-              入账
             </Button>
           )}
           {projectId && canViewFinance && (
@@ -783,6 +783,11 @@ export const LabFinance = observer(function LabFinance({
           <section className="lab-workbench-panel space-y-3" aria-label="入账办理">
             <header className="lab-workbench-panel-head">
               <h2>入账办理</h2>
+              {canReceipt && (
+                <Button size="sm" variant="primary" onClick={() => open("receipt")}>
+                  登记到账
+                </Button>
+              )}
             </header>
             <div className="lab-incoming-group">
               <h3>项目收入</h3>
@@ -823,7 +828,8 @@ export const LabFinance = observer(function LabFinance({
               {!canReceipt && !canPoolFunding && (
                 <div className="flex flex-col items-start gap-2">
                   <p className="text-12 text-secondary">
-                    还没有可入账的阶段或项目账户。可先设置阶段预算，或录入期初余额建立项目账户。
+                    还没有可入账的阶段或项目账户。VC
+                    预算只是贡献点额度，不等于项目现金预算；请先设置阶段预算，或录入期初余额建立项目账户。
                   </p>
                   {allowedActions.has("stage") && (
                     <Button
