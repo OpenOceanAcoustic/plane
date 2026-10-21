@@ -8,7 +8,7 @@ from .field_urls import field_patterns
 from .gantt_urls import gantt_patterns
 from .workflow_urls import workflow_patterns
 from .bounty_urls import bounty_patterns
-from .agent_views import TimeAgentHealthView, TimeAgentView
+from .agent_views import AgentChatView, TimeAgentHealthView, TimeAgentView
 from .cash_bounties import CashBountyActionView, CashBountyDetailView, CashBountyView
 from .lifecycle_workflow import lifecycle_patterns
 from .finance_urls import finance_patterns
@@ -78,6 +78,7 @@ business_patterns = [
     path("analytics/drilldown/", AnalyticsDrilldownView.as_view()),
     *workflow_patterns,
     path("agent/time/health/", TimeAgentHealthView.as_view()),
+    path("agent/chat/", AgentChatView.as_view()),
     path("agent/time/", TimeAgentView.as_view()),
     path("cash-bounties/", CashBountyView.as_view()),
     path("cash-bounties/<uuid:pk>/", CashBountyDetailView.as_view()),

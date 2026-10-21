@@ -10,6 +10,7 @@ import { API_BASE_URL } from "@plane/constants";
 import { LabStore } from "@plane/shared-state";
 import { Button } from "@plane/ui";
 import type { LabOpenProjectIssue } from "./item-details";
+import { LabAgentChat } from "./agent-chat";
 import { LabCoreActions } from "./core-actions";
 import { LabQuickActions } from "./quick-actions";
 import { labSections } from "./sections";
@@ -169,6 +170,7 @@ export const LabPanel = observer(function LabPanel({
           {store.planner && section === "participation" && <LabParticipation store={store} refreshKey={refreshKey} />}
         </Suspense>
       </div>
+      <LabAgentChat store={store} workspaceSlug={workspaceSlug} />
     </main>
   );
 });

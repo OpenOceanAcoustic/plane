@@ -139,6 +139,7 @@ export const LabFinance = observer(function LabFinance({
   const [chosen, setChosen] = useState<LabFinanceChosenAction>();
   const [quickAction, setQuickAction] = useState<FinanceManagementAction>();
   const handledLogIssue = useRef("");
+  const handledAiTime = useRef("");
   const [permissionsOpen, setPermissionsOpen] = useState(false);
   const [budgetAdjustment, setBudgetAdjustment] = useState<{ projectId: string; entryId: string }>();
   const [formulaOpen, setFormulaOpen] = useState(false);
@@ -207,6 +208,41 @@ export const LabFinance = observer(function LabFinance({
       { replace: true }
     );
   }, [logIssue, logWork, projectId, management, setSearchParams]);
+  const aiTime = searchParams.get("ai_time");
+  useEffect(() => {
+    if (!aiTime || !projectId || !management || handledAiTime.current === aiTime) return;
+    handledAiTime.current = aiTime;
+    try {
+      const draft = JSON.parse(aiTime) as {
+        date?: string;
+        hours?: string;
+        work?: string;
+        user_id?: string;
+        rate?: string;
+      };
+      setQuickAction({
+        kind: "cost",
+        action: "save",
+        prefill: {
+          date: draft.date ?? management.today ?? "",
+          hours: draft.hours ?? "",
+          work: draft.work ?? "",
+          user_id: draft.user_id ?? management.user_id,
+          ...(draft.rate ? { rate: draft.rate } : {}),
+        },
+      });
+    } catch {
+      setIncomeHint(true);
+    }
+    setSearchParams(
+      (current) => {
+        const next = new URLSearchParams(current);
+        next.delete("ai_time");
+        return next;
+      },
+      { replace: true }
+    );
+  }, [aiTime, projectId, management, setSearchParams]);
   const selectedProject = data?.projects.find((project) => project.id === projectId);
   const projectOptions = (() => {
     const rows = new Map<

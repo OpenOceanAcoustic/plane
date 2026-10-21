@@ -260,3 +260,154 @@ class TimeAgentHealthView(LabView):
                 "detail": detail,
             }
         )
+
+
+def _chat_prompt(user, project, members, context, today):
+    people = "、".join(f"{member.member.display_name}({member.member_id})" for member in members)
+    project_text = f"{project.name}（{project.id}）" if project else "未选择项目"
+    return (
+        "你是实验室工作台的统一 AI 助手。只做理解、查询和草稿，绝不执行写入。\n"
+        f"当前用户：{user.display_name}\n"
+        f"当前项目：{project_text}\n"
+        f"项目成员：{people or '无'}\n"
+        f"今天：{today.isoformat()}（Asia/Shanghai）\n"
+        f"页面上下文：{json.dumps(context, ensure_ascii=False)[:4000]}\n"
+        "只输出一个 JSON 对象，不要 Markdown。字段：\n"
+        "intent: time_entry | work_item | query | unsupported | needs_input\n"
+        "reply: 给用户看的中文回复\n"
+        "question: 需要补充信息时的问题\n"
+        "time: {date, hours, work, user_id, rate}（intent=time_entry 时）\n"
+        "work_item: {title, description}（intent=work_item 时）\n"
+        "规则：\n"
+        "1. 工时：date 缺省今天；hours 用 3 或 5×8；work 必填；user_id 只能从项目成员选；rate 只在用户明确说时填。\n"
+        "2. 工作项：只生成个人规划草稿，标题必填，说明可空，不猜负责人和截止日期。\n"
+        "3. 查询：只能依据页面上下文回答；上下文没有的数据，明确说“当前页面没有这个数据”，不要编造。\n"
+        "4. 发工资、入账、审批、付款、权限变更等高风险动作：intent=unsupported，reply 说明“第二批接入，请使用对应表单”。\n"
+        "5. 缺少必要信息时用 needs_input 追问。\n"
+        "6. 不输出 SQL、命令、密钥或与字段无关的内容。"
+    )
+
+
+class AgentChatView(LabView):
+    def post(self, request, slug):
+        try:
+            return self._post(request, slug)
+        except (APIException, PermissionDenied, ValidationError):
+            raise
+        except Exception as exc:
+            logger.exception("lab agent chat unexpected failure")
+            raise APIException(f"AI 服务内部错误：{type(exc).__name__}", code=500)
+
+    def _post(self, request, slug):
+        message = str(request.data.get("message", "")).strip()
+        if not message:
+            raise ValidationError("请输入要办理的事情")
+        if len(message) > MAX_MESSAGE:
+            raise ValidationError("描述过长，请控制在 1000 字以内")
+        project_id = str(request.data.get("project_id", "")).strip()
+        project = None
+        members = []
+        if project_id:
+            project = Project.objects.filter(id=project_id, workspace=self.workspace).first()
+            if project is None:
+                raise ValidationError("项目不存在")
+            if not ProjectMember.objects.filter(
+                project=project,
+                workspace_id=self.workspace.id,
+                member=request.user,
+                is_active=True,
+                role__gte=15,
+                member__is_active=True,
+            ).exists():
+                raise PermissionDenied("只有项目成员可以使用项目 AI")
+            members = list(
+                ProjectMember.objects.filter(
+                    project=project,
+                    workspace_id=self.workspace.id,
+                    is_active=True,
+                    role__gte=15,
+                    member__is_active=True,
+                ).select_related("member")[:200]
+            )
+        raw_context = request.data.get("context", {})
+        context = raw_context if isinstance(raw_context, dict) else {}
+        bucket = int(time.time() // 60)
+        rate_key = f"lab-agent-chat:{request.user.id}:{bucket}"
+        try:
+            used = cache.get(rate_key, 0)
+            if used >= RATE_LIMIT:
+                raise APIException("AI 请求太频繁，请一分钟后再试", code=429)
+            cache.set(rate_key, used + 1, 70)
+        except APIException:
+            raise
+        except Exception:
+            logger.warning("lab agent chat rate limit cache unavailable")
+        today = timezone.localdate()
+        key, base, model = _config()
+        payload = _call_deepseek(
+            key,
+            base,
+            model,
+            _chat_prompt(request.user, project, members, context, today),
+            message,
+        )
+        intent = str(payload.get("intent", "unsupported")).strip()
+        reply = str(payload.get("reply", "")).strip()[:2000]
+        question = str(payload.get("question", "")).strip()[:300]
+        draft = None
+        if intent == "time_entry":
+            if project is None:
+                return Response(
+                    {
+                        "intent": "needs_input",
+                        "reply": "请先在聊天框里选择项目，再登记工时。",
+                        "question": "选择哪个项目？",
+                        "draft": None,
+                        "provider": "deepseek",
+                        "model": model,
+                    }
+                )
+            require_project_finance(request.user, project, "record")
+            time_data = payload.get("time")
+            if not isinstance(time_data, dict):
+                raise ValidationError("AI 没有生成工时字段，请换一种说法")
+            result = _draft(request.user, project, members, {"status": "draft", **time_data}, today)
+            draft = {"kind": "time", **result["draft"]}
+            reply = reply or "已生成工时草稿，请确认后填入工时表。"
+        elif intent == "work_item":
+            item = payload.get("work_item")
+            if not isinstance(item, dict):
+                raise ValidationError("AI 没有生成工作项字段，请换一种说法")
+            title = str(item.get("title", "")).strip()[:255]
+            description = str(item.get("description", "")).strip()[:2000]
+            if not title:
+                return Response(
+                    {
+                        "intent": "needs_input",
+                        "reply": "请补充工作项名称。",
+                        "question": "这个工作项叫什么？",
+                        "draft": None,
+                        "provider": "deepseek",
+                        "model": model,
+                    }
+                )
+            draft = {"kind": "work_item", "title": title, "description": description}
+            reply = reply or "已生成工作项草稿，确认后会记录到个人规划。"
+        elif intent == "query":
+            if not reply:
+                raise ValidationError("AI 没有生成回答，请换一种问法")
+        elif intent == "needs_input":
+            intent = "needs_input"
+        else:
+            intent = "unsupported"
+            reply = reply or "这个动作还没接入统一助手，请使用对应页面办理。"
+        return Response(
+            {
+                "intent": intent,
+                "reply": reply,
+                "question": question,
+                "draft": draft,
+                "provider": "deepseek",
+                "model": model,
+            }
+        )
