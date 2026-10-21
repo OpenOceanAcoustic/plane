@@ -77,7 +77,7 @@ def _system_prompt(user, project, members, today):
 
 
 def _call_deepseek(key, base, model, system, message):
-    client = OpenAI(api_key=key, base_url=base, timeout=30.0)
+    client = OpenAI(api_key=key, base_url=base, timeout=20.0, max_retries=0)
     kwargs = {
         "model": model,
         "messages": [{"role": "system", "content": system}, {"role": "user", "content": message}],
@@ -92,7 +92,10 @@ def _call_deepseek(key, base, model, system, message):
         except Exception as exc:
             logger.warning("lab time agent call failed: %s", type(exc).__name__)
             raise APIException("AI 解析失败，请稍后再试", code=502)
-    content = (completion.choices[0].message.content or "").strip()
+    choices = getattr(completion, "choices", None)
+    if not choices:
+        raise APIException("AI 返回空结果，请稍后再试", code=502)
+    content = (choices[0].message.content or "").strip()
     if content.startswith("```"):
         content = re.sub(r"^```(?:json)?\s*", "", content)
         content = re.sub(r"\s*```$", "", content)
@@ -171,6 +174,15 @@ def _draft(user, project, members, payload, today):
 
 class TimeAgentView(LabView):
     def post(self, request):
+        try:
+            return self._post(request)
+        except (APIException, PermissionDenied, ValidationError):
+            raise
+        except Exception as exc:
+            logger.exception("lab time agent unexpected failure")
+            raise APIException(f"AI 服务内部错误：{type(exc).__name__}", code=500)
+
+    def _post(self, request):
         message = str(request.data.get("message", "")).strip()
         if not message:
             raise ValidationError("请用一句话描述工时")
@@ -192,10 +204,15 @@ class TimeAgentView(LabView):
         require_project_finance(request.user, project, "record")
         bucket = int(time.time() // 60)
         cache_key = f"lab-time-agent:{request.user.id}:{bucket}"
-        used = cache.get(cache_key, 0)
-        if used >= RATE_LIMIT:
-            raise APIException("AI 请求太频繁，请一分钟后再试", code=429)
-        cache.set(cache_key, used + 1, 70)
+        try:
+            used = cache.get(cache_key, 0)
+            if used >= RATE_LIMIT:
+                raise APIException("AI 请求太频繁，请一分钟后再试", code=429)
+            cache.set(cache_key, used + 1, 70)
+        except APIException:
+            raise
+        except Exception:
+            logger.warning("lab time agent rate limit cache unavailable")
         members = list(
             ProjectMember.objects.filter(
                 project=project,
@@ -218,3 +235,28 @@ class TimeAgentView(LabView):
         result["provider"] = "deepseek"
         result["model"] = model
         return Response(result)
+
+
+class TimeAgentHealthView(LabView):
+    def get(self, request):
+        configured, detail, model = False, "", ""
+        try:
+            _key, _base, model = _config()
+            configured = True
+        except APIException as exc:
+            detail = str(exc.detail)
+        cache_ok = True
+        try:
+            cache.set("lab-time-agent:health", 1, 10)
+            cache.get("lab-time-agent:health")
+        except Exception:
+            cache_ok = False
+        return Response(
+            {
+                "configured": configured,
+                "provider": str(os.environ.get("LLM_PROVIDER", "")),
+                "model": model,
+                "cache": cache_ok,
+                "detail": detail,
+            }
+        )
