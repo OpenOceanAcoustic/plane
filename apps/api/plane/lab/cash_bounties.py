@@ -18,7 +18,7 @@ from plane.db.models import Project, ProjectMember
 from .finance_permissions import project_finance_access
 from .finance_services import account, perform
 from .models import CashBounty
-from .permissions import project_ids, require_lead
+from .permissions import project_ids
 from .planning_views import LabView
 
 
@@ -74,11 +74,19 @@ def row_data(row, user):
         "due_at": row.due_at.isoformat() if row.due_at else None,
         "evidence": row.evidence,
         "acceptance_note": row.acceptance_note,
-        "can_claim": row.status == "open" and member and row.publisher_id != user.id,
+        "review_note": row.review_note,
+        "reviewed_at": row.reviewed_at.isoformat() if row.reviewed_at else None,
+        "can_approve": row.status == "proposed"
+        and (row.reviewer_id == user.id or row.project.project_lead_id == user.id),
+        "can_reject": row.status == "proposed"
+        and (row.reviewer_id == user.id or row.project.project_lead_id == user.id),
+        "can_claim": row.status == "open"
+        and member
+        and not (row.publisher_id == user.id and row.project.project_lead_id == user.id),
         "can_submit": row.status == "claimed" and row.claimed_by_id == user.id,
         "can_accept": row.status == "submitted" and (row.reviewer_id == user.id or row.project.project_lead_id == user.id),
         "can_pay": row.status == "accepted" and can_pay(user, row),
-        "can_cancel": row.status in ("open", "claimed")
+        "can_cancel": row.status in ("proposed", "open", "claimed")
         and (row.publisher_id == user.id or row.project.project_lead_id == user.id),
     }
 
@@ -93,11 +101,25 @@ class CashBountyView(LabView):
             .select_related("project", "publisher", "reviewer", "claimed_by")
             .order_by("-created_at")
         )
-        return Response([row_data(row, request.user) for row in rows])
+        records = []
+        for row in rows:
+            if (
+                row.status == "proposed"
+                and row.publisher_id != request.user.id
+                and row.project.project_lead_id != request.user.id
+            ):
+                continue
+            records.append(row_data(row, request.user))
+        return Response(records)
 
     def post(self, request, slug):
         project = project_for(request.user, self.workspace, request.data.get("project_id"))
-        require_lead(request.user, project)
+        if not ProjectMember.objects.filter(
+            project=project, member=request.user, is_active=True, role__gte=15, member__is_active=True
+        ).exists():
+            raise PermissionDenied("只有项目成员可以提议现金悬赏")
+        if not project.project_lead_id:
+            raise ValidationError("项目未设置负责人，暂不能提交现金悬赏")
         title = str(request.data.get("title", "")).strip()
         deliverable = str(request.data.get("deliverable", "")).strip()
         criteria = str(request.data.get("criteria", "")).strip()
@@ -109,7 +131,8 @@ class CashBountyView(LabView):
         due_at = parse_datetime(str(request.data.get("due_at", ""))) if request.data.get("due_at") else None
         if due_at and timezone.is_naive(due_at):
             due_at = timezone.make_aware(due_at, ZoneInfo("Asia/Shanghai"))
-        reviewer = project.project_lead or request.user
+        reviewer = project.project_lead
+        lead = project.project_lead_id == request.user.id
         row = CashBounty.objects.create(
             workspace=self.workspace,
             project=project,
@@ -117,7 +140,7 @@ class CashBountyView(LabView):
             deliverable=deliverable,
             criteria=criteria,
             amount=amount,
-            status="open",
+            status="open" if lead else "proposed",
             publisher=request.user,
             reviewer=reviewer,
             due_at=due_at,
@@ -146,11 +169,23 @@ class CashBountyActionView(LabView):
             )
             project_for(request.user, self.workspace, row.project_id)
             now = timezone.now()
-            if action == "claim":
+            if action in ("approve", "reject"):
+                if row.status != "proposed":
+                    raise ValidationError("该现金悬赏不在待审批状态")
+                if row.reviewer_id != request.user.id and row.project.project_lead_id != request.user.id:
+                    raise PermissionDenied("只有项目负责人可以审批现金悬赏")
+                note = str(request.data.get("note", "")).strip()
+                if action == "reject" and not note:
+                    raise ValidationError("请填写驳回原因")
+                row.review_note = note
+                row.reviewed_at = now
+                row.status = "open" if action == "approve" else "cancelled"
+                row.save(update_fields=["review_note", "reviewed_at", "status"])
+            elif action == "claim":
                 if row.status != "open":
                     raise ValidationError("该现金悬赏已被领取或已结束")
-                if row.publisher_id == request.user.id:
-                    raise PermissionDenied("不能领取自己发布的现金悬赏")
+                if row.publisher_id == request.user.id and row.project.project_lead_id == request.user.id:
+                    raise PermissionDenied("负责人不能领取自己发布的现金悬赏")
                 if not ProjectMember.objects.filter(
                     project=row.project, member=request.user, is_active=True, role__gte=15, member__is_active=True
                 ).exists():
@@ -208,7 +243,7 @@ class CashBountyActionView(LabView):
                 row.status = "paid"
                 row.save(update_fields=["payment_operation", "paid_at", "status"])
             elif action == "cancel":
-                if row.status not in ("open", "claimed"):
+                if row.status not in ("proposed", "open", "claimed"):
                     raise ValidationError("该悬赏已提交成果，不能取消")
                 if row.publisher_id != request.user.id and row.project.project_lead_id != request.user.id:
                     raise PermissionDenied("只有发布人或项目负责人可以取消")

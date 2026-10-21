@@ -322,7 +322,14 @@ export type LabBountyQuotes = {
   file_size_limit: number;
 };
 
-export type LabCashBountyStatus = "open" | "claimed" | "submitted" | "accepted" | "paid" | "cancelled";
+export type LabCashBountyStatus =
+  | "proposed"
+  | "open"
+  | "claimed"
+  | "submitted"
+  | "accepted"
+  | "paid"
+  | "cancelled";
 
 export type LabCashBounty = {
   id: string;
@@ -343,6 +350,10 @@ export type LabCashBounty = {
   due_at: string | null;
   evidence: string;
   acceptance_note: string;
+  review_note: string;
+  reviewed_at: string | null;
+  can_approve: boolean;
+  can_reject: boolean;
   can_claim: boolean;
   can_submit: boolean;
   can_accept: boolean;

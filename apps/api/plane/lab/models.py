@@ -312,7 +312,7 @@ from .management_models import ProjectManagementRecord  # noqa: E402,F401
 class CashBounty(Record):
     """Simple fixed-cash task: first member claims, lead accepts, cash paid from project account."""
 
-    STATUSES = ("open", "claimed", "submitted", "accepted", "paid", "cancelled")
+    STATUSES = ("proposed", "open", "claimed", "submitted", "accepted", "paid", "cancelled")
     workspace = models.ForeignKey("db.Workspace", on_delete=models.CASCADE, related_name="lab_cash_bounties")
     project = models.ForeignKey("db.Project", on_delete=models.CASCADE, related_name="lab_cash_bounties")
     title = models.CharField(max_length=255)
@@ -336,6 +336,8 @@ class CashBounty(Record):
     due_at = models.DateTimeField(null=True)
     evidence = models.TextField(blank=True)
     acceptance_note = models.TextField(blank=True)
+    reviewed_at = models.DateTimeField(null=True)
+    review_note = models.TextField(blank=True)
     payment_operation = models.ForeignKey(
         "lab.FinancialOperation", on_delete=models.SET_NULL, null=True, related_name="lab_cash_bounties"
     )
@@ -344,7 +346,7 @@ class CashBounty(Record):
         constraints = [
             models.CheckConstraint(condition=models.Q(amount__gt=0), name="lab_cash_bounty_positive"),
             models.CheckConstraint(
-                condition=models.Q(status__in=("open", "claimed", "submitted", "accepted", "paid", "cancelled")),
+                condition=models.Q(status__in=("proposed", "open", "claimed", "submitted", "accepted", "paid", "cancelled")),
                 name="lab_cash_bounty_status",
             ),
         ]

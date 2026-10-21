@@ -9,6 +9,7 @@ import { Button, LabAmountInput, LabDialog, LabField, labAmountError, labInputCl
 import "./cash-bounty.css";
 
 const statusLabels: Record<string, string> = {
+  proposed: "待审批",
   open: "待接单",
   claimed: "进行中",
   submitted: "待验收",
@@ -18,6 +19,7 @@ const statusLabels: Record<string, string> = {
 };
 
 const statusTone: Record<string, string> = {
+  proposed: "submitted",
   open: "approved",
   claimed: "submitted",
   submitted: "submitted",
@@ -30,16 +32,14 @@ const money = (value: string) =>
   `¥${Number(value).toLocaleString("zh-CN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
 export function LabCashBounties({ store, refreshKey = 0 }: { store: LabStore; refreshKey?: number }) {
-  const projects = useMemo(
-    () => (store.planner?.projects ?? []).filter((project) => project.lead),
-    [store.planner?.projects]
-  );
+  const projects = useMemo(() => store.planner?.projects ?? [], [store.planner?.projects]);
   const [projectId, setProjectId] = useState(projects[0]?.id ?? "");
-  const [view, setView] = useState<"open" | "mine" | "all">("open");
+  const [view, setView] = useState<"open" | "mine" | "review" | "all">("open");
   const [publishing, setPublishing] = useState(false);
   const [amount, setAmount] = useState("");
   const [submitting, setSubmitting] = useState<LabCashBounty>();
   const [accepting, setAccepting] = useState<LabCashBounty>();
+  const [rejecting, setRejecting] = useState<LabCashBounty>();
   const [busyId, setBusyId] = useState("");
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
@@ -61,6 +61,7 @@ export function LabCashBounties({ store, refreshKey = 0 }: { store: LabStore; re
   const me = store.planner?.user_id;
   const rows = (data ?? []).filter((row) => {
     if (view === "all") return true;
+    if (view === "review") return row.can_approve || row.can_reject;
     if (view === "open") return row.status === "open";
     return row.claimed_by?.id === me || row.publisher?.id === me;
   });
@@ -113,6 +114,7 @@ export function LabCashBounties({ store, refreshKey = 0 }: { store: LabStore; re
           {[
             { id: "open", label: "可接单" },
             { id: "mine", label: "我的" },
+            { id: "review", label: "待审批" },
             { id: "all", label: "全部" },
           ].map((tab) => (
             <Button
@@ -128,14 +130,11 @@ export function LabCashBounties({ store, refreshKey = 0 }: { store: LabStore; re
         </div>
         <Button size="sm" onClick={() => setPublishing(true)} disabled={!projects.length}>
           <Plus size={14} className="mr-1" />
-          发布现金悬赏
+          {currentProject?.lead ? "发布现金悬赏" : "提议现金悬赏"}
         </Button>
       </div>
-      {!projects.length && (
-        <p className="text-13 text-secondary">
-          只有项目负责人可以发布现金悬赏。你可以在「我的项目」里查看自己负责的项目。
-        </p>
-      )}
+      {!projects.length && <p className="text-13 text-secondary">你还没有可参与的项目。</p>}
+      <p className="text-12 text-secondary">项目成员可以提议现金悬赏，项目负责人审批后开放接单；负责人可以直接发布。</p>
       {(error || loadError) && (
         <p role="alert" className="lab-cash-alert">
           {error || (loadError instanceof Error ? loadError.message : "现金悬赏读取失败")}
@@ -145,10 +144,16 @@ export function LabCashBounties({ store, refreshKey = 0 }: { store: LabStore; re
       {!rows.length ? (
         <div className="lab-cash-empty">
           <Banknote size={22} aria-hidden="true" />
-          <p>{view === "open" ? "现在没有可接的现金悬赏。" : "还没有现金悬赏记录。"}</p>
+          <p>
+            {view === "open"
+              ? "现在没有可接的现金悬赏。"
+              : view === "review"
+                ? "没有待审批的现金悬赏。"
+                : "还没有现金悬赏记录。"}
+          </p>
           {projects.length > 0 && (
             <Button size="sm" variant="neutral-primary" onClick={() => setPublishing(true)}>
-              发布第一条
+              {currentProject?.lead ? "发布第一条" : "提议第一条"}
             </Button>
           )}
         </div>
@@ -168,7 +173,7 @@ export function LabCashBounties({ store, refreshKey = 0 }: { store: LabStore; re
               <p className="lab-cash-amount">{money(row.amount)}</p>
               <dl className="lab-cash-meta">
                 <div>
-                  <dt>发布人</dt>
+                  <dt>{row.status === "proposed" ? "提议人" : "发布人"}</dt>
                   <dd>{row.publisher?.name ?? "—"}</dd>
                 </div>
                 <div>
@@ -177,7 +182,7 @@ export function LabCashBounties({ store, refreshKey = 0 }: { store: LabStore; re
                 </div>
                 <div>
                   <dt>{row.claimed_by ? "接单人" : "状态"}</dt>
-                  <dd>{row.claimed_by?.name ?? "等待接单"}</dd>
+                  <dd>{row.claimed_by?.name ?? (row.status === "proposed" ? "等待负责人审批" : "等待接单")}</dd>
                 </div>
                 {row.due_at && (
                   <div>
@@ -187,12 +192,32 @@ export function LabCashBounties({ store, refreshKey = 0 }: { store: LabStore; re
                 )}
               </dl>
               <p className="lab-cash-deliverable">{row.deliverable}</p>
+              {row.review_note && (
+                <p className="lab-cash-evidence">
+                  <CheckCircle2 size={13} /> 审批意见：{row.review_note}
+                </p>
+              )}
               {row.evidence && (
                 <p className="lab-cash-evidence">
                   <CheckCircle2 size={13} /> 成果：{row.evidence}
                 </p>
               )}
               <div className="lab-cash-actions">
+                {row.can_approve && (
+                  <Button size="sm" loading={busyId === row.id} onClick={() => void act(row, "approve")}>
+                    批准
+                  </Button>
+                )}
+                {row.can_reject && (
+                  <Button
+                    size="sm"
+                    variant="neutral-primary"
+                    loading={busyId === row.id}
+                    onClick={() => setRejecting(row)}
+                  >
+                    驳回
+                  </Button>
+                )}
                 {row.can_claim && (
                   <Button size="sm" loading={busyId === row.id} onClick={() => void act(row, "claim")}>
                     <Timer size={13} className="mr-1" />
@@ -225,7 +250,7 @@ export function LabCashBounties({ store, refreshKey = 0 }: { store: LabStore; re
                       if (window.confirm("取消这条现金悬赏？")) void act(row, "cancel");
                     }}
                   >
-                    取消
+                    {row.status === "proposed" ? "撤回" : "取消"}
                   </Button>
                 )}
               </div>
@@ -236,8 +261,8 @@ export function LabCashBounties({ store, refreshKey = 0 }: { store: LabStore; re
 
       {publishing && (
         <LabDialog
-          title="发布现金悬赏"
-          submitLabel="发布"
+          title={currentProject?.lead ? "发布现金悬赏" : "提议现金悬赏"}
+          submitLabel={currentProject?.lead ? "发布" : "提交审批"}
           busy={false}
           error={error}
           submitDisabled={!projectId || !amount || !!labAmountError(amount, { min: "0.01", unit: "元" })}
@@ -258,7 +283,8 @@ export function LabCashBounties({ store, refreshKey = 0 }: { store: LabStore; re
               await mutate();
               setPublishing(false);
               setAmount("");
-              setNotice("现金悬赏已发布。");
+              setView(currentProject?.lead ? "open" : "mine");
+              setNotice(currentProject?.lead ? "现金悬赏已发布。" : "现金悬赏提议已提交，等待负责人审批。");
             } catch (problem) {
               setError(problem instanceof Error ? problem.message : "发布失败");
             }
@@ -274,6 +300,7 @@ export function LabCashBounties({ store, refreshKey = 0 }: { store: LabStore; re
               {projects.map((project) => (
                 <option key={project.id} value={project.id}>
                   {project.name}
+                  {project.lead ? " · 负责人" : " · 成员提议"}
                 </option>
               ))}
             </select>
@@ -341,6 +368,25 @@ export function LabCashBounties({ store, refreshKey = 0 }: { store: LabStore; re
         >
           <LabField label="成果、链接或交付说明">
             <textarea name="evidence" className={labInputClass} rows={5} required />
+          </LabField>
+        </LabDialog>
+      )}
+
+      {rejecting && (
+        <LabDialog
+          title="驳回现金悬赏"
+          submitLabel="确认驳回"
+          busy={busyId === rejecting.id}
+          error={error}
+          onClose={() => setRejecting(undefined)}
+          onSubmit={async (form) => {
+            await act(rejecting, "reject", { note: String(form.get("note") ?? "") });
+            setRejecting(undefined);
+          }}
+        >
+          <p className="text-13">驳回「{rejecting.title}」，提议人可以看到原因。</p>
+          <LabField label="驳回原因">
+            <textarea name="note" className={labInputClass} rows={3} required />
           </LabField>
         </LabDialog>
       )}
