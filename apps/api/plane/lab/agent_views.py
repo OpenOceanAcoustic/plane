@@ -83,6 +83,41 @@ def _notify_issue(request, issue, payload):
         logger.warning("lab agent issue activity dispatch failed")
 
 
+
+
+def _task_facts(project):
+    today = timezone.localdate()
+    rows = list(
+        Issue.objects.filter(
+            project=project,
+            deleted_at__isnull=True,
+            is_draft=False,
+            archived_at__isnull=True,
+        )
+        .select_related("state")
+        .prefetch_related("issue_assignee__assignee")[:300]
+    )
+    active = 0
+    overdue = []
+    unassigned = []
+    for row in rows:
+        group = row.state.group if row.state else ""
+        if group in ("completed", "cancelled"):
+            continue
+        active += 1
+        if not row.issue_assignee.all():
+            unassigned.append(_brief_issue(row))
+        if row.target_date and row.target_date < today:
+            overdue.append(_brief_issue(row))
+    return {
+        "active": active,
+        "overdue": len(overdue),
+        "unassigned": len(unassigned),
+        "overdue_tasks": overdue[:10],
+        "unassigned_tasks": unassigned[:10],
+    }
+
+
 def _limit(request, action, limit=30, window=70):
     try:
         key = f"lab-agent-limit:{action}:{request.user.id}"
@@ -342,7 +377,7 @@ def _chat_prompt(user, project, members, context, history, today):
         "2. 项目工作项：任务要发布到当前项目时用 project_issue；assignee_id 只能从项目成员选；due_date 为 YYYY-MM-DD；priority 为 urgent/high/medium/low/none；acceptance 为验收标准。只生成草稿，用户确认后才发布。\n"
         "2a. 个人工作项：只在用户明确说“记到我的规划/提醒我”时用 work_item，不猜负责人和截止日期。\n"
         "2b. 项目拆解：用户给出目标/期限/团队/约束时用 project_plan，生成阶段、任务树、依赖、风险；负责人只能从项目成员选；日期 YYYY-MM-DD；最多 8 个阶段、40 个任务；只生成草稿，用户确认后才导入项目。\n"
-        "3. 查询：只能依据页面上下文回答；上下文没有的数据，明确说“当前页面没有这个数据”，不要编造。\n"
+        "3. 查询：优先依据页面上下文和 project_facts；如果 project_facts.tasks 有逾期/无人负责明细，必须列出具体工作项编号和标题，不要回答“当前页面没有这个数据”；确实没有才说明缺少数据。\n"
         "4. 入账、工资、质量、成员参与可以生成草稿，但绝不执行付款、审批、加人或改权限；草稿必须由用户进入原表单确认。\n"
         "4a. 直接付款、审批通过、删除、冲正：intent=unsupported。\n"
         "5. 缺少必要信息时用 needs_input 追问。\n"
@@ -372,6 +407,14 @@ class AgentChatView(LabView):
             raise ValidationError("请输入要办理的事情")
         if len(message) > MAX_MESSAGE:
             raise ValidationError("描述过长，请控制在 1000 字以内")
+        thread = None
+        thread_id = str(request.data.get("thread_id", "")).strip()
+        if thread_id:
+            thread = AgentThread.objects.filter(
+                id=thread_id, workspace=self.workspace, user=request.user
+            ).select_related("project").first()
+            if thread is None:
+                raise ValidationError("会话不存在")
         project_id = str(request.data.get("project_id", "")).strip()
         project = None
         members = []
@@ -429,6 +472,10 @@ class AgentChatView(LabView):
                 }
             except Exception:
                 logger.warning("lab agent project facts unavailable")
+            try:
+                project_facts["tasks"] = _task_facts(project)
+            except Exception:
+                logger.warning("lab agent task facts unavailable")
         raw_context = request.data.get("context", {})
         context = raw_context if isinstance(raw_context, dict) else {}
         context = {**context, "project_facts": project_facts}
