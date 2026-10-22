@@ -380,7 +380,7 @@ def _chat_prompt(user, project, members, context, history, today):
         "1. 工时：date 缺省今天；hours 用 3 或 5×8；work 必填；user_id 只能从项目成员选；rate 只在用户明确说时填。\n"
         "2. 项目工作项：任务要发布到当前项目时用 project_issue；assignee_id 只能从项目成员选；due_date 为 YYYY-MM-DD；priority 为 urgent/high/medium/low/none；acceptance 为验收标准。只生成草稿，用户确认后才发布。\n"
         "2a. 个人工作项：只在用户明确说“记到我的规划/提醒我”时用 work_item，不猜负责人和截止日期。\n"
-        "2b. 项目拆解：用户明确说生成项目计划、拆阶段、拆工作项，或给出目标/期限/团队/约束时，优先用 project_plan，生成阶段、任务树、依赖、风险；即使提到预算/财务/质量也仍按项目计划处理，不要当成财务查询；负责人只能从项目成员选；日期 YYYY-MM-DD；最多 8 个阶段、40 个任务；只生成草稿，用户确认后才导入项目。\n"
+        "2b. 项目拆解：用户明确说生成项目计划、拆阶段、拆工作项，或给出目标/期限/团队/约束时，优先用 project_plan，生成阶段、任务树、依赖、风险；即使提到预算/财务/质量也仍按项目计划处理，不要当成财务查询；负责人只能从项目成员选；日期 YYYY-MM-DD；最多 3 个阶段、12 个任务；只生成草稿，用户确认后才导入项目。\n"
         "2c. 项目负责人：用户说“项目负责人/负责人给某人”时用 project_lead，只生成变更草稿；必须由项目管理员审核，绝不能当任务负责人或 project_issue 处理。\n"
         "2d. 新建项目：用户要新建项目时用 project_create；不受当前项目限制；日期 YYYY-MM-DD；all_members=true 表示全部工作区成员；budget 是数字字符串；只生成草稿，用户去创建表单确认。\n"
         "3. 查询：优先依据页面上下文和 project_facts；如果 project_facts.tasks 有逾期/无人负责明细，必须列出具体工作项编号和标题，不要回答“当前页面没有这个数据”；确实没有才说明缺少数据。\n"
@@ -527,7 +527,7 @@ class AgentChatView(LabView):
             model,
             _chat_prompt(request.user, project, members, context, history, today),
             message,
-            max_tokens=900,
+            max_tokens=3000,
         )
         intent = str(payload.get("intent", "unsupported")).strip()
         tool = str(payload.get("tool", "")).strip()
@@ -2120,7 +2120,7 @@ class AgentHealthView(LabView):
         return Response(
             {
                 "ok": llm and cache_ok,
-                "version": "v52",
+                "version": "v53",
                 "llm": llm,
                 "cache": cache_ok,
                 "threads": AgentThread.objects.filter(workspace=self.workspace, user=request.user).count(),

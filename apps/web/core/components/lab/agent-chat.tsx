@@ -345,6 +345,7 @@ export function LabAgentChat({
   const projects = useMemo(() => store.planner?.projects ?? [], [store.planner?.projects]);
   const [open, setOpen] = useState(fullPage);
   const [expanded, setExpanded] = useState(false);
+  const [dockLeft, setDockLeft] = useState(false);
   const [projectId, setProjectId] = useState(projects[0]?.id ?? "");
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
@@ -1198,14 +1199,24 @@ export function LabAgentChat({
               <small>工时 / 工作项 / 可用资金</small>
             </div>
             {!fullPage && (
-              <button
-                type="button"
-                className="lab-agent-reminder-toggle"
-                aria-pressed={expanded}
-                onClick={() => setExpanded((current) => !current)}
-              >
-                {expanded ? "还原" : "放大"}
-              </button>
+              <>
+                <button
+                  type="button"
+                  className="lab-agent-reminder-toggle"
+                  aria-pressed={dockLeft}
+                  onClick={() => setDockLeft((current) => !current)}
+                >
+                  {dockLeft ? "还原" : "左侧"}
+                </button>
+                <button
+                  type="button"
+                  className="lab-agent-reminder-toggle"
+                  aria-pressed={expanded}
+                  onClick={() => setExpanded((current) => !current)}
+                >
+                  {expanded ? "还原" : "放大"}
+                </button>
+              </>
             )}
             <button
               type="button"
