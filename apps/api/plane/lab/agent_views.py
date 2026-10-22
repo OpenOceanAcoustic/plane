@@ -21,7 +21,7 @@ from django.utils import timezone
 from django.core.serializers.json import DjangoJSONEncoder
 from django.utils.html import escape
 from openai import OpenAI
-from rest_framework.exceptions import APIException, PermissionDenied, ValidationError
+from rest_framework.exceptions import APIException, PermissionDenied, Throttled, ValidationError
 from rest_framework.response import Response
 
 from plane.db.models import Issue, Project, ProjectMember, State, WorkspaceMember
@@ -123,7 +123,7 @@ def _limit(request, action, limit=30, window=70):
         key = f"lab-agent-limit:{action}:{request.user.id}"
         used = cache.get(key, 0)
         if used >= limit:
-            raise APIException("操作太频繁，请稍后再试", code=429)
+            raise Throttled("操作太频繁，请稍后再试")
         cache.set(key, used + 1, window)
     except APIException:
         raise
@@ -295,7 +295,7 @@ class TimeAgentView(LabView):
         try:
             used = cache.get(cache_key, 0)
             if used >= RATE_LIMIT:
-                raise APIException("AI 请求太频繁，请一分钟后再试", code=429)
+                raise Throttled("AI 请求太频繁，请一分钟后再试")
             cache.set(cache_key, used + 1, 70)
         except APIException:
             raise
@@ -497,7 +497,7 @@ class AgentChatView(LabView):
         try:
             used = cache.get(rate_key, 0)
             if used >= RATE_LIMIT:
-                raise APIException("AI 请求太频繁，请一分钟后再试", code=429)
+                raise Throttled("AI 请求太频繁，请一分钟后再试")
             cache.set(rate_key, used + 1, 70)
         except APIException:
             raise
@@ -2089,6 +2089,9 @@ class AgentProposalApproveView(LabView):
         role = str(request.data.get("role", "")).strip()
         if role not in ("lead", "member", "technical"):
             raise ValidationError("评审角色无效")
+        approved_by = {row.lead_approved_by_id, row.member_approved_by_id, row.technical_approved_by_id}
+        if request.user.id in approved_by:
+            raise ValidationError("三结合评审需要不同成员分别确认")
         if role == "lead":
             require_project_finance(request.user, project, "approve")
         now = timezone.now()
@@ -2135,7 +2138,7 @@ class AgentHealthView(LabView):
         return Response(
             {
                 "ok": llm and cache_ok,
-                "version": "v56",
+                "version": "v58",
                 "llm": llm,
                 "cache": cache_ok,
                 "threads": AgentThread.objects.filter(workspace=self.workspace, user=request.user).count(),
@@ -2267,6 +2270,9 @@ class AgentLeadReviewView(LabView):
             raise PermissionDenied("只有项目管理员可以审核负责人变更")
         if row.status != "pending":
             raise ValidationError("该请求已经处理")
+        approved_by = {row.lead_approved_by_id, row.member_approved_by_id, row.technical_approved_by_id}
+        if request.user.id in approved_by:
+            raise ValidationError("三结合评审需要不同成员分别确认")
         approve = request.data.get("approve") is True
         row.status = "approved" if approve else "rejected"
         row.reviewed_by = request.user
