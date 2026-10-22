@@ -221,12 +221,13 @@ def _draft(user, project, members, payload, today):
     rate = str(payload.get("rate", "")).strip()
     if rate:
         if not re.fullmatch(r"[0-9]{1,12}(?:\.[0-9]{1,2})?", rate):
-            raise ValidationError("时薪格式不正确")
-        try:
-            if Decimal(rate) <= 0:
-                raise InvalidOperation
-        except InvalidOperation:
-            raise ValidationError("时薪必须大于 0")
+            rate = ""
+        else:
+            try:
+                if Decimal(rate) <= 0:
+                    rate = ""
+            except InvalidOperation:
+                rate = ""
     confidence = payload.get("confidence", 0)
     try:
         confidence = max(0.0, min(1.0, float(confidence)))
@@ -385,6 +386,7 @@ def _chat_prompt(user, project, members, context, history, today):
         "2d. 新建项目：用户要新建项目时用 project_create；不受当前项目限制；日期 YYYY-MM-DD；all_members=true 表示全部工作区成员；budget 是数字字符串；只生成草稿，用户去创建表单确认。\n"
         "3. 查询：优先依据页面上下文和 project_facts；如果 project_facts.tasks 有逾期/无人负责明细，必须列出具体工作项编号和标题，不要回答“当前页面没有这个数据”；确实没有才说明缺少数据。\n"
         "3a. 只读工具：简报/复盘/质量/团队/财务/知识库请求用 intent=tool，并给出 tool 和 tool_args；不要让前端靠关键词猜。\n"
+        "3b. 用户说“质量检查/质量反馈/查看质量资料”时用 tool=quality；只有明确要“生成质量记录/整改项/验收说明草稿”时才用 intent=quality。\n"
         "4. 入账、工资、质量、成员参与可以生成草稿，但绝不执行付款、审批、加人或改权限；草稿必须由用户进入原表单确认。\n"
         "4a. 直接付款、审批通过、删除、冲正：intent=unsupported。\n"
         "5. 缺少必要信息时用 needs_input 追问。\n"
@@ -2133,7 +2135,7 @@ class AgentHealthView(LabView):
         return Response(
             {
                 "ok": llm and cache_ok,
-                "version": "v55",
+                "version": "v56",
                 "llm": llm,
                 "cache": cache_ok,
                 "threads": AgentThread.objects.filter(workspace=self.workspace, user=request.user).count(),
