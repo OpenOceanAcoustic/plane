@@ -118,11 +118,26 @@ def _task_facts(project):
     }
 
 
+
+
+def _redis_counter(key, window):
+    try:
+        from django_redis import get_redis_connection
+
+        client = get_redis_connection("default")
+        used = client.incr(key)
+        if used == 1:
+            client.expire(key, window)
+        return int(used)
+    except Exception:
+        logger.warning("lab agent rate counter unavailable", exc_info=True)
+        return 0
+
+
 def _limit(request, action, limit=30, window=70):
     try:
-        key = f"lab-agent-limit:{action}:{request.user.id}"
-        cache.add(key, 0, window)
-        used = cache.incr(key)
+        key = f"lab-api-rate:{action}:{request.user.id}"
+        used = _redis_counter(key, window)
         if used > limit:
             raise Throttled("操作太频繁，请稍后再试")
     except APIException:
@@ -291,16 +306,10 @@ class TimeAgentView(LabView):
             raise PermissionDenied("只有项目成员可以登记工时")
         require_project_finance(request.user, project, "record")
         bucket = int(time.time() // 60)
-        cache_key = f"lab-time-agent:{request.user.id}:{bucket}"
-        try:
-            cache.add(cache_key, 0, 70)
-            used = cache.incr(cache_key)
-            if used > RATE_LIMIT:
-                raise Throttled("AI 请求太频繁，请一分钟后再试")
-        except APIException:
-            raise
-        except Exception:
-            logger.warning("lab time agent rate limit cache unavailable")
+        cache_key = f"lab-time-rate:{request.user.id}:{bucket}"
+        used = _redis_counter(cache_key, 70)
+        if used > RATE_LIMIT:
+            raise Throttled("AI 请求太频繁，请一分钟后再试")
         members = list(
             ProjectMember.objects.filter(
                 project=project,
@@ -493,16 +502,10 @@ class AgentChatView(LabView):
         context = raw_context if isinstance(raw_context, dict) else {}
         context = {**context, "project_facts": project_facts}
         bucket = int(time.time() // 60)
-        rate_key = f"lab-agent-chat:{request.user.id}:{bucket}"
-        try:
-            cache.add(rate_key, 0, 70)
-            used = cache.incr(rate_key)
-            if used > RATE_LIMIT:
-                raise Throttled("AI 请求太频繁，请一分钟后再试")
-        except APIException:
-            raise
-        except Exception:
-            logger.warning("lab agent chat rate limit cache unavailable")
+        rate_key = f"lab-chat-rate:{request.user.id}:{bucket}"
+        used = _redis_counter(rate_key, 70)
+        if used > RATE_LIMIT:
+            raise Throttled("AI 请求太频繁，请一分钟后再试")
         if thread is None:
             thread = AgentThread.objects.create(
                 workspace=self.workspace,
@@ -2138,7 +2141,7 @@ class AgentHealthView(LabView):
         return Response(
             {
                 "ok": llm and cache_ok,
-                "version": "v59",
+                "version": "v60",
                 "llm": llm,
                 "cache": cache_ok,
                 "threads": AgentThread.objects.filter(workspace=self.workspace, user=request.user).count(),
