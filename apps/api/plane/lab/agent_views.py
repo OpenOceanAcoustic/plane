@@ -139,7 +139,7 @@ def _limit(request, action, limit=30, window=70):
         key = f"lab-api-rate:{action}:{request.user.id}"
         used = _redis_counter(key, window)
         if used > limit:
-            raise Throttled("操作太频繁，请稍后再试")
+            raise Throttled(wait=60, detail="操作太频繁，请稍后再试")
     except APIException:
         raise
     except Exception:
@@ -309,7 +309,7 @@ class TimeAgentView(LabView):
         cache_key = f"lab-time-rate:{request.user.id}:{bucket}"
         used = _redis_counter(cache_key, 70)
         if used > RATE_LIMIT:
-            raise Throttled("AI 请求太频繁，请一分钟后再试")
+            raise Throttled(wait=60, detail="AI 请求太频繁，请一分钟后再试")
         members = list(
             ProjectMember.objects.filter(
                 project=project,
@@ -505,7 +505,7 @@ class AgentChatView(LabView):
         rate_key = f"lab-chat-rate:{request.user.id}:{bucket}"
         used = _redis_counter(rate_key, 70)
         if used > RATE_LIMIT:
-            raise Throttled("AI 请求太频繁，请一分钟后再试")
+            raise Throttled(wait=60, detail="AI 请求太频繁，请一分钟后再试")
         if thread is None:
             thread = AgentThread.objects.create(
                 workspace=self.workspace,
@@ -2141,7 +2141,7 @@ class AgentHealthView(LabView):
         return Response(
             {
                 "ok": llm and cache_ok,
-                "version": "v60",
+                "version": "v61",
                 "llm": llm,
                 "cache": cache_ok,
                 "threads": AgentThread.objects.filter(workspace=self.workspace, user=request.user).count(),
