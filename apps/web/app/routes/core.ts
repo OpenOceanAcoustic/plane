@@ -130,6 +130,7 @@ export const coreRoutes: RouteConfigEntry[] = [
 
         // Project List
         layout("./(all)/[workspaceSlug]/(projects)/projects/(list)/layout.tsx", [
+          route(":workspaceSlug/projects/create", "./(all)/[workspaceSlug]/(projects)/projects/create/page.tsx"),
           route(":workspaceSlug/projects", "./(all)/[workspaceSlug]/(projects)/projects/(list)/page.tsx"),
         ]),
 

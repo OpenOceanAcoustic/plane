@@ -24,11 +24,11 @@ from openai import OpenAI
 from rest_framework.exceptions import APIException, PermissionDenied, ValidationError
 from rest_framework.response import Response
 
-from plane.db.models import Issue, Project, ProjectMember, State
+from plane.db.models import Issue, Project, ProjectMember, State, WorkspaceMember
 
 from .finance_permissions import require_project_finance
 from .labor_hours import work_hours
-from .models import AgentMessage, AgentProposal, AgentReminder, AgentThread
+from .models import AgentLeadRequest, AgentMessage, AgentProposal, AgentReminder, AgentThread
 from .project_management import finance_overview
 from plane.app.serializers.issue import IssueCreateSerializer
 from plane.bgtasks.issue_activities_task import issue_activity
@@ -367,6 +367,8 @@ def _chat_prompt(user, project, members, context, history, today):
         "time: {date, hours, work, user_id, rate}（intent=time_entry 时）\n"
         "project_issue: {title, description, assignee_id, due_date, priority, acceptance}（intent=project_issue 时，发布到项目任务）\n"
         "project_plan: {summary, stages:[{title, description, start_date, target_date, tasks:[{title, description, assignee_id, due_date, priority, acceptance}]}], risks:[], assumptions:[]}（intent=project_plan 时）\n"
+        "project_lead: {target_user_id, reason}（intent=project_lead 时，只生成负责人变更草稿）\n"
+        "project_create: {name, start_date, target_date, all_members, member_ids, budget, description}（intent=project_create 时，只生成新建项目草稿）\n"
         "work_item: {title, description}（intent=work_item 时，只写个人规划）\n"
         "receipt: {gross, tax, management_fee, source, stage_id}（intent=receipt 时，金额为字符串）\n"
         "payroll: {user_id, start, end}（intent=payroll 时，日期 YYYY-MM-DD）\n"
@@ -377,6 +379,8 @@ def _chat_prompt(user, project, members, context, history, today):
         "2. 项目工作项：任务要发布到当前项目时用 project_issue；assignee_id 只能从项目成员选；due_date 为 YYYY-MM-DD；priority 为 urgent/high/medium/low/none；acceptance 为验收标准。只生成草稿，用户确认后才发布。\n"
         "2a. 个人工作项：只在用户明确说“记到我的规划/提醒我”时用 work_item，不猜负责人和截止日期。\n"
         "2b. 项目拆解：用户给出目标/期限/团队/约束时用 project_plan，生成阶段、任务树、依赖、风险；负责人只能从项目成员选；日期 YYYY-MM-DD；最多 8 个阶段、40 个任务；只生成草稿，用户确认后才导入项目。\n"
+        "2c. 项目负责人：用户说“项目负责人/负责人给某人”时用 project_lead，只生成变更草稿；必须由项目管理员审核，绝不能当任务负责人或 project_issue 处理。\n"
+        "2d. 新建项目：用户要新建项目时用 project_create；不受当前项目限制；日期 YYYY-MM-DD；all_members=true 表示全部工作区成员；budget 是数字字符串；只生成草稿，用户去创建表单确认。\n"
         "3. 查询：优先依据页面上下文和 project_facts；如果 project_facts.tasks 有逾期/无人负责明细，必须列出具体工作项编号和标题，不要回答“当前页面没有这个数据”；确实没有才说明缺少数据。\n"
         "4. 入账、工资、质量、成员参与可以生成草稿，但绝不执行付款、审批、加人或改权限；草稿必须由用户进入原表单确认。\n"
         "4a. 直接付款、审批通过、删除、冲正：intent=unsupported。\n"
@@ -476,6 +480,10 @@ class AgentChatView(LabView):
                 project_facts["tasks"] = _task_facts(project)
             except Exception:
                 logger.warning("lab agent task facts unavailable")
+            project_facts["project_lead"] = {
+                "id": str(project.project_lead_id) if project.project_lead_id else "",
+                "name": project.project_lead.display_name if project.project_lead else "未设置",
+            }
         raw_context = request.data.get("context", {})
         context = raw_context if isinstance(raw_context, dict) else {}
         context = {**context, "project_facts": project_facts}
@@ -516,6 +524,7 @@ class AgentChatView(LabView):
             model,
             _chat_prompt(request.user, project, members, context, history, today),
             message,
+            max_tokens=900,
         )
         intent = str(payload.get("intent", "unsupported")).strip()
         reply = str(payload.get("reply", "")).strip()[:2000]
@@ -536,6 +545,82 @@ class AgentChatView(LabView):
                 result = _draft(request.user, project, members, {"status": "draft", **time_data}, today)
                 draft = {"kind": "time", **result["draft"]}
                 reply = reply or "已生成工时草稿，请确认后填入工时表。"
+        elif intent == "project_create":
+            item = payload.get("project_create")
+            if not isinstance(item, dict):
+                raise ValidationError("AI 没有生成新建项目字段，请换一种说法")
+            name = str(item.get("name", "")).strip()[:255]
+            start_raw = str(item.get("start_date", "")).strip()
+            target_raw = str(item.get("target_date", "")).strip()
+            if not name:
+                intent = "needs_input"
+                reply = "请补充新项目名称。"
+                question = "新项目叫什么？"
+            elif not start_raw or not target_raw:
+                intent = "needs_input"
+                reply = "请补充项目起止日期。"
+                question = "项目从哪天到哪天？"
+            else:
+                try:
+                    start = date.fromisoformat(start_raw)
+                    target = date.fromisoformat(target_raw)
+                except ValueError:
+                    raise ValidationError("项目日期格式不正确")
+                if start > target:
+                    raise ValidationError("项目开始日期不能晚于结束日期")
+                all_members = bool(item.get("all_members"))
+                workspace_members = list(
+                    WorkspaceMember.objects.filter(
+                        workspace=self.workspace, is_active=True, member__is_active=True
+                    ).select_related("member")[:500]
+                )
+                member_ids = [str(value) for value in (item.get("member_ids") or []) if str(value).strip()]
+                selected = [row for row in workspace_members if all_members or str(row.member_id) in member_ids]
+                budget = str(item.get("budget", "")).strip()
+                if budget and not re.fullmatch(r"[0-9]{1,12}(?:\.[0-9]{1,2})?", budget):
+                    raise ValidationError("项目预算格式不正确")
+                draft = {
+                    "kind": "project_create",
+                    "name": name,
+                    "start_date": start.isoformat(),
+                    "target_date": target.isoformat(),
+                    "all_members": all_members,
+                    "member_ids": [str(row.member_id) for row in selected],
+                    "member_names": [row.member.display_name for row in selected],
+                    "budget": budget,
+                    "description": str(item.get("description", "")).strip()[:2000],
+                }
+                reply = reply or "已生成新建项目草稿，请到项目创建表单确认。"
+        elif intent == "project_lead":
+            if project is None:
+                intent = "needs_input"
+                reply = "请先选择项目，再发起项目负责人变更。"
+                question = "哪个项目要换负责人？"
+            else:
+                item = payload.get("project_lead")
+                if not isinstance(item, dict):
+                    raise ValidationError("AI 没有生成负责人变更字段，请换一种说法")
+                target = next(
+                    (row for row in members if str(row.member_id) == str(item.get("target_user_id", "")).strip()),
+                    None,
+                )
+                if target is None:
+                    intent = "needs_input"
+                    reply = "请指定项目里的成员作为新负责人。"
+                    question = "项目负责人改成谁？"
+                elif str(project.project_lead_id or "") == str(target.member_id):
+                    intent = "needs_input"
+                    reply = "该成员已经是项目负责人。"
+                    question = "要改成哪位成员？"
+                else:
+                    draft = {
+                        "kind": "project_lead",
+                        "target_user_id": str(target.member_id),
+                        "target_name": target.member.display_name,
+                        "current_lead_name": project.project_lead.display_name if project.project_lead else "未设置",
+                        "reason": str(item.get("reason", "")).strip()[:2000],
+                    }
+                    reply = reply or "已生成项目负责人变更草稿，需项目管理员审核。"
         elif intent == "project_issue":
             if project is None:
                 intent = "needs_input"
@@ -2019,7 +2104,7 @@ class AgentHealthView(LabView):
         return Response(
             {
                 "ok": llm and cache_ok,
-                "version": "v43",
+                "version": "v48",
                 "llm": llm,
                 "cache": cache_ok,
                 "threads": AgentThread.objects.filter(workspace=self.workspace, user=request.user).count(),
@@ -2052,3 +2137,111 @@ class AgentMessageAppendView(LabView):
         thread.last_message_at = timezone.now()
         thread.save(update_fields=["last_message_at"])
         return Response({"id": str(message.id)})
+
+
+def _lead_request_data(row, can_review=False):
+    return {
+        "id": str(row.id),
+        "project_id": str(row.project_id),
+        "requested_by": row.requested_by.display_name if row.requested_by else "",
+        "target_user_id": str(row.target_user_id),
+        "target_name": row.target_user.display_name if row.target_user else "",
+        "reason": row.reason,
+        "status": row.status,
+        "reviewed_by": row.reviewed_by.display_name if row.reviewed_by else "",
+        "reviewed_at": row.reviewed_at.isoformat() if row.reviewed_at else None,
+        "can_review": can_review,
+    }
+
+
+class AgentLeadRequestView(LabView):
+    def get(self, request, slug):
+        _limit(request, "lead-requests", 40)
+        project_id = str(request.query_params.get("project_id", "")).strip()
+        project = Project.objects.filter(id=project_id, workspace=self.workspace).first()
+        if project is None:
+            raise ValidationError("项目不存在")
+        membership = ProjectMember.objects.filter(
+            project=project,
+            workspace_id=self.workspace.id,
+            member=request.user,
+            is_active=True,
+            role__gte=15,
+            member__is_active=True,
+        ).first()
+        if membership is None:
+            raise PermissionDenied("只有项目成员可以查看负责人变更")
+        can_review = membership.role == 20
+        rows = AgentLeadRequest.objects.filter(workspace=self.workspace, project=project).select_related(
+            "requested_by", "target_user", "reviewed_by"
+        )[:100]
+        return Response([_lead_request_data(row, can_review) for row in rows])
+
+    def post(self, request, slug):
+        _limit(request, "lead-request-create", 10)
+        project_id = str(request.data.get("project_id", "")).strip()
+        project = Project.objects.filter(id=project_id, workspace=self.workspace).first()
+        if project is None:
+            raise ValidationError("项目不存在")
+        membership = ProjectMember.objects.filter(
+            project=project,
+            workspace_id=self.workspace.id,
+            member=request.user,
+            is_active=True,
+            role__gte=15,
+            member__is_active=True,
+        ).first()
+        if membership is None:
+            raise PermissionDenied("只有项目成员可以发起负责人变更")
+        target_id = str(request.data.get("target_user_id", "")).strip()
+        target = ProjectMember.objects.filter(
+            project=project,
+            workspace_id=self.workspace.id,
+            member_id=target_id,
+            is_active=True,
+            role__gte=15,
+            member__is_active=True,
+        ).select_related("member").first()
+        if target is None:
+            raise ValidationError("新负责人不是当前项目成员")
+        if str(project.project_lead_id or "") == target_id:
+            raise ValidationError("该成员已经是项目负责人")
+        reason = str(request.data.get("reason", "")).strip()[:2000]
+        row = AgentLeadRequest.objects.create(
+            workspace=self.workspace,
+            project=project,
+            requested_by=request.user,
+            target_user=target.member,
+            reason=reason,
+        )
+        return Response(_lead_request_data(row, membership.role == 20), status=201)
+
+
+class AgentLeadReviewView(LabView):
+    def post(self, request, slug, pk):
+        _limit(request, "lead-review", 20)
+        row = AgentLeadRequest.objects.filter(id=pk, workspace=self.workspace).select_related("project", "target_user").first()
+        if row is None:
+            raise ValidationError("负责人变更请求不存在")
+        project = row.project
+        membership = ProjectMember.objects.filter(
+            project=project,
+            workspace_id=self.workspace.id,
+            member=request.user,
+            is_active=True,
+            role=20,
+            member__is_active=True,
+        ).first()
+        if membership is None:
+            raise PermissionDenied("只有项目管理员可以审核负责人变更")
+        if row.status != "pending":
+            raise ValidationError("该请求已经处理")
+        approve = request.data.get("approve") is True
+        row.status = "approved" if approve else "rejected"
+        row.reviewed_by = request.user
+        row.reviewed_at = timezone.now()
+        if approve:
+            project.project_lead = row.target_user
+            project.save(update_fields=["project_lead"])
+        row.save(update_fields=["status", "reviewed_by", "reviewed_at"])
+        return Response(_lead_request_data(row, True))

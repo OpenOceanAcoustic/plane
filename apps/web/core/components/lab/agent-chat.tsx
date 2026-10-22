@@ -38,6 +38,24 @@ type ChatDraft =
       priority: string;
     }
   | {
+      kind: "project_create";
+      name: string;
+      start_date: string;
+      target_date: string;
+      all_members: boolean;
+      member_ids: string[];
+      member_names: string[];
+      budget: string;
+      description: string;
+    }
+  | {
+      kind: "project_lead";
+      target_user_id: string;
+      target_name: string;
+      current_lead_name: string;
+      reason: string;
+    }
+  | {
       kind: "project_plan";
       summary: string;
       stages: {
@@ -185,6 +203,19 @@ type AgentMeeting = {
   tasks: AgentMeetingTask[];
 };
 
+type AgentLeadRequest = {
+  id: string;
+  project_id: string;
+  requested_by: string;
+  target_user_id: string;
+  target_name: string;
+  reason: string;
+  status: string;
+  reviewed_by: string;
+  reviewed_at: string | null;
+  can_review: boolean;
+};
+
 type AgentProposal = {
   id: string;
   title: string;
@@ -219,6 +250,7 @@ type ChatMessage = {
   finance?: AgentFinance;
   meeting?: AgentMeeting;
   proposal?: AgentProposal;
+  leadRequest?: AgentLeadRequest;
   proposals?: AgentProposal[];
 };
 
@@ -297,11 +329,20 @@ function ProposalCard({
   );
 }
 
-export function LabAgentChat({ store, workspaceSlug }: { store: LabStore; workspaceSlug: string }) {
+export function LabAgentChat({
+  store,
+  workspaceSlug,
+  fullPage = false,
+}: {
+  store: LabStore;
+  workspaceSlug: string;
+  fullPage?: boolean;
+}) {
   const navigate = useNavigate();
   const location = useLocation();
   const projects = useMemo(() => store.planner?.projects ?? [], [store.planner?.projects]);
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(fullPage);
+  const [expanded, setExpanded] = useState(false);
   const [projectId, setProjectId] = useState(projects[0]?.id ?? "");
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
@@ -317,6 +358,7 @@ export function LabAgentChat({ store, workspaceSlug }: { store: LabStore; worksp
   const [publishingSuggestion, setPublishingSuggestion] = useState("");
   const [publishingMeetingTask, setPublishingMeetingTask] = useState("");
   const [reviewingProposal, setReviewingProposal] = useState("");
+  const [reviewingLead, setReviewingLead] = useState("");
   const bottom = useRef<HTMLDivElement>(null);
   const loadedThreads = useRef(false);
   const { data: finance, error: financeError } = useSWR(
@@ -327,6 +369,10 @@ export function LabAgentChat({ store, workspaceSlug }: { store: LabStore; worksp
   useEffect(() => {
     if (!projectId && projects[0]) setProjectId(projects[0].id);
   }, [projectId, projects]);
+  useEffect(() => {
+    if (!open || store.planner) return;
+    void store.execute(store.loadPlanner);
+  }, [open, store]);
   useEffect(() => {
     bottom.current?.scrollIntoView({ block: "end" });
   }, [messages, busy, open]);
@@ -544,6 +590,56 @@ export function LabAgentChat({ store, workspaceSlug }: { store: LabStore; worksp
       `/${workspaceSlug}/lab/finance?finance_view=${view}&project_id=${encodeURIComponent(projectId)}&ai_${kind}=${encoded}`
     );
     setOpen(false);
+  }
+
+  async function submitLeadRequest(draft: Extract<ChatDraft, { kind: "project_lead" }>) {
+    if (reviewingLead) return;
+    setReviewingLead("submit");
+    try {
+      const request = await store.request<AgentLeadRequest>("agent/lead-requests/", "POST", {
+        project_id: projectId,
+        target_user_id: draft.target_user_id,
+        reason: draft.reason,
+      });
+      setMessages((current) => [
+        ...current,
+        {
+          id: newId(),
+          role: "assistant",
+          text: "项目负责人变更已提交，等待项目管理员审核。",
+          leadRequest: request,
+        },
+      ]);
+    } catch (problem) {
+      setMessages((current) => [
+        ...current,
+        { id: newId(), role: "assistant", text: problem instanceof Error ? problem.message : "提交负责人变更失败" },
+      ]);
+    } finally {
+      setReviewingLead("");
+    }
+  }
+
+  async function reviewLeadRequest(request: AgentLeadRequest, approve: boolean) {
+    if (reviewingLead) return;
+    setReviewingLead(`${request.id}-${approve ? "yes" : "no"}`);
+    try {
+      const updated = await store.request<AgentLeadRequest>(`agent/lead-requests/${request.id}/review/`, "POST", {
+        approve,
+      });
+      setMessages((current) =>
+        current.map((message) =>
+          message.leadRequest?.id === updated.id ? { ...message, leadRequest: updated } : message
+        )
+      );
+    } catch (problem) {
+      setMessages((current) => [
+        ...current,
+        { id: newId(), role: "assistant", text: problem instanceof Error ? problem.message : "审核负责人变更失败" },
+      ]);
+    } finally {
+      setReviewingLead("");
+    }
   }
 
   async function submitProposal(text: string) {
@@ -1086,7 +1182,7 @@ export function LabAgentChat({ store, workspaceSlug }: { store: LabStore; worksp
         </button>
       )}
       {open && (
-        <section className="lab-agent-drawer" aria-label="AI 助手">
+        <section className="lab-agent-drawer" data-expanded={expanded} aria-label="AI 助手">
           <header className="lab-agent-head">
             <span className="lab-agent-mark" aria-hidden="true">
               <Bot size={18} />
@@ -1095,6 +1191,16 @@ export function LabAgentChat({ store, workspaceSlug }: { store: LabStore; worksp
               <strong>AI 助手</strong>
               <small>工时 / 工作项 / 可用资金</small>
             </div>
+            {!fullPage && (
+              <button
+                type="button"
+                className="lab-agent-reminder-toggle"
+                aria-pressed={expanded}
+                onClick={() => setExpanded((current) => !current)}
+              >
+                {expanded ? "还原" : "放大"}
+              </button>
+            )}
             <button
               type="button"
               className="lab-agent-reminder-toggle"
@@ -1103,7 +1209,15 @@ export function LabAgentChat({ store, workspaceSlug }: { store: LabStore; worksp
             >
               提醒
             </button>
-            <button type="button" className="lab-agent-close" onClick={() => setOpen(false)} aria-label="关闭 AI 助手">
+            <button
+              type="button"
+              className="lab-agent-close"
+              onClick={() => {
+                if (fullPage) navigate(`/${workspaceSlug}/lab/planner`);
+                else setOpen(false);
+              }}
+              aria-label="关闭 AI 助手"
+            >
               <X size={17} />
             </button>
           </header>
@@ -1295,6 +1409,128 @@ export function LabAgentChat({ store, workspaceSlug }: { store: LabStore; worksp
                     )}
                     {message.brief.finance.available && (
                       <small>当前项目可用资金 ¥{message.brief.finance.available}</small>
+                    )}
+                  </div>
+                )}
+                {message.draft?.kind === "project_create" && (
+                  <div className="lab-agent-lead">
+                    <strong>新建项目草稿</strong>
+                    <dl>
+                      <div>
+                        <dt>项目名称</dt>
+                        <dd>{message.draft.name}</dd>
+                      </div>
+                      <div>
+                        <dt>起止日期</dt>
+                        <dd>
+                          {message.draft.start_date} → {message.draft.target_date}
+                        </dd>
+                      </div>
+                      <div>
+                        <dt>参与成员</dt>
+                        <dd>
+                          {message.draft.all_members
+                            ? `全部人员（${message.draft.member_names.length} 人）`
+                            : message.draft.member_names.slice(0, 8).join("、") || "未指定"}
+                        </dd>
+                      </div>
+                      {message.draft.budget && (
+                        <div>
+                          <dt>预算</dt>
+                          <dd>¥{message.draft.budget}</dd>
+                        </div>
+                      )}
+                      {message.draft.description && (
+                        <div>
+                          <dt>说明</dt>
+                          <dd>{message.draft.description}</dd>
+                        </div>
+                      )}
+                    </dl>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="primary"
+                      onClick={() => {
+                        const params = new URLSearchParams({
+                          name: message.draft?.kind === "project_create" ? message.draft.name : "",
+                          description: message.draft?.kind === "project_create" ? message.draft.description : "",
+                        });
+                        navigate(`/${workspaceSlug}/projects/create?${params.toString()}`);
+                        setOpen(false);
+                      }}
+                    >
+                      去创建项目
+                    </Button>
+                  </div>
+                )}
+                {message.draft?.kind === "project_lead" && (
+                  <div className="lab-agent-lead">
+                    <strong>项目负责人变更草稿</strong>
+                    <dl>
+                      <div>
+                        <dt>当前负责人</dt>
+                        <dd>{message.draft.current_lead_name}</dd>
+                      </div>
+                      <div>
+                        <dt>新负责人</dt>
+                        <dd>{message.draft.target_name}</dd>
+                      </div>
+                      {message.draft.reason && (
+                        <div>
+                          <dt>说明</dt>
+                          <dd>{message.draft.reason}</dd>
+                        </div>
+                      )}
+                    </dl>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="primary"
+                      loading={reviewingLead === "submit"}
+                      onClick={() =>
+                        void submitLeadRequest(message.draft as Extract<ChatDraft, { kind: "project_lead" }>)
+                      }
+                    >
+                      提交管理员审核
+                    </Button>
+                  </div>
+                )}
+                {message.leadRequest && (
+                  <div className="lab-agent-lead">
+                    <strong>
+                      负责人变更 ·{" "}
+                      {message.leadRequest.status === "approved"
+                        ? "已通过"
+                        : message.leadRequest.status === "rejected"
+                          ? "已驳回"
+                          : "待审核"}
+                    </strong>
+                    <p>
+                      {message.leadRequest.requested_by} 申请把项目负责人改为 {message.leadRequest.target_name}
+                    </p>
+                    {message.leadRequest.reason && <small>{message.leadRequest.reason}</small>}
+                    {message.leadRequest.can_review && message.leadRequest.status === "pending" && (
+                      <div className="lab-agent-lead-review">
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="primary"
+                          loading={reviewingLead.endsWith("-yes")}
+                          onClick={() => void reviewLeadRequest(message.leadRequest!, true)}
+                        >
+                          通过
+                        </Button>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="neutral-primary"
+                          loading={reviewingLead.endsWith("-no")}
+                          onClick={() => void reviewLeadRequest(message.leadRequest!, false)}
+                        >
+                          驳回
+                        </Button>
+                      </div>
                     )}
                   </div>
                 )}

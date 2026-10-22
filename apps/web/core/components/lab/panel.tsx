@@ -76,6 +76,7 @@ export const LabPanel = observer(function LabPanel({
       window.clearInterval(timer);
     };
   }, [section, store]);
+  if (section === "ai") return <LabAgentChat store={store} workspaceSlug={workspaceSlug} fullPage />;
   if (section === "chat")
     return (
       <Suspense fallback={<SectionLoading label="聊天" />}>
@@ -170,7 +171,6 @@ export const LabPanel = observer(function LabPanel({
           {store.planner && section === "participation" && <LabParticipation store={store} refreshKey={refreshKey} />}
         </Suspense>
       </div>
-      <LabAgentChat store={store} workspaceSlug={workspaceSlug} />
     </main>
   );
 });

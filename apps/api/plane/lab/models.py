@@ -424,3 +424,26 @@ class AgentProposal(Record):
     class Meta:
         indexes = [models.Index(fields=["project", "status"], name="lab_agent_proposal_scope")]
         ordering = ("-created_at",)
+
+
+class AgentLeadRequest(Record):
+    STATUSES = ("pending", "approved", "rejected")
+
+    workspace = models.ForeignKey("db.Workspace", on_delete=models.CASCADE, related_name="lab_agent_lead_requests")
+    project = models.ForeignKey("db.Project", on_delete=models.CASCADE, related_name="lab_agent_lead_requests")
+    requested_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="lab_agent_lead_requests"
+    )
+    target_user = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="lab_agent_lead_targets"
+    )
+    reason = models.TextField(blank=True)
+    status = models.CharField(max_length=20, default="pending")
+    reviewed_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, related_name="lab_agent_lead_reviews"
+    )
+    reviewed_at = models.DateTimeField(null=True)
+
+    class Meta:
+        indexes = [models.Index(fields=["project", "status"], name="lab_agent_lead_scope")]
+        ordering = ("-created_at",)

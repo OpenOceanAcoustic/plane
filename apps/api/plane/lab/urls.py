@@ -8,7 +8,7 @@ from .field_urls import field_patterns
 from .gantt_urls import gantt_patterns
 from .workflow_urls import workflow_patterns
 from .bounty_urls import bounty_patterns
-from .agent_views import AgentBriefView, AgentReminderView, AgentRetroView, AgentQualityView, AgentTeamView, AgentKnowledgeView, AgentFinanceView, AgentMeetingView, AgentProposalView, AgentProposalApproveView, AgentHealthView, AgentMessageAppendView, AgentChatView, AgentProjectIssueView, AgentProjectPlanView, AgentThreadDetailView, AgentThreadsView, TimeAgentHealthView, TimeAgentView
+from .agent_views import AgentBriefView, AgentReminderView, AgentRetroView, AgentQualityView, AgentTeamView, AgentKnowledgeView, AgentFinanceView, AgentMeetingView, AgentProposalView, AgentProposalApproveView, AgentHealthView, AgentMessageAppendView, AgentLeadRequestView, AgentLeadReviewView, AgentChatView, AgentProjectIssueView, AgentProjectPlanView, AgentThreadDetailView, AgentThreadsView, TimeAgentHealthView, TimeAgentView
 from .cash_bounties import CashBountyActionView, CashBountyDetailView, CashBountyView
 from .lifecycle_workflow import lifecycle_patterns
 from .finance_urls import finance_patterns
@@ -89,6 +89,8 @@ business_patterns = [
     path("agent/meeting/", AgentMeetingView.as_view()),
     path("agent/proposals/", AgentProposalView.as_view()),
     path("agent/proposals/<uuid:pk>/approve/", AgentProposalApproveView.as_view()),
+    path("agent/lead-requests/", AgentLeadRequestView.as_view()),
+    path("agent/lead-requests/<uuid:pk>/review/", AgentLeadReviewView.as_view()),
     path("agent/messages/", AgentMessageAppendView.as_view()),
     path("agent/chat/", AgentChatView.as_view()),
     path("agent/project-issue/", AgentProjectIssueView.as_view()),
