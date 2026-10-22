@@ -28,8 +28,8 @@ from plane.db.models import Issue, Project, ProjectMember, State, WorkspaceMembe
 
 from .finance_permissions import require_project_finance
 from .labor_hours import work_hours
-from .models import AgentLeadRequest, AgentMessage, AgentProposal, AgentReminder, AgentThread
-from .project_management import finance_overview
+from .models import AgentAction, AgentAnnotation, AgentLeadRequest, AgentMessage, AgentProposal, AgentReminder, AgentThread
+from .project_management import finance_overview, finance_mutation, latest_records, record_data
 from plane.app.serializers.issue import IssueCreateSerializer
 from plane.bgtasks.issue_activities_task import issue_activity
 from plane.utils.host import base_host
@@ -198,6 +198,28 @@ def _call_deepseek(key, base, model, system, message, max_tokens=500):
     if not isinstance(payload, dict):
         raise APIException("AI 返回格式不正确，请换一种说法", code=502)
     return payload
+
+
+
+
+def _pending_time(message, user):
+    if "工时" not in message and "#工时" not in message:
+        return None
+    match = re.search(r"([0-9]+(?:\.[0-9]+)?)\s*(?:小时|h)", message, re.I)
+    if not match:
+        return None
+    try:
+        if Decimal(match.group(1)) <= 0:
+            return None
+    except InvalidOperation:
+        return None
+    return {
+        "kind": "pending_time",
+        "date": timezone.localdate().isoformat(),
+        "hours": match.group(1),
+        "user_id": str(user.id),
+        "work": "",
+    }
 
 
 def _draft(user, project, members, payload, today):
@@ -371,7 +393,7 @@ def _chat_prompt(user, project, members, context, history, today):
         f"页面上下文：{json.dumps(context, ensure_ascii=False)[:4000]}\n"
         f"最近对话：{json.dumps(history, ensure_ascii=False)[:4000]}\n"
         "只输出一个 JSON 对象，不要 Markdown。字段：\n"
-        "intent: time_entry | project_issue | project_plan | work_item | receipt | payroll | quality | participation | tool | query | unsupported | needs_input\n"
+        "intent: time_entry | project_issue | project_plan | work_item | receipt | payroll | quality | participation | approval | annotate | tool | query | unsupported | needs_input\n"
         "reply: 给用户看的中文回复\n"
         "question: 需要补充信息时的问题\n"
         "time: {date, hours, work, user_id, rate}（intent=time_entry 时）\n"
@@ -379,6 +401,7 @@ def _chat_prompt(user, project, members, context, history, today):
         "project_plan: {summary, stages:[{title, description, start_date, target_date, tasks:[{title, description, assignee_id, due_date, priority, acceptance}]}], risks:[], assumptions:[]}（intent=project_plan 时）\n"
         "project_lead: {target_user_id, reason}（intent=project_lead 时，只生成负责人变更草稿）\n"
         "project_create: {name, start_date, target_date, all_members, member_ids, budget, description}（intent=project_create 时，只生成新建项目草稿）\n"
+        "approval: {record_id, decision, note}（intent=approval 时；decision=approved/rejected）\nannotation: {record_id, note}（intent=annotate 时）\n"
         "tool: brief|retro|quality|team|knowledge|finance（intent=tool 时）\n"
         "tool_args: {period, query}（intent=tool 时；brief 用 daily/weekly，retro 用 week/month，knowledge 用 query）\n"
         "work_item: {title, description}（intent=work_item 时，只写个人规划）\n"
@@ -396,6 +419,7 @@ def _chat_prompt(user, project, members, context, history, today):
         "3. 查询：优先依据页面上下文和 project_facts；如果 project_facts.tasks 有逾期/无人负责明细，必须列出具体工作项编号和标题，不要回答“当前页面没有这个数据”；确实没有才说明缺少数据。\n"
         "3a. 只读工具：简报/复盘/质量/团队/财务/知识库请求用 intent=tool，并给出 tool 和 tool_args；不要让前端靠关键词猜。\n"
         "3b. 用户说“质量检查/质量反馈/查看质量资料”时用 tool=quality；只有明确要“生成质量记录/整改项/验收说明草稿”时才用 intent=quality。\n"
+        "3c. 用户要“批准/审核通过/驳回”某条工时或费用时用 intent=approval；record_id 优先使用 project_facts.finance_records 里的 id；只生成审批草稿，用户必须在聊天里点确认；绝不自动审批。\n3d. 用户要“批注/备注/说明”某条工时或费用时用 intent=annotate；record_id 优先使用 finance_records；只生成批注草稿，用户确认后才写入。\n"
         "4. 入账、工资、质量、成员参与可以生成草稿，但绝不执行付款、审批、加人或改权限；草稿必须由用户进入原表单确认。\n"
         "4a. 直接付款、审批通过、删除、冲正：intent=unsupported。\n"
         "5. 缺少必要信息时用 needs_input 追问。\n"
@@ -488,6 +512,20 @@ class AgentChatView(LabView):
                     "available": str(sum((Decimal(str(account.get("available") or "0")) for account in accounts), Decimal("0"))),
                     "month_hours": str(month_hours),
                     "pending_payroll": str(pending_payroll),
+                    "finance_records": [
+                        {
+                            "id": row.get("id"),
+                            "kind": row.get("kind"),
+                            "state": row.get("state"),
+                            "title": (row.get("data") or {}).get("work") or (row.get("data") or {}).get("title") or "",
+                            "date": (row.get("data") or {}).get("date") or (row.get("data") or {}).get("start") or "",
+                            "hours": (row.get("data") or {}).get("hours") or "",
+                            "amount": (row.get("data") or {}).get("amount") or row.get("recognized_amount") or "",
+                            "user_name": (row.get("data") or {}).get("user_name") or "",
+                        }
+                        for row in overview.get("records", [])
+                        if row.get("kind") == "cost"
+                    ][:12],
                 }
             except Exception:
                 logger.warning("lab agent project facts unavailable")
@@ -502,6 +540,10 @@ class AgentChatView(LabView):
         raw_context = request.data.get("context", {})
         context = raw_context if isinstance(raw_context, dict) else {}
         context = {**context, "project_facts": project_facts}
+        if re.search(r"上面|刚才|这条|那条", message):
+            finance_records = project_facts.get("finance_records") or []
+            if finance_records:
+                context["hint_record_id"] = finance_records[-1].get("id", "")
         bucket = int(time.time() // 60)
         rate_key = f"lab-chat-rate:{request.user.id}:{bucket}"
         used = _redis_counter(rate_key, 70)
@@ -519,6 +561,9 @@ class AgentChatView(LabView):
         for item in reversed(list(thread.messages.order_by("-created_at")[:8])):
             history.append({"role": item.role, "content": item.content, "draft": item.draft or None})
         last_assistant = thread.messages.filter(role="assistant").order_by("-created_at").first()
+        pending_time = None
+        if last_assistant and isinstance(last_assistant.draft, dict) and last_assistant.draft.get("kind") == "pending_time":
+            pending_time = last_assistant.draft
         if last_assistant and last_assistant.intent == "needs_input":
             previous_user = (
                 thread.messages.filter(role="user", created_at__lt=last_assistant.created_at)
@@ -539,6 +584,47 @@ class AgentChatView(LabView):
             thread.title = message[:80]
         thread.last_message_at = timezone.now()
         thread.save(update_fields=["project", "title", "last_message_at"])
+        if (
+            pending_time
+            and project is not None
+            and len(message) <= 100
+            and not message.startswith("#")
+        ):
+            try:
+                result = _draft(
+                    request.user,
+                    project,
+                    members,
+                    {"status": "draft", **pending_time, "work": message},
+                    timezone.localdate(),
+                )
+            except ValidationError:
+                result = None
+            if result and result.get("status") == "draft":
+                draft = {"kind": "time", **result["draft"]}
+                reply = "已补齐工时工作内容，请确认后填入工时表。"
+                AgentMessage.objects.create(
+                    thread=thread,
+                    role="assistant",
+                    content=reply,
+                    intent="time_entry",
+                    draft=draft,
+                )
+                thread.last_message_at = timezone.now()
+                thread.save(update_fields=["last_message_at"])
+                return Response(
+                    {
+                        "intent": "time_entry",
+                        "tool": "",
+                        "tool_args": {},
+                        "reply": reply,
+                        "question": "",
+                        "draft": draft,
+                        "provider": "server",
+                        "model": "",
+                        "thread_id": str(thread.id),
+                    }
+                )
         today = timezone.localdate()
         key, base, model = _config()
         payload = _call_deepseek(
@@ -579,6 +665,122 @@ class AgentChatView(LabView):
                 result = _draft(request.user, project, members, {"status": "draft", **time_data}, today)
                 draft = {"kind": "time", **result["draft"]}
                 reply = reply or "已生成工时草稿，请确认后填入工时表。"
+
+
+        elif intent == "annotate":
+            if project is None:
+                intent = "needs_input"
+                reply = "请先选择项目，再批注工时或费用。"
+                question = "这条记录属于哪个项目？"
+            else:
+                item = payload.get("annotation")
+                if not isinstance(item, dict):
+                    item = payload.get("approval")
+                if not isinstance(item, dict):
+                    raise ValidationError("AI 没有生成批注字段，请换一种说法")
+                note = str(item.get("note", "")).strip()[:2000]
+                record_id = str(item.get("record_id", "")).strip() or str(context.get("hint_record_id", "")).strip()
+                rows = list(latest_records(project.id).filter(kind="cost").select_related("actor"))
+                target = next((row for row in rows if str(row.object_key) == record_id), None)
+                if target is None and len(rows) == 1:
+                    target = rows[0]
+                if not note:
+                    intent = "needs_input"
+                    reply = "请补充批注内容。"
+                    question = "这条工时/费用要批注什么？"
+                elif target is None:
+                    intent = "needs_input"
+                    reply = "没有找到要批注的记录，请指定具体记录。"
+                    question = "要批注哪一条工时/费用？"
+                else:
+                    action = AgentAction.objects.create(
+                        workspace=self.workspace,
+                        project=project,
+                        thread=thread,
+                        user=request.user,
+                        kind="annotate_cost",
+                        target_type="cost",
+                        target_id=str(target.object_key),
+                        payload={"note": note},
+                        expires_at=timezone.now() + timedelta(minutes=10),
+                    )
+                    data = record_data(target)
+                    draft = {
+                        "kind": "action",
+                        "action_id": str(action.id),
+                        "action": "annotate",
+                        "record": {
+                            "id": str(target.object_key),
+                            "date": data.get("data", {}).get("date", ""),
+                            "work": data.get("data", {}).get("work", ""),
+                            "hours": data.get("data", {}).get("hours", ""),
+                            "amount": data.get("recognized_amount") or data.get("data", {}).get("amount", ""),
+                            "user_name": data.get("data", {}).get("user_name", ""),
+                            "state": data.get("state", ""),
+                            "note": note,
+                        },
+                    }
+                    reply = reply or "已生成批注草稿，请在聊天里确认后写入。"
+
+        elif intent == "approval":
+            if project is None:
+                intent = "needs_input"
+                reply = "请先选择项目，再审批工时或费用。"
+                question = "这条记录属于哪个项目？"
+            else:
+                require_project_finance(request.user, project, "approve")
+                item = payload.get("approval")
+                if not isinstance(item, dict):
+                    raise ValidationError("AI 没有生成审批字段，请换一种说法")
+                decision = str(item.get("decision", "approved")).strip()
+                if decision not in ("approved", "rejected"):
+                    decision = "approved"
+                note = str(item.get("note", "")).strip()[:2000]
+                record_id = str(item.get("record_id", "")).strip()
+                rows = list(latest_records(project.id).filter(kind="cost").select_related("actor"))
+                target = next((row for row in rows if str(row.object_key) == record_id), None)
+                if target is None:
+                    submitted = [row for row in rows if row.state == "submitted"]
+                    if len(submitted) == 1:
+                        target = submitted[0]
+                if target is None:
+                    intent = "needs_input"
+                    reply = "没有找到可审批的待核准工时，请指定具体记录。"
+                    question = "要审批哪一条待核准工时？"
+                elif target.state != "submitted":
+                    intent = "needs_input"
+                    reply = "这条记录不是待核准状态，不能审批。"
+                    question = "要审批哪一条待核准工时？"
+                else:
+                    action = AgentAction.objects.create(
+                        workspace=self.workspace,
+                        project=project,
+                        thread=thread,
+                        user=request.user,
+                        kind="approve_cost" if decision == "approved" else "reject_cost",
+                        target_type="cost",
+                        target_id=str(target.object_key),
+                        payload={"decision": decision, "note": note},
+                        expires_at=timezone.now() + timedelta(minutes=10),
+                    )
+                    data = record_data(target)
+                    draft = {
+                        "kind": "action",
+                        "action_id": str(action.id),
+                        "action": decision,
+                        "record": {
+                            "id": str(target.object_key),
+                            "date": data.get("data", {}).get("date", ""),
+                            "work": data.get("data", {}).get("work", ""),
+                            "hours": data.get("data", {}).get("hours", ""),
+                            "amount": data.get("recognized_amount") or data.get("data", {}).get("amount", ""),
+                            "user_name": data.get("data", {}).get("user_name", ""),
+                            "state": data.get("state", ""),
+                            "note": note,
+                        },
+                    }
+                    reply = reply or ("已生成批准草稿，请在聊天里确认后执行。" if decision == "approved" else "已生成驳回草稿，请在聊天里确认后执行。")
+
         elif intent == "project_create":
             item = payload.get("project_create")
             if not isinstance(item, dict):
@@ -848,6 +1050,10 @@ class AgentChatView(LabView):
         else:
             intent = "unsupported"
             reply = reply or "这个动作还没接入统一助手，请使用对应页面办理。"
+        if intent == "needs_input" and draft is None and project is not None:
+            pending = _pending_time(message, request.user)
+            if pending:
+                draft = pending
         AgentMessage.objects.create(
             thread=thread,
             role="assistant",
@@ -2156,7 +2362,7 @@ class AgentHealthView(LabView):
         return Response(
             {
                 "ok": llm and cache_ok,
-                "version": "v62",
+                "version": "v67",
                 "llm": llm,
                 "cache": cache_ok,
                 "threads": AgentThread.objects.filter(workspace=self.workspace, user=request.user).count(),
@@ -2297,3 +2503,82 @@ class AgentLeadReviewView(LabView):
             project.save(update_fields=["project_lead"])
         row.save(update_fields=["status", "reviewed_by", "reviewed_at"])
         return Response(_lead_request_data(row, True))
+
+
+class AgentActionExecuteView(LabView):
+    def post(self, request, slug, pk):
+        _limit(request, "action-execute", 20)
+        with transaction.atomic():
+            action = (
+                AgentAction.objects.select_for_update()
+                .filter(id=pk, workspace=self.workspace, user=request.user)
+                .select_related("project")
+                .first()
+            )
+            if action is None:
+                raise ValidationError("动作不存在")
+            if action.status == "executed":
+                return Response({"status": "executed", "result": action.result})
+            if action.status != "prepared":
+                raise ValidationError("动作状态不可执行")
+            if action.expires_at <= timezone.now():
+                action.status = "expired"
+                action.save(update_fields=["status"])
+                raise ValidationError("动作已过期，请重新发起")
+            project = action.project
+            if action.target_type != "cost":
+                raise ValidationError("暂不支持这个动作")
+            target = latest_records(project.id).filter(kind="cost", object_key=action.target_id).first()
+            if target is None:
+                raise ValidationError("记录不存在，请刷新后重试")
+            if action.kind == "annotate_cost":
+                if not ProjectMember.objects.filter(
+                    project=project,
+                    workspace_id=self.workspace.id,
+                    member=request.user,
+                    is_active=True,
+                    role__gte=15,
+                    member__is_active=True,
+                ).exists():
+                    raise PermissionDenied("只有项目成员可以批注")
+                note = str(action.payload.get("note", "")).strip()
+                if not note:
+                    raise ValidationError("批注内容为空")
+                annotation = AgentAnnotation.objects.create(
+                    workspace=self.workspace,
+                    project=project,
+                    target_type="cost",
+                    target_id=action.target_id,
+                    content=note[:2000],
+                    user=request.user,
+                )
+                action.status = "executed"
+                action.executed_at = timezone.now()
+                action.result = {"annotation_id": str(annotation.id), "content": annotation.content}
+                action.save(update_fields=["status", "executed_at", "result"])
+                return Response({"status": "executed", "result": action.result})
+            if action.kind not in ("approve_cost", "reject_cost"):
+                raise ValidationError("暂不支持这个动作")
+            require_project_finance(request.user, project, "approve")
+            if target.state != "submitted":
+                raise ValidationError("待审批记录已变化，请刷新后重试")
+            decision = "approved" if action.kind == "approve_cost" else "rejected"
+            row = finance_mutation(
+                request.user,
+                project,
+                {
+                    "kind": "cost",
+                    "action": "review",
+                    "request_key": str(action.id),
+                    "record_id": str(target.object_key),
+                    "expected_version": target.version,
+                    "reason": "AI 聊天确认审批",
+                    "data": {"result": decision, "note": action.payload.get("note", "")},
+                },
+            )
+            result = record_data(row)
+            action.status = "executed"
+            action.executed_at = timezone.now()
+            action.result = result
+            action.save(update_fields=["status", "executed_at", "result"])
+            return Response({"status": "executed", "result": result})

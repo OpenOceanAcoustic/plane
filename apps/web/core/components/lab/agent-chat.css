@@ -829,3 +829,18 @@
     width: 100vw;
   }
 }
+
+.lab-agent-action {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 100%;
+  padding: 9px;
+  border: 1px solid color-mix(in srgb, var(--label-red-border) 30%, var(--border-color-subtle));
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--label-red-bg) 16%, var(--background-color-surface-1));
+}
+
+.lab-agent-action dl {
+  margin: 0;
+}

@@ -3,6 +3,10 @@ import { useState } from "react";
 import type { ReactNode } from "react";
 import useSWR from "swr";
 import type { LabFinanceManagement, LabManagementRecord } from "@plane/types";
+
+type RecordWithAnnotations = LabManagementRecord & {
+  annotations?: { id: string; content: string; user_name: string; created_at: string }[];
+};
 import type { LabStore } from "@plane/shared-state";
 import { Banknote, Coins, PiggyBank, ReceiptText, ShieldCheck, TrendingUp, Wallet } from "lucide-react";
 import { Button, labDecimalText, labDecimalUnits } from "@plane/ui";
@@ -307,6 +311,11 @@ export function LabFinanceManagement({
                       <td className={cell}>
                         {costCategories.find((entry) => entry.value === row.data.category)?.label}
                         <p className="max-w-64 whitespace-pre-wrap">{row.data.work}</p>
+                        {((row as RecordWithAnnotations).annotations ?? []).map((note) => (
+                          <p className="max-w-64 whitespace-pre-wrap text-secondary" key={note.id}>
+                            批注：{note.content} · {note.user_name}
+                          </p>
+                        ))}
                       </td>
                       <td className={cell}>
                         {row.data.category === "labor" ? (

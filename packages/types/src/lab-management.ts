@@ -27,6 +27,7 @@ export type LabManagementRecord = {
   created_at: string;
   reason: string;
   recognized_amount?: string;
+  annotations?: { id: string; content: string; user_name: string; created_at: string }[];
   recovery_remaining?: string;
   payroll_id?: string | null;
   document_current?: boolean;

@@ -447,3 +447,40 @@ class AgentLeadRequest(Record):
     class Meta:
         indexes = [models.Index(fields=["project", "status"], name="lab_agent_lead_scope")]
         ordering = ("-created_at",)
+
+
+class AgentAction(Record):
+    KINDS = ("approve_cost", "reject_cost", "annotate_cost")
+
+    workspace = models.ForeignKey("db.Workspace", on_delete=models.CASCADE, related_name="lab_agent_actions")
+    project = models.ForeignKey("db.Project", on_delete=models.CASCADE, related_name="lab_agent_actions")
+    thread = models.ForeignKey(
+        "lab.AgentThread", on_delete=models.SET_NULL, null=True, related_name="lab_agent_actions"
+    )
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="lab_agent_actions")
+    kind = models.CharField(max_length=30)
+    target_type = models.CharField(max_length=20)
+    target_id = models.CharField(max_length=64)
+    payload = models.JSONField(default=dict, blank=True)
+    status = models.CharField(max_length=20, default="prepared")
+    token = models.UUIDField(default=uuid.uuid4, unique=True, editable=False)
+    expires_at = models.DateTimeField()
+    executed_at = models.DateTimeField(null=True)
+    result = models.JSONField(default=dict, blank=True)
+
+    class Meta:
+        indexes = [models.Index(fields=["project", "status"], name="lab_agent_action_scope")]
+        ordering = ("-created_at",)
+
+
+class AgentAnnotation(Record):
+    workspace = models.ForeignKey("db.Workspace", on_delete=models.CASCADE, related_name="lab_agent_annotations")
+    project = models.ForeignKey("db.Project", on_delete=models.CASCADE, related_name="lab_agent_annotations")
+    target_type = models.CharField(max_length=20, default="cost")
+    target_id = models.CharField(max_length=64)
+    content = models.TextField()
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="lab_agent_annotations")
+
+    class Meta:
+        indexes = [models.Index(fields=["project", "target_id"], name="lab_agent_annotation_scope")]
+        ordering = ("-created_at",)

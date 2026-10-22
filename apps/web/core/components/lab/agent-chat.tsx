@@ -38,6 +38,21 @@ type ChatDraft =
       priority: string;
     }
   | {
+      kind: "action";
+      action_id: string;
+      action: "approved" | "rejected" | "annotate";
+      record: {
+        id: string;
+        date: string;
+        work: string;
+        hours: string;
+        amount: string;
+        user_name: string;
+        state: string;
+        note: string;
+      };
+    }
+  | {
       kind: "project_create";
       name: string;
       start_date: string;
@@ -346,6 +361,7 @@ export function LabAgentChat({
   const [open, setOpen] = useState(fullPage);
   const [expanded, setExpanded] = useState(false);
   const [dockLeft, setDockLeft] = useState(false);
+  const [executingAction, setExecutingAction] = useState("");
   const [projectId, setProjectId] = useState(projects[0]?.id ?? "");
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
@@ -597,6 +613,40 @@ export function LabAgentChat({
       `/${workspaceSlug}/lab/finance?finance_view=${view}&project_id=${encodeURIComponent(projectId)}&ai_${kind}=${encoded}`
     );
     setOpen(false);
+  }
+
+  async function executeAction(draft: Extract<ChatDraft, { kind: "action" }>) {
+    if (executingAction) return;
+    const label = draft.action === "approved" ? "批准" : draft.action === "rejected" ? "驳回" : "批注";
+    if (
+      !window.confirm(
+        `确认${label}这条工时？\n${draft.record.date} ${draft.record.user_name} ${draft.record.hours}小时`
+      )
+    )
+      return;
+    setExecutingAction(draft.action_id);
+    try {
+      const result = await store.request<{ status: string; result: Record<string, unknown> }>(
+        `agent/actions/${draft.action_id}/execute/`,
+        "POST",
+        {}
+      );
+      setMessages((current) => [
+        ...current,
+        {
+          id: newId(),
+          role: "assistant",
+          text: `${label}已执行，记录状态：${String(result.result?.state ?? "已处理")}`,
+        },
+      ]);
+    } catch (problem) {
+      setMessages((current) => [
+        ...current,
+        { id: newId(), role: "assistant", text: problem instanceof Error ? problem.message : "执行失败" },
+      ]);
+    } finally {
+      setExecutingAction("");
+    }
   }
 
   async function submitLeadRequest(draft: Extract<ChatDraft, { kind: "project_lead" }>) {
@@ -1433,6 +1483,57 @@ export function LabAgentChat({
                     {message.brief.finance.available && (
                       <small>当前项目可用资金 ¥{message.brief.finance.available}</small>
                     )}
+                  </div>
+                )}
+                {message.draft?.kind === "action" && (
+                  <div className="lab-agent-action">
+                    <strong>
+                      {message.draft.action === "approved"
+                        ? "批准草稿"
+                        : message.draft.action === "rejected"
+                          ? "驳回草稿"
+                          : "批注草稿"}
+                    </strong>
+                    <dl>
+                      <div>
+                        <dt>日期</dt>
+                        <dd>{message.draft.record.date}</dd>
+                      </div>
+                      <div>
+                        <dt>成员</dt>
+                        <dd>{message.draft.record.user_name}</dd>
+                      </div>
+                      <div>
+                        <dt>工作</dt>
+                        <dd>{message.draft.record.work}</dd>
+                      </div>
+                      <div>
+                        <dt>工时</dt>
+                        <dd>{message.draft.record.hours}</dd>
+                      </div>
+                      <div>
+                        <dt>金额</dt>
+                        <dd>¥{message.draft.record.amount}</dd>
+                      </div>
+                      <div>
+                        <dt>状态</dt>
+                        <dd>{message.draft.record.state}</dd>
+                      </div>
+                    </dl>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="primary"
+                      loading={executingAction === message.draft.action_id}
+                      onClick={() => void executeAction(message.draft as Extract<ChatDraft, { kind: "action" }>)}
+                    >
+                      确认
+                      {message.draft.action === "approved"
+                        ? "批准"
+                        : message.draft.action === "rejected"
+                          ? "驳回"
+                          : "批注"}
+                    </Button>
                   </div>
                 )}
                 {message.draft?.kind === "project_create" && (

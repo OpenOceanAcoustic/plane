@@ -653,6 +653,23 @@ def finance_overview(user, project):
             payroll = payroll_for(row, rows)
             value["payroll_id"] = str(payroll.object_key) if payroll else None
         cost_data.append(value)
+    try:
+        from .models import AgentAnnotation
+
+        annotations = {}
+        for note in AgentAnnotation.objects.filter(project=project).select_related("user").order_by("created_at"):
+            annotations.setdefault(note.target_id, []).append(
+                {
+                    "id": str(note.id),
+                    "content": note.content,
+                    "user_name": note.user.display_name,
+                    "created_at": note.created_at.isoformat(),
+                }
+            )
+        for value in cost_data:
+            value["annotations"] = annotations.get(value["id"], [])
+    except Exception:
+        pass
     funding = next((row for row in rows if row.kind == "funding"), None)
     result = {
         "today": project_today(project),
