@@ -685,7 +685,20 @@ class AgentChatView(LabView):
                 reply = "请先选择项目，再生成项目拆解草稿。"
                 question = "这个计划属于哪个项目？"
             else:
-                plan = _clean_plan(project, members, payload.get("plan"))
+                raw_plan = payload.get("project_plan") or payload.get("plan")
+                if isinstance(raw_plan, str):
+                    try:
+                        raw_plan = json.loads(raw_plan)
+                    except ValueError:
+                        raw_plan = None
+                if isinstance(raw_plan, list):
+                    raw_plan = {"stages": raw_plan}
+                if not isinstance(raw_plan, dict) and isinstance(payload.get("stages"), list):
+                    raw_plan = payload
+                if not isinstance(raw_plan, dict):
+                    logger.warning("lab project plan payload keys=%s", sorted(payload.keys()))
+                    raise ValidationError("AI 返回了项目计划意图，但没有可用的 stages 结构，请重试")
+                plan = _clean_plan(project, members, raw_plan)
                 draft = {"kind": "project_plan", **plan}
                 reply = reply or "已生成项目拆解草稿，请确认后导入项目。"
         elif intent == "work_item":
@@ -2120,7 +2133,7 @@ class AgentHealthView(LabView):
         return Response(
             {
                 "ok": llm and cache_ok,
-                "version": "v53",
+                "version": "v55",
                 "llm": llm,
                 "cache": cache_ok,
                 "threads": AgentThread.objects.filter(workspace=self.workspace, user=request.user).count(),
