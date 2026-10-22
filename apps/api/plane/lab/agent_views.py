@@ -121,10 +121,10 @@ def _task_facts(project):
 def _limit(request, action, limit=30, window=70):
     try:
         key = f"lab-agent-limit:{action}:{request.user.id}"
-        used = cache.get(key, 0)
-        if used >= limit:
+        cache.add(key, 0, window)
+        used = cache.incr(key)
+        if used > limit:
             raise Throttled("操作太频繁，请稍后再试")
-        cache.set(key, used + 1, window)
     except APIException:
         raise
     except Exception:
@@ -293,10 +293,10 @@ class TimeAgentView(LabView):
         bucket = int(time.time() // 60)
         cache_key = f"lab-time-agent:{request.user.id}:{bucket}"
         try:
-            used = cache.get(cache_key, 0)
-            if used >= RATE_LIMIT:
+            cache.add(cache_key, 0, 70)
+            used = cache.incr(cache_key)
+            if used > RATE_LIMIT:
                 raise Throttled("AI 请求太频繁，请一分钟后再试")
-            cache.set(cache_key, used + 1, 70)
         except APIException:
             raise
         except Exception:
@@ -495,10 +495,10 @@ class AgentChatView(LabView):
         bucket = int(time.time() // 60)
         rate_key = f"lab-agent-chat:{request.user.id}:{bucket}"
         try:
-            used = cache.get(rate_key, 0)
-            if used >= RATE_LIMIT:
+            cache.add(rate_key, 0, 70)
+            used = cache.incr(rate_key)
+            if used > RATE_LIMIT:
                 raise Throttled("AI 请求太频繁，请一分钟后再试")
-            cache.set(rate_key, used + 1, 70)
         except APIException:
             raise
         except Exception:
@@ -2089,7 +2089,7 @@ class AgentProposalApproveView(LabView):
         role = str(request.data.get("role", "")).strip()
         if role not in ("lead", "member", "technical"):
             raise ValidationError("评审角色无效")
-        approved_by = {row.lead_approved_by_id, row.member_approved_by_id, row.technical_approved_by_id}
+        approved_by = {proposal.lead_approved_by_id, proposal.member_approved_by_id, proposal.technical_approved_by_id}
         if request.user.id in approved_by:
             raise ValidationError("三结合评审需要不同成员分别确认")
         if role == "lead":
@@ -2138,7 +2138,7 @@ class AgentHealthView(LabView):
         return Response(
             {
                 "ok": llm and cache_ok,
-                "version": "v58",
+                "version": "v59",
                 "llm": llm,
                 "cache": cache_ok,
                 "threads": AgentThread.objects.filter(workspace=self.workspace, user=request.user).count(),
@@ -2270,9 +2270,6 @@ class AgentLeadReviewView(LabView):
             raise PermissionDenied("只有项目管理员可以审核负责人变更")
         if row.status != "pending":
             raise ValidationError("该请求已经处理")
-        approved_by = {row.lead_approved_by_id, row.member_approved_by_id, row.technical_approved_by_id}
-        if request.user.id in approved_by:
-            raise ValidationError("三结合评审需要不同成员分别确认")
         approve = request.data.get("approve") is True
         row.status = "approved" if approve else "rejected"
         row.reviewed_by = request.user
