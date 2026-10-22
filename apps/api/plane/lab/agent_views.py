@@ -361,7 +361,7 @@ def _chat_prompt(user, project, members, context, history, today):
         f"页面上下文：{json.dumps(context, ensure_ascii=False)[:4000]}\n"
         f"最近对话：{json.dumps(history, ensure_ascii=False)[:4000]}\n"
         "只输出一个 JSON 对象，不要 Markdown。字段：\n"
-        "intent: time_entry | project_issue | project_plan | work_item | receipt | payroll | quality | participation | query | unsupported | needs_input\n"
+        "intent: time_entry | project_issue | project_plan | work_item | receipt | payroll | quality | participation | tool | query | unsupported | needs_input\n"
         "reply: 给用户看的中文回复\n"
         "question: 需要补充信息时的问题\n"
         "time: {date, hours, work, user_id, rate}（intent=time_entry 时）\n"
@@ -369,6 +369,8 @@ def _chat_prompt(user, project, members, context, history, today):
         "project_plan: {summary, stages:[{title, description, start_date, target_date, tasks:[{title, description, assignee_id, due_date, priority, acceptance}]}], risks:[], assumptions:[]}（intent=project_plan 时）\n"
         "project_lead: {target_user_id, reason}（intent=project_lead 时，只生成负责人变更草稿）\n"
         "project_create: {name, start_date, target_date, all_members, member_ids, budget, description}（intent=project_create 时，只生成新建项目草稿）\n"
+        "tool: brief|retro|quality|team|knowledge|finance（intent=tool 时）\n"
+        "tool_args: {period, query}（intent=tool 时；brief 用 daily/weekly，retro 用 week/month，knowledge 用 query）\n"
         "work_item: {title, description}（intent=work_item 时，只写个人规划）\n"
         "receipt: {gross, tax, management_fee, source, stage_id}（intent=receipt 时，金额为字符串）\n"
         "payroll: {user_id, start, end}（intent=payroll 时，日期 YYYY-MM-DD）\n"
@@ -378,10 +380,11 @@ def _chat_prompt(user, project, members, context, history, today):
         "1. 工时：date 缺省今天；hours 用 3 或 5×8；work 必填；user_id 只能从项目成员选；rate 只在用户明确说时填。\n"
         "2. 项目工作项：任务要发布到当前项目时用 project_issue；assignee_id 只能从项目成员选；due_date 为 YYYY-MM-DD；priority 为 urgent/high/medium/low/none；acceptance 为验收标准。只生成草稿，用户确认后才发布。\n"
         "2a. 个人工作项：只在用户明确说“记到我的规划/提醒我”时用 work_item，不猜负责人和截止日期。\n"
-        "2b. 项目拆解：用户给出目标/期限/团队/约束时用 project_plan，生成阶段、任务树、依赖、风险；负责人只能从项目成员选；日期 YYYY-MM-DD；最多 8 个阶段、40 个任务；只生成草稿，用户确认后才导入项目。\n"
+        "2b. 项目拆解：用户明确说生成项目计划、拆阶段、拆工作项，或给出目标/期限/团队/约束时，优先用 project_plan，生成阶段、任务树、依赖、风险；即使提到预算/财务/质量也仍按项目计划处理，不要当成财务查询；负责人只能从项目成员选；日期 YYYY-MM-DD；最多 8 个阶段、40 个任务；只生成草稿，用户确认后才导入项目。\n"
         "2c. 项目负责人：用户说“项目负责人/负责人给某人”时用 project_lead，只生成变更草稿；必须由项目管理员审核，绝不能当任务负责人或 project_issue 处理。\n"
         "2d. 新建项目：用户要新建项目时用 project_create；不受当前项目限制；日期 YYYY-MM-DD；all_members=true 表示全部工作区成员；budget 是数字字符串；只生成草稿，用户去创建表单确认。\n"
         "3. 查询：优先依据页面上下文和 project_facts；如果 project_facts.tasks 有逾期/无人负责明细，必须列出具体工作项编号和标题，不要回答“当前页面没有这个数据”；确实没有才说明缺少数据。\n"
+        "3a. 只读工具：简报/复盘/质量/团队/财务/知识库请求用 intent=tool，并给出 tool 和 tool_args；不要让前端靠关键词猜。\n"
         "4. 入账、工资、质量、成员参与可以生成草稿，但绝不执行付款、审批、加人或改权限；草稿必须由用户进入原表单确认。\n"
         "4a. 直接付款、审批通过、删除、冲正：intent=unsupported。\n"
         "5. 缺少必要信息时用 needs_input 追问。\n"
@@ -527,10 +530,21 @@ class AgentChatView(LabView):
             max_tokens=900,
         )
         intent = str(payload.get("intent", "unsupported")).strip()
+        tool = str(payload.get("tool", "")).strip()
+        tool_args = payload.get("tool_args")
+        tool_args = tool_args if isinstance(tool_args, dict) else {}
         reply = str(payload.get("reply", "")).strip()[:2000]
         question = str(payload.get("question", "")).strip()[:300]
         draft = None
-        if intent == "time_entry":
+        if intent == "tool":
+            allowed = {"brief", "retro", "quality", "team", "knowledge", "finance"}
+            if tool not in allowed:
+                intent = "needs_input"
+                reply = "请说明要查看哪类信息。"
+                question = "简报、复盘、质量、团队、财务还是知识库？"
+            else:
+                reply = reply or "正在读取当前项目数据。"
+        elif intent == "time_entry":
             if project is None:
                 intent = "needs_input"
                 reply = "请先在聊天框里选择项目，再登记工时。"
@@ -813,6 +827,8 @@ class AgentChatView(LabView):
         return Response(
             {
                 "intent": intent,
+                "tool": tool,
+                "tool_args": tool_args,
                 "reply": reply,
                 "question": question,
                 "draft": draft,
@@ -2104,7 +2120,7 @@ class AgentHealthView(LabView):
         return Response(
             {
                 "ok": llm and cache_ok,
-                "version": "v48",
+                "version": "v52",
                 "llm": llm,
                 "cache": cache_ok,
                 "threads": AgentThread.objects.filter(workspace=self.workspace, user=request.user).count(),

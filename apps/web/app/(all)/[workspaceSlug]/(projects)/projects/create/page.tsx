@@ -20,7 +20,7 @@ export default function ProjectCreatePage() {
         workspaceSlug={workspaceSlug}
         data={data}
         onClose={() => navigate(`/${workspaceSlug}/projects`)}
-        handleNextStep={(projectId) => navigate(`/${workspaceSlug}/projects/${projectId}`)}
+        handleNextStep={(projectId) => navigate(`/${workspaceSlug}/projects/${projectId}/issues`)}
         updateCoverImageStatus={() => Promise.resolve()}
       />
     </main>

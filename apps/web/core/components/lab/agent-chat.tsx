@@ -77,7 +77,9 @@ type ChatDraft =
     };
 
 type ChatResponse = {
-  intent: "time_entry" | "work_item" | "query" | "needs_input" | "unsupported";
+  intent: "time_entry" | "work_item" | "query" | "needs_input" | "unsupported" | "tool";
+  tool?: "brief" | "retro" | "quality" | "team" | "knowledge" | "finance" | "";
+  tool_args?: { period?: string; query?: string };
   reply: string;
   question: string;
   draft: ChatDraft | null;
@@ -370,7 +372,7 @@ export function LabAgentChat({
     if (!projectId && projects[0]) setProjectId(projects[0].id);
   }, [projectId, projects]);
   useEffect(() => {
-    if (!open || store.planner) return;
+    if (!open) return;
     void store.execute(store.loadPlanner);
   }, [open, store]);
   useEffect(() => {
@@ -508,10 +510,6 @@ export function LabAgentChat({
     if (!message || busy) return;
     setInput("");
     setMessages((current) => [...current, { id: newId(), role: "user", text: message }]);
-    if (/(执行简报|今日简报|本周简报|项目简报)/.test(message)) {
-      await loadBrief(/本周/.test(message) ? "weekly" : "daily");
-      return;
-    }
     const proposalMatch = message.match(/^提案[：:]\s*([\s\S]*)$/);
     if (proposalMatch) {
       await submitProposal(proposalMatch[1] || "");
@@ -522,25 +520,9 @@ export function LabAgentChat({
       await loadMeeting(meetingMatch[1] || "");
       return;
     }
-    if (/(财务概览|预算|现金流|异常费用|财务情况)/.test(message)) {
-      await loadFinance();
-      return;
-    }
     const knowledgeMatch = message.match(/^查知识库[：:\s]*(.*)$/);
     if (knowledgeMatch) {
       await loadKnowledge(knowledgeMatch[1] || "");
-      return;
-    }
-    if (/(团队负载|谁超载|负载)/.test(message)) {
-      await loadTeam();
-      return;
-    }
-    if (/(质量检查|质量反馈|质量资料)/.test(message)) {
-      await loadQuality();
-      return;
-    }
-    if (/(复盘|回顾)/.test(message)) {
-      await loadRetro(/本月/.test(message) ? "month" : "week");
       return;
     }
     setBusy(true);
@@ -554,6 +536,30 @@ export function LabAgentChat({
       if (response.thread_id) {
         setThreadId(response.thread_id);
         void refreshThreads();
+      }
+      if (response.tool === "brief") {
+        await loadBrief(response.tool_args?.period === "weekly" ? "weekly" : "daily");
+        return;
+      }
+      if (response.tool === "retro") {
+        await loadRetro(response.tool_args?.period === "month" ? "month" : "week");
+        return;
+      }
+      if (response.tool === "knowledge") {
+        await loadKnowledge(response.tool_args?.query || "");
+        return;
+      }
+      if (response.tool === "quality") {
+        await loadQuality();
+        return;
+      }
+      if (response.tool === "team") {
+        await loadTeam();
+        return;
+      }
+      if (response.tool === "finance") {
+        await loadFinance();
+        return;
       }
       setMessages((current) => [
         ...current,
@@ -1447,21 +1453,49 @@ export function LabAgentChat({
                         </div>
                       )}
                     </dl>
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="primary"
-                      onClick={() => {
-                        const params = new URLSearchParams({
-                          name: message.draft?.kind === "project_create" ? message.draft.name : "",
-                          description: message.draft?.kind === "project_create" ? message.draft.description : "",
-                        });
-                        navigate(`/${workspaceSlug}/projects/create?${params.toString()}`);
-                        setOpen(false);
-                      }}
-                    >
-                      去创建项目
-                    </Button>
+                    {(() => {
+                      const name = message.draft?.kind === "project_create" ? message.draft.name : "";
+                      const existing = projects.find(
+                        (project) => project.name.trim().toLowerCase() === name.trim().toLowerCase()
+                      );
+                      if (existing) {
+                        return (
+                          <div className="lab-agent-created-actions">
+                            <Button type="button" size="sm" variant="neutral-primary" disabled>
+                              已创建
+                            </Button>
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="primary"
+                              onClick={() => {
+                                navigate(`/${workspaceSlug}/projects/${existing.id}/issues`);
+                                setOpen(false);
+                              }}
+                            >
+                              打开项目
+                            </Button>
+                          </div>
+                        );
+                      }
+                      return (
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="primary"
+                          onClick={() => {
+                            const params = new URLSearchParams({
+                              name,
+                              description: message.draft?.kind === "project_create" ? message.draft.description : "",
+                            });
+                            navigate(`/${workspaceSlug}/projects/create?${params.toString()}`);
+                            setOpen(false);
+                          }}
+                        >
+                          去创建项目
+                        </Button>
+                      );
+                    })()}
                   </div>
                 )}
                 {message.draft?.kind === "project_lead" && (
