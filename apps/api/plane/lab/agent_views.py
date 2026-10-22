@@ -400,6 +400,7 @@ def _chat_prompt(user, project, members, context, history, today):
         "4a. 直接付款、审批通过、删除、冲正：intent=unsupported。\n"
         "5. 缺少必要信息时用 needs_input 追问。\n"
         "6. 结合最近对话理解“改成、再加、给他也记一笔”等指代；但每个字段仍要重新校验，不能沿用已失效的数据。\n"
+        "6a. 如果 context.pending_clarification 非空，用户这条短回答优先视为对上一轮追问的补充，保留上一轮已有的日期/工时/成员/金额，不要把它当成全新请求。\n"
         "7. 入账：gross 必填且大于 0；tax/management_fee 默认 0；source 必填；stage_id 只在用户明确指阶段时填。\n"
         "8. 工资：只抽成员和计薪起止日期，不猜金额；金额由工资单按已核准工时计算。\n"
         "9. 质量：只生成标题和说明草稿，不写质量记录。\n"
@@ -517,6 +518,20 @@ class AgentChatView(LabView):
         history = []
         for item in reversed(list(thread.messages.order_by("-created_at")[:8])):
             history.append({"role": item.role, "content": item.content, "draft": item.draft or None})
+        last_assistant = thread.messages.filter(role="assistant").order_by("-created_at").first()
+        if last_assistant and last_assistant.intent == "needs_input":
+            previous_user = (
+                thread.messages.filter(role="user", created_at__lt=last_assistant.created_at)
+                .order_by("-created_at")
+                .first()
+            )
+            context = {
+                **context,
+                "pending_clarification": {
+                    "question": last_assistant.content,
+                    "previous_user": previous_user.content if previous_user else "",
+                },
+            }
         AgentMessage.objects.create(thread=thread, role="user", content=message)
         if thread.project_id is None and project is not None:
             thread.project = project
@@ -2141,7 +2156,7 @@ class AgentHealthView(LabView):
         return Response(
             {
                 "ok": llm and cache_ok,
-                "version": "v61",
+                "version": "v62",
                 "llm": llm,
                 "cache": cache_ok,
                 "threads": AgentThread.objects.filter(workspace=self.workspace, user=request.user).count(),

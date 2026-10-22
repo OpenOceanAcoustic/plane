@@ -1189,7 +1189,13 @@ export function LabAgentChat({
         </button>
       )}
       {open && (
-        <section className="lab-agent-drawer" data-expanded={expanded} aria-label="AI 助手">
+        <section
+          className="lab-agent-drawer"
+          data-expanded={expanded || fullPage}
+          data-page={fullPage}
+          data-dock={dockLeft ? "left" : "right"}
+          aria-label="AI 助手"
+        >
           <header className="lab-agent-head">
             <span className="lab-agent-mark" aria-hidden="true">
               <Bot size={18} />
