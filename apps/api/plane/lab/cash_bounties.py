@@ -7,6 +7,7 @@ from decimal import Decimal, InvalidOperation
 from zoneinfo import ZoneInfo
 
 from django.db import transaction
+from django.db.models import Q
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from django.utils.dateparse import parse_datetime
@@ -91,26 +92,21 @@ def row_data(row, user):
     }
 
 
+def visible_cash_bounties(user, workspace):
+    """Use one visibility scope for lists, deep links, workbench and AI reads."""
+    return CashBounty.objects.filter(
+        workspace=workspace, project_id__in=project_ids(user, workspace)
+    ).filter(~Q(status="proposed") | Q(publisher=user) | Q(project__project_lead=user))
+
+
 class CashBountyView(LabView):
     def get(self, request, slug):
         rows = (
-            CashBounty.objects.filter(
-                workspace=self.workspace,
-                project_id__in=project_ids(request.user, self.workspace),
-            )
+            visible_cash_bounties(request.user, self.workspace)
             .select_related("project", "publisher", "reviewer", "claimed_by")
             .order_by("-created_at")
         )
-        records = []
-        for row in rows:
-            if (
-                row.status == "proposed"
-                and row.publisher_id != request.user.id
-                and row.project.project_lead_id != request.user.id
-            ):
-                continue
-            records.append(row_data(row, request.user))
-        return Response(records)
+        return Response([row_data(row, request.user) for row in rows])
 
     def post(self, request, slug):
         project = project_for(request.user, self.workspace, request.data.get("project_id"))
@@ -151,7 +147,7 @@ class CashBountyView(LabView):
 class CashBountyDetailView(LabView):
     def get(self, request, slug, pk):
         row = get_object_or_404(
-            CashBounty.objects.select_related("project", "publisher", "reviewer", "claimed_by"),
+            visible_cash_bounties(request.user, self.workspace).select_related("project", "publisher", "reviewer", "claimed_by"),
             id=pk,
             workspace=self.workspace,
         )

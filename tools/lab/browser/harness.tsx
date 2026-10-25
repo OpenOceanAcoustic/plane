@@ -144,10 +144,10 @@ const ReceiptForm = observer(function ReceiptForm() {
   );
 });
 const path = window.location.pathname;
-function Workbench({ section = "planner" }: { section?: "planner" | "team" }) {
+function Workbench({ section = "planner" }: { section?: "planner" | "team" | "cash" }) {
   return (
     <div style={{ height: "calc(100dvh - 48px)" }}>
-      <MemoryRouter initialEntries={[`/lab/lab/${section}`]}>
+      <MemoryRouter initialEntries={[`/lab/lab/${section}${window.location.search}`]}>
         <Routes>
           <Route
             path="/:workspaceSlug/lab/:section"
@@ -224,6 +224,8 @@ createRoot(document.getElementById("root")!).render(
       <Planning />
     ) : path === "/workbench" ? (
       <Workbench />
+    ) : path === "/cash-bounties" ? (
+      <Workbench section="cash" />
     ) : path === "/team" ? (
       <Workbench section="team" />
     ) : (

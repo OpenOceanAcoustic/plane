@@ -78,7 +78,8 @@ def test_team_acceptance_is_offered_to_the_designated_reviewer(laboratory):
     bounty, _, _ = prepare(lab)
     start(lab, bounty)
     assert action(lab, lab["member"], bounty, "submit", {"evidence": "dataset:v1"}).status_code == 200
-    assert any(item["id"] == bounty and item["action"] == "待验收" for item in actions(lab, lab["reviewer"])["items"])
+    item = next(item for item in actions(lab, lab["reviewer"])["items"] if item["id"] == bounty)
+    assert item["action"] == "待验收" and item["url"] == f"/lab/lab/bounties?bounty_id={bounty}"
     assert all(item["id"] != bounty for item in actions(lab, lab["lead"])["items"])
 
 

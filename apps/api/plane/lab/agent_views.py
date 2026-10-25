@@ -36,6 +36,7 @@ from .models import AgentAction, AgentAnnotation, AgentLeadRequest, AgentMessage
 from .project_management import finance_overview, finance_mutation, latest_records, money_text, recognized_cost, record_data
 from .finance_services import account, perform
 from .cash_bounties import cash_amount, can_pay
+from .agent_bounties import cash_bounty_facts
 from .vc import stage_budget, stage_reserved
 from . import quotes, bounties
 from .quote_views import quote_data
@@ -227,6 +228,18 @@ READ_TOOLS = [
     {
         "type": "function",
         "function": {
+            "name": "list_cash_bounties",
+            "description": "查询真实现金悬赏，返回标题、项目、赏金、领取状态、交付要求和打开链接；默认 scope=workspace 查询当前工作区内有权查看的项目，明确查询当前项目时传 scope=project。可按标题或项目名称查询，不能把团队悬赏 VC 当现金。",
+            "parameters": {
+                "type": "object",
+                "properties": {"query": {"type": "string"}, "status": {"type": "string"}, "scope": {"type": "string", "enum": ["workspace", "project"]}},
+                "additionalProperties": False,
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "get_project_meta",
             "description": "查询当前项目的名称、负责人、成员和阶段。",
             "parameters": {"type": "object", "properties": {}, "additionalProperties": False},
@@ -406,10 +419,20 @@ def _vc_allocation_facts(project, user):
     return result
 
 
-def _read_tool(name, project, members, user, arguments=None):
+def _read_tool(name, project, members, user, arguments=None, workspace=None):
+    arguments = arguments if isinstance(arguments, dict) else {}
+    if name == "list_cash_bounties":
+        scope = arguments.get("scope", "workspace" if workspace else "project")
+        workspace = workspace or (project.workspace if project else None)
+        if workspace is None:
+            return {"available": False, "error": "未指定工作区"}
+        if scope not in ("workspace", "project"):
+            raise ValidationError("现金悬赏查询范围无效")
+        if scope == "project" and project is None:
+            return {"available": False, "error": "未选择项目"}
+        return cash_bounty_facts(user, workspace, project if scope == "project" else None, query=arguments.get("query"), status=arguments.get("status"))
     if project is None:
         return {"error": "未选择项目"}
-    arguments = arguments if isinstance(arguments, dict) else {}
     if name == "get_project_meta":
         return {
             "id": str(project.id),
@@ -459,7 +482,7 @@ def _read_tool(name, project, members, user, arguments=None):
     return {"error": "unknown tool"}
 
 
-def _call_deepseek_tools(key, base, model, system, message, project, members, user, max_tokens=3000, forced_tool=None):
+def _call_deepseek_tools(key, base, model, system, message, project, members, user, max_tokens=3000, forced_tool=None, workspace=None):
     client = OpenAI(api_key=key, base_url=base, timeout=30.0, max_retries=0)
     messages = [{"role": "system", "content": system}, {"role": "user", "content": message}]
     used = []
@@ -523,7 +546,7 @@ def _call_deepseek_tools(key, base, model, system, message, project, members, us
                 arguments = {}
             used.append(call.function.name)
             try:
-                result = _read_tool(call.function.name, project, members, user, arguments)
+                result = _read_tool(call.function.name, project, members, user, arguments, workspace=workspace)
             except (PermissionDenied, ValidationError) as exc:
                 result = {"error": str(exc.detail), "available": False}
             if isinstance(result, dict) and result.get("_intent"):
@@ -758,6 +781,7 @@ def _chat_prompt(user, project, members, context, history, today):
         "2c. 项目负责人：用户说“项目负责人/负责人给某人”时用 project_lead，只生成变更草稿；必须由项目管理员审核，绝不能当任务负责人或 project_issue 处理。\n"
         "2d. 新建项目：用户要新建项目时用 project_create；不受当前项目限制；日期 YYYY-MM-DD；all_members=true 表示全部工作区成员；budget 是数字字符串；只生成草稿，用户去创建表单确认。\n"
         "3. 查询：优先依据页面上下文和 project_facts；如果 project_facts.tasks 有逾期/无人负责明细，必须列出具体工作项编号和标题，不要回答“当前页面没有这个数据”；确实没有才说明缺少数据。\n"
+        "3e. 现金悬赏以 project_facts.cash_bounties 和 list_cash_bounties 为准；scope=workspace 表示当前工作区有权查看的项目，scope=project 只代表当前项目。查询具体任务时调用 list_cash_bounties 按标题或项目名称检索，默认查询工作区，明确说当前项目时才传 scope=project；跨项目查询不会切换当前项目，写入前必须选择记录所属项目；available=false、资料未提供或 truncated=true 不能解释为不存在。区分真实状态与 can_claim，不把已领取、已付款或无领取权限的悬赏说成可领取；只生成草稿，不自动领取、发布或付款。\n"
         "3a. 只读工具：简报/复盘/质量/团队/财务/知识库请求用 intent=tool，并给出 tool 和 tool_args；不要让前端靠关键词猜。\n"
         "3b. 用户说“质量检查/质量反馈/查看质量资料”时用 tool=quality；只有明确要“生成质量记录/整改项/验收说明草稿”时才用 intent=quality。\n"
         "3c. 用户要“批准/审核通过/驳回”某条工时或费用时用 intent=approval；record_id 优先使用 project_facts.finance_records 里的 id；只生成审批草稿，用户必须在聊天里点确认；绝不自动审批。\n3d. 用户要“批注/备注/说明”某条工时或费用时用 intent=annotate；record_id 优先使用 finance_records；只生成批注草稿，用户确认后才写入。\n"
@@ -911,24 +935,9 @@ class AgentChatView(LabView):
             except Exception:
                 logger.warning("lab agent task facts unavailable")
             try:
-                from .models import Bounty, CashBounty
+                from .models import Bounty
 
-                cash_rows = [
-                    row for row in CashBounty.objects.filter(project=project).select_related("publisher", "reviewer", "claimed_by").order_by("-created_at")[:20]
-                    if row.status != "proposed" or row.publisher_id == request.user.id or project.project_lead_id == request.user.id
-                ]
                 project_facts["bounties"] = [
-                    {
-                        "id": str(row.id),
-                        "kind": "cash",
-                        "title": row.title,
-                        "amount": str(row.amount),
-                        "status": row.status,
-                        "claimed_by": row.claimed_by.display_name if row.claimed_by else "",
-                    }
-                    for row in cash_rows
-                ]
-                project_facts["bounties"] += [
                     {
                         "id": str(row.id),
                         "kind": "team",
@@ -972,6 +981,11 @@ class AgentChatView(LabView):
                 project_facts["vc_allocations"] = _vc_allocation_facts(project, request.user)
             except Exception:
                 logger.warning("lab agent vc allocations unavailable")
+        try:
+            project_facts["cash_bounties"] = cash_bounty_facts(request.user, self.workspace)
+        except Exception:
+            logger.warning("lab agent cash bounty facts unavailable", exc_info=True)
+            project_facts["cash_bounties"] = {"available": False, "error": "现金悬赏暂时读取失败"}
         raw_context = request.data.get("context", {})
         # Browser hints are data, never authoritative agent state. In particular,
         # callers cannot inject pending_clarification or a finance target ID.
@@ -1374,7 +1388,7 @@ class AgentChatView(LabView):
         today = timezone.localdate()
         key, base, model = _config()
         prompt = _chat_prompt(request.user, project, members, context, history, today)
-        if re.search(r"负责人|成员|VC|悬赏|预算|资金|工作项|无人负责|账务", message):
+        if re.search(r"负责人|成员|VC|悬赏|赏金|预算|资金|工作项|无人负责|账务", message):
             forced = None
             if re.search(r"登记工时|记.*工时|工时.*小时", message):
                 forced = "propose_time_entry"
@@ -1389,7 +1403,9 @@ class AgentChatView(LabView):
             elif re.search(r"(启动|开始|推进|完成|关闭|取消|重新打开).*(工作项|任务)|工作项.*(启动|完成|关闭)", message):
                 forced = "propose_issue_transition"
             if forced is None:
-                if re.search(r"VC|悬赏.*(明细|占用)|预算", message):
+                if re.search(r"现金悬赏|赏金", message):
+                    forced = "list_cash_bounties"
+                elif re.search(r"VC|悬赏.*(明细|占用)|预算", message):
                     forced = "get_vc_allocations"
                 elif re.search(r"负责人", message):
                     forced = "get_project_meta"
@@ -1397,7 +1413,7 @@ class AgentChatView(LabView):
                     forced = "list_unassigned_issues"
                 elif re.search(r"可用资金|账务|余额", message):
                     forced = "get_finance_summary"
-            payload = _call_deepseek_tools(key, base, model, prompt, message, project, members, request.user, max_tokens=3000, forced_tool=forced)
+            payload = _call_deepseek_tools(key, base, model, prompt, message, project, members, request.user, max_tokens=3000, forced_tool=forced, workspace=self.workspace)
         else:
             payload = _call_deepseek(key, base, model, prompt, message, max_tokens=3000)
         intent = str(payload.get("intent", "unsupported")).strip()

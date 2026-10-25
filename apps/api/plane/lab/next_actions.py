@@ -9,9 +9,9 @@ from rest_framework.response import Response
 
 from plane.db.models import ProjectMember
 
-from .cash_bounties import row_data as cash_bounty_data
+from .cash_bounties import row_data as cash_bounty_data, visible_cash_bounties
 from .finance_permissions import project_finance_access
-from .models import AgentProposal, Bounty, CashBounty
+from .models import AgentProposal, Bounty
 from .planning_views import LabView
 from .project_management import latest_records, recognized_cost
 from .finance_models import FinancialAccount
@@ -41,8 +41,7 @@ class MeNextActionsView(LabView):
         actions = []
 
         for row in (
-            CashBounty.objects.filter(
-                workspace=self.workspace,
+            visible_cash_bounties(request.user, self.workspace).filter(
                 project_id__in=ids,
                 status__in=("proposed", "open", "claimed", "submitted", "accepted"),
             )
@@ -75,7 +74,7 @@ class MeNextActionsView(LabView):
                         "project": row.project.name,
                         "status": row.status,
                         "action": label,
-                        "url": f"/{slug}/lab/bounties?bounty_id={row.id}",
+                        "url": f"/{slug}/lab/cash?bounty_id={row.id}",
                     }
                 )
 

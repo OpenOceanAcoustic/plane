@@ -1,5 +1,6 @@
 /** Copyright (c) 2026 OpenOceanAcoustic and contributors. SPDX-License-Identifier: AGPL-3.0-only */
 import { useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "react-router";
 import useSWR from "swr";
 import { Banknote, CheckCircle2, Plus, Timer } from "lucide-react";
 import type { LabCashBounty, LabFinanceOverview } from "@plane/types";
@@ -32,6 +33,8 @@ const money = (value: string) =>
   `¥${Number(value).toLocaleString("zh-CN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
 export function LabCashBounties({ store, refreshKey = 0 }: { store: LabStore; refreshKey?: number }) {
+  const [searchParams, setSearchParams] = useSearchParams();
+  const selectedId = searchParams.get("bounty_id") ?? "";
   const projects = useMemo(() => store.planner?.projects ?? [], [store.planner?.projects]);
   const [projectId, setProjectId] = useState(projects[0]?.id ?? "");
   const [view, setView] = useState<"open" | "mine" | "review" | "all">("open");
@@ -47,6 +50,7 @@ export function LabCashBounties({ store, refreshKey = 0 }: { store: LabStore; re
     data,
     error: loadError,
     mutate,
+    isLoading,
   } = useSWR(["lab-cash-bounties", store.slug, refreshKey], () => store.request<LabCashBounty[]>("cash-bounties/"), {
     keepPreviousData: true,
   });
@@ -60,6 +64,7 @@ export function LabCashBounties({ store, refreshKey = 0 }: { store: LabStore; re
     .reduce((total, account) => total + Number(account.available || 0), 0);
   const me = store.planner?.user_id;
   const rows = (data ?? []).filter((row) => {
+    if (selectedId) return row.id === selectedId;
     if (view === "all") return true;
     if (view === "review") return row.can_approve || row.can_reject;
     if (view === "open") return row.status === "open";
@@ -68,6 +73,13 @@ export function LabCashBounties({ store, refreshKey = 0 }: { store: LabStore; re
   useEffect(() => {
     if (!projectId && projects[0]) setProjectId(projects[0].id);
   }, [projectId, projects]);
+  function clearSelection() {
+    setSearchParams((current) => {
+      const next = new URLSearchParams(current);
+      next.delete("bounty_id");
+      return next;
+    });
+  }
   const currentProject = projects.find((project) => project.id === projectId) ?? projects[0];
 
   async function act(row: LabCashBounty, action: string, body: Record<string, string> = {}) {
@@ -122,7 +134,10 @@ export function LabCashBounties({ store, refreshKey = 0 }: { store: LabStore; re
               size="sm"
               variant={view === tab.id ? "primary" : "neutral-primary"}
               aria-pressed={view === tab.id}
-              onClick={() => setView(tab.id as typeof view)}
+              onClick={() => {
+                clearSelection();
+                setView(tab.id as typeof view);
+              }}
             >
               {tab.label}
             </Button>
@@ -134,14 +149,29 @@ export function LabCashBounties({ store, refreshKey = 0 }: { store: LabStore; re
         </Button>
       </div>
       {!projects.length && <p className="text-13 text-secondary">你还没有可参与的项目。</p>}
-      <p className="text-12 text-secondary">项目成员可以提议现金悬赏，项目负责人审批后开放接单；负责人可以直接发布。</p>
+      {selectedId && (
+        <Button
+          size="sm"
+          variant="neutral-primary"
+          onClick={() => {
+            clearSelection();
+            setView("all");
+          }}
+        >
+          查看全部现金悬赏
+        </Button>
+      )}
       {(error || loadError) && (
         <p role="alert" className="lab-cash-alert">
           {error || (loadError instanceof Error ? loadError.message : "现金悬赏读取失败")}
         </p>
       )}
       {notice && <p className="lab-cash-notice">{notice}</p>}
-      {!rows.length ? (
+      {isLoading ? (
+        <p role="status">正在加载现金悬赏…</p>
+      ) : selectedId && !rows.length && !loadError ? (
+        <p role="alert">悬赏不存在或你暂无查看权限。</p>
+      ) : !rows.length ? (
         <div className="lab-cash-empty">
           <Banknote size={22} aria-hidden="true" />
           <p>
@@ -160,7 +190,7 @@ export function LabCashBounties({ store, refreshKey = 0 }: { store: LabStore; re
       ) : (
         <div className="lab-cash-grid" aria-label="现金悬赏列表">
           {rows.map((row) => (
-            <article className="lab-cash-card" key={row.id} data-status={row.status}>
+            <article className="lab-cash-card" key={row.id} data-status={row.status} aria-label={row.title}>
               <header className="lab-cash-card-head">
                 <div>
                   <p className="lab-cash-project">{row.project}</p>
@@ -192,6 +222,7 @@ export function LabCashBounties({ store, refreshKey = 0 }: { store: LabStore; re
                 )}
               </dl>
               <p className="lab-cash-deliverable">{row.deliverable}</p>
+              {row.criteria && <p className="lab-cash-deliverable">验收标准：{row.criteria}</p>}
               {row.review_note && (
                 <p className="lab-cash-evidence">
                   <CheckCircle2 size={13} /> 审批意见：{row.review_note}

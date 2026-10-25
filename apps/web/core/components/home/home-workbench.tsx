@@ -440,8 +440,12 @@ export function HomeWorkbenchView(props: HomeWorkbenchViewProps) {
             ) : (
               <p className="text-12 text-secondary">当前没有待领取、待提交、待验收、待付款或待评审的事项。</p>
             )}
+            <Link href={`/${workspaceSlug}/lab/cash`} className="lab-next-all">
+              查看现金悬赏
+              <ArrowRight size={12} />
+            </Link>
             <Link href={`/${workspaceSlug}/lab/bounties`} className="lab-next-all">
-              查看全部悬赏
+              查看团队悬赏
               <ArrowRight size={12} />
             </Link>
           </div>

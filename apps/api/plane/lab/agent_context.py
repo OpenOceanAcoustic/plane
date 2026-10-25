@@ -106,6 +106,7 @@ def prepare_context(context, max_chars=14000):
         "finance_record_count",
         "finance_records_truncated",
         "tasks",
+        "cash_bounties",
         "bounties",
         "vc_allocations",
         "workspace_members",
