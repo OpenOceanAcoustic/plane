@@ -23,6 +23,22 @@ from .permissions import project_ids
 from .planning_views import LabView
 
 
+BOUNTY_REQUIREMENTS = (
+    ("target", "任务入口与范围"),
+    ("steps", "操作步骤"),
+    ("deliverable", "交付要求"),
+    ("criteria", "验收标准"),
+)
+
+
+def bounty_description(data):
+    values = {key: str(data.get(key, "") or "").strip() for key, _ in BOUNTY_REQUIREMENTS}
+    missing = [label for key, label in BOUNTY_REQUIREMENTS if not values[key]]
+    if missing:
+        raise ValidationError("请填写" + "、".join(missing))
+    return "\n\n".join(f"{label}：\n{values[key]}" for key, label in BOUNTY_REQUIREMENTS if key != "criteria")
+
+
 def cash_amount(value):
     try:
         result = Decimal(str(value))
@@ -72,6 +88,7 @@ def row_data(row, user):
         "submitted_at": row.submitted_at.isoformat() if row.submitted_at else None,
         "accepted_at": row.accepted_at.isoformat() if row.accepted_at else None,
         "paid_at": row.paid_at.isoformat() if row.paid_at else None,
+        "payment_operation_id": str(row.payment_operation_id) if row.payment_operation_id else None,
         "due_at": row.due_at.isoformat() if row.due_at else None,
         "evidence": row.evidence,
         "acceptance_note": row.acceptance_note,
@@ -117,7 +134,7 @@ class CashBountyView(LabView):
         if not project.project_lead_id:
             raise ValidationError("项目未设置负责人，暂不能提交现金悬赏")
         title = str(request.data.get("title", "")).strip()
-        deliverable = str(request.data.get("deliverable", "")).strip()
+        deliverable = bounty_description(request.data)
         criteria = str(request.data.get("criteria", "")).strip()
         if not title:
             raise ValidationError("请填写任务名称")
@@ -216,6 +233,9 @@ class CashBountyActionView(LabView):
                     raise ValidationError("请先验收通过再付款")
                 if not can_pay(request.user, row):
                     raise PermissionDenied("无此项目付款权限")
+                payment_evidence = str(request.data.get("payment_evidence", "") or "").strip()
+                if not payment_evidence:
+                    raise ValidationError("请填写线下付款凭证；流程测试请明确注明测试记账")
                 cash = account(self.workspace, "project", project=row.project)
                 payee = row.claimed_by
                 result = perform(
@@ -227,7 +247,7 @@ class CashBountyActionView(LabView):
                         "amount": str(row.amount),
                         "purpose": f"现金悬赏：{row.title} / {payee.display_name if payee else '领取人'}",
                         "reason": f"现金悬赏验收付款：{row.title}",
-                        "evidence": row.evidence or f"现金悬赏验收通过：{row.title}",
+                        "evidence": payment_evidence,
                         "request_key": str(uuid.uuid5(uuid.NAMESPACE_URL, f"cash-bounty:{row.id}:pay")),
                         "cash_bounty_id": str(row.id),
                         "payee_id": str(row.claimed_by_id) if row.claimed_by_id else None,

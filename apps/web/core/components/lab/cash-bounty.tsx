@@ -15,7 +15,7 @@ const statusLabels: Record<string, string> = {
   claimed: "进行中",
   submitted: "待验收",
   accepted: "待付款",
-  paid: "已付款",
+  paid: "已登记付款",
   cancelled: "已取消",
 };
 
@@ -39,9 +39,32 @@ export function LabCashBounties({ store, refreshKey = 0 }: { store: LabStore; re
   const [projectId, setProjectId] = useState(projects[0]?.id ?? "");
   const [view, setView] = useState<"open" | "mine" | "review" | "all">("open");
   const [publishing, setPublishing] = useState(false);
+  const [publishingBusy, setPublishingBusy] = useState(false);
   const [amount, setAmount] = useState("");
   const [submitting, setSubmitting] = useState<LabCashBounty>();
   const [accepting, setAccepting] = useState<LabCashBounty>();
+  const [paying, setPaying] = useState<LabCashBounty>();
+  const [publication, setPublication] = useState({ title: "", target: "", steps: "", deliverable: "", criteria: "" });
+  function updatePublication(field: keyof typeof publication, value: string) {
+    setPublication((current) => ({ ...current, [field]: value }));
+  }
+  function closePublication() {
+    setPublishing(false);
+    setAmount("");
+    setPublication({ title: "", target: "", steps: "", deliverable: "", criteria: "" });
+  }
+  function useTestingTemplate() {
+    setPublication({
+      title: "现金悬赏页面人工测试",
+      target: `页面：/${store.slug}/lab/cash。使用获授权的测试账号；覆盖桌面和手机窄屏。`,
+      steps:
+        "1. 打开页面，切换可接单、我的、待审批和全部筛选。\n2. 打开任务，核对标题、赏金、任务说明和验收标准。\n3. 检查空列表、加载失败、长文本和窄屏布局，记录按钮与提示是否可用。\n操作范围：仅浏览页面；未经另行授权，不领取任务、不提交成果、不登记付款。",
+      deliverable:
+        "提交页面地址、浏览器版本、账号角色、已测步骤，以及预期和实际结果；每个问题附复现步骤和截图。未发现问题也须提交覆盖清单，不提交密码或验证码。",
+      criteria:
+        "桌面约1440px和手机约390px各完成一轮；覆盖上述筛选及任务详情；每个问题可按步骤复现，结果有截图或明确记录。未覆盖项须注明。",
+    });
+  }
   const [rejecting, setRejecting] = useState<LabCashBounty>();
   const [busyId, setBusyId] = useState("");
   const [error, setError] = useState("");
@@ -89,31 +112,10 @@ export function LabCashBounties({ store, refreshKey = 0 }: { store: LabStore; re
     try {
       await store.request(`cash-bounties/${row.id}/${action}/`, "POST", body);
       await mutate();
+      return true;
     } catch (problem) {
       setError(problem instanceof Error ? problem.message : "操作失败");
-    } finally {
-      setBusyId("");
-    }
-  }
-
-  async function acceptAndPay(row: LabCashBounty, note: string) {
-    setBusyId(row.id);
-    setError("");
-    setNotice("");
-    try {
-      await store.request(`cash-bounties/${row.id}/accept/`, "POST", { note });
-      try {
-        await store.request(`cash-bounties/${row.id}/pay/`, "POST", {});
-        setNotice("已验收并付款。");
-      } catch (problem) {
-        setNotice(
-          `已验收通过，但付款失败：${problem instanceof Error ? problem.message : "未知原因"}。可在卡片上重试付款。`
-        );
-      }
-      await mutate();
-      setAccepting(undefined);
-    } catch (problem) {
-      setError(problem instanceof Error ? problem.message : "验收失败");
+      return false;
     } finally {
       setBusyId("");
     }
@@ -221,8 +223,17 @@ export function LabCashBounties({ store, refreshKey = 0 }: { store: LabStore; re
                   </div>
                 )}
               </dl>
-              <p className="lab-cash-deliverable">{row.deliverable}</p>
+              <section aria-label="任务说明与交付要求">
+                <h3 className="text-12 font-medium">任务说明与交付要求</h3>
+                <p className="lab-cash-deliverable">{row.deliverable}</p>
+              </section>
               {row.criteria && <p className="lab-cash-deliverable">验收标准：{row.criteria}</p>}
+              {row.acceptance_note && <p className="lab-cash-evidence">验收意见：{row.acceptance_note}</p>}
+              {row.paid_at && (
+                <p className="lab-cash-evidence">
+                  付款登记时间：{new Date(row.paid_at).toLocaleString("zh-CN", { timeZone: "Asia/Shanghai" })}
+                </p>
+              )}
               {row.review_note && (
                 <p className="lab-cash-evidence">
                   <CheckCircle2 size={13} /> 审批意见：{row.review_note}
@@ -263,13 +274,13 @@ export function LabCashBounties({ store, refreshKey = 0 }: { store: LabStore; re
                 {row.can_accept && (
                   <Button size="sm" loading={busyId === row.id} onClick={() => setAccepting(row)}>
                     <CheckCircle2 size={13} className="mr-1" />
-                    验收并付款
+                    验收成果
                   </Button>
                 )}
                 {row.can_pay && (
-                  <Button size="sm" loading={busyId === row.id} onClick={() => void act(row, "pay")}>
+                  <Button size="sm" loading={busyId === row.id} onClick={() => setPaying(row)}>
                     <Banknote size={13} className="mr-1" />
-                    付款 {money(row.amount)}
+                    登记付款 {money(row.amount)}
                   </Button>
                 )}
                 {row.can_cancel && (
@@ -294,30 +305,35 @@ export function LabCashBounties({ store, refreshKey = 0 }: { store: LabStore; re
         <LabDialog
           title={currentProject?.lead ? "发布现金悬赏" : "提议现金悬赏"}
           submitLabel={currentProject?.lead ? "发布" : "提交审批"}
-          busy={false}
+          busy={publishingBusy}
           error={error}
-          submitDisabled={!projectId || !amount || !!labAmountError(amount, { min: "0.01", unit: "元" })}
-          onClose={() => {
-            setPublishing(false);
-            setAmount("");
-          }}
+          submitDisabled={
+            !projectId ||
+            !amount ||
+            Object.values(publication).some((value) => !value.trim()) ||
+            !!labAmountError(amount, { min: "0.01", unit: "元" })
+          }
+          onClose={closePublication}
           onSubmit={async (form) => {
+            if (publishingBusy) return;
+            setPublishingBusy(true);
+            setError("");
             try {
               await store.request("cash-bounties/", "POST", {
                 project_id: projectId,
-                title: form.get("title"),
+                ...publication,
                 amount: form.get("amount"),
-                deliverable: form.get("deliverable"),
-                criteria: form.get("criteria"),
                 due_at: form.get("due_at") || null,
               });
               await mutate();
-              setPublishing(false);
-              setAmount("");
+              closePublication();
+              clearSelection();
               setView(currentProject?.lead ? "open" : "mine");
               setNotice(currentProject?.lead ? "现金悬赏已发布。" : "现金悬赏提议已提交，等待负责人审批。");
             } catch (problem) {
               setError(problem instanceof Error ? problem.message : "发布失败");
+            } finally {
+              setPublishingBusy(false);
             }
           }}
         >
@@ -336,10 +352,43 @@ export function LabCashBounties({ store, refreshKey = 0 }: { store: LabStore; re
               ))}
             </select>
           </LabField>
+          <Button type="button" size="sm" variant="neutral-primary" onClick={useTestingTemplate}>
+            填入人工测试模板
+          </Button>
           <LabField label="任务名称">
-            <input name="title" className={labInputClass} required maxLength={255} placeholder="例如：装配 2 台样机" />
+            <input
+              name="title"
+              className={labInputClass}
+              required
+              maxLength={255}
+              value={publication.title}
+              onChange={(event) => updatePublication("title", event.target.value)}
+              placeholder="例如：现金悬赏页面人工测试"
+            />
           </LabField>
-          <LabField label="现金赏金（元）">
+          <LabField label="任务入口与范围">
+            <textarea
+              name="target"
+              className={labInputClass}
+              required
+              rows={3}
+              value={publication.target}
+              onChange={(event) => updatePublication("target", event.target.value)}
+              placeholder="完整页面地址或具体任务对象；测试账号角色、设备与本次范围"
+            />
+          </LabField>
+          <LabField label="操作步骤">
+            <textarea
+              name="steps"
+              className={labInputClass}
+              required
+              rows={5}
+              value={publication.steps}
+              onChange={(event) => updatePublication("steps", event.target.value)}
+              placeholder="1. 从哪个入口进入\n2. 点击什么、输入什么\n3. 检查哪些结果"
+            />
+          </LabField>
+          <LabField label="固定赏金（元）">
             <LabAmountInput
               name="amount"
               aria-label="现金赏金"
@@ -357,11 +406,21 @@ export function LabCashBounties({ store, refreshKey = 0 }: { store: LabStore; re
               className={labInputClass}
               required
               rows={3}
-              placeholder="做完什么、交什么东西"
+              value={publication.deliverable}
+              onChange={(event) => updatePublication("deliverable", event.target.value)}
+              placeholder="提交复现步骤、预期与实际结果、截图或报告；无问题时提交覆盖清单"
             />
           </LabField>
-          <LabField label="验收标准（可选）">
-            <textarea name="criteria" className={labInputClass} rows={2} placeholder="怎么算通过" />
+          <LabField label="验收标准">
+            <textarea
+              name="criteria"
+              className={labInputClass}
+              required
+              rows={3}
+              value={publication.criteria}
+              onChange={(event) => updatePublication("criteria", event.target.value)}
+              placeholder="需要覆盖哪些场景；怎样证明完成，怎样算通过"
+            />
           </LabField>
           <LabField label="截止时间（可选）">
             <input type="datetime-local" name="due_at" className={labInputClass} />
@@ -393,8 +452,8 @@ export function LabCashBounties({ store, refreshKey = 0 }: { store: LabStore; re
           error={error}
           onClose={() => setSubmitting(undefined)}
           onSubmit={async (form) => {
-            await act(submitting, "submit", { evidence: String(form.get("evidence") ?? "") });
-            setSubmitting(undefined);
+            if (await act(submitting, "submit", { evidence: String(form.get("evidence") ?? "") }))
+              setSubmitting(undefined);
           }}
         >
           <LabField label="成果、链接或交付说明">
@@ -422,20 +481,47 @@ export function LabCashBounties({ store, refreshKey = 0 }: { store: LabStore; re
         </LabDialog>
       )}
 
+      {paying && (
+        <LabDialog
+          title="登记线下付款"
+          submitLabel="确认登记付款"
+          busy={busyId === paying.id}
+          error={error}
+          onClose={() => setPaying(undefined)}
+          onSubmit={async (form) => {
+            if (await act(paying, "pay", { payment_evidence: String(form.get("payment_evidence") ?? "") })) {
+              setNotice("已登记付款。");
+              setPaying(undefined);
+            }
+          }}
+        >
+          <p className="text-13">
+            为「{paying.title}」登记 {money(paying.amount)} 项目支出。这不会发起银行卡、微信或支付宝转账。
+          </p>
+          <LabField label="付款凭证或测试记账说明">
+            <textarea
+              name="payment_evidence"
+              className={labInputClass}
+              required
+              rows={3}
+              placeholder="填写真实转账凭证；流程测试须注明测试记账、未实际转账"
+            />
+          </LabField>
+        </LabDialog>
+      )}
       {accepting && (
         <LabDialog
-          title="验收并付款"
-          submitLabel="验收并付款"
+          title="验收成果"
+          submitLabel="验收通过"
           busy={busyId === accepting.id}
           error={error}
           onClose={() => setAccepting(undefined)}
           onSubmit={async (form) => {
-            await acceptAndPay(accepting, String(form.get("note") ?? ""));
+            if (await act(accepting, "accept", { note: String(form.get("note") ?? "") })) setAccepting(undefined);
           }}
         >
           <p className="text-13">
-            确认「{accepting.title}」已按约定完成，通过后将从项目已到账资金支付{" "}
-            <strong>{money(accepting.amount)}</strong>。
+            确认「{accepting.title}」已按约定完成。验收通过后，{money(accepting.amount)} 进入待付款状态。
           </p>
           <LabField label="验收意见（可选）">
             <textarea name="note" className={labInputClass} rows={3} placeholder="例如：成果已收到，符合要求" />

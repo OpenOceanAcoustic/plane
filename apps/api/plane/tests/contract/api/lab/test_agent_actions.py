@@ -223,7 +223,7 @@ def test_linked_cash_bounty_payment_cannot_be_reversed_without_task_state(labora
         claimed_by=lab["member"],
         evidence="dataset:v1",
     )
-    response = lab["client"](lab["lead"]).post(lab["base"] + f"cash-bounties/{row.id}/pay/", {}, format="json")
+    response = lab["client"](lab["lead"]).post(lab["base"] + f"cash-bounties/{row.id}/pay/", {"payment_evidence": "synthetic-bank-payment"}, format="json")
     assert response.status_code == 200, response.content
     row.refresh_from_db()
     before = balance(source)

@@ -2,9 +2,12 @@
 import { expect, test } from "@playwright/test";
 import type { Page } from "@playwright/test";
 
-async function setup(page: Page, { status = "open", selected = "target", missing = false } = {}) {
+async function setup(
+  page: Page,
+  { status = "open", selected = "target", missing = false, lead = false, failPayment = false } = {}
+) {
   let currentStatus = status;
-  const writes: string[] = [];
+  const writes: { path: string; body: Record<string, unknown> }[] = [];
   await page.route("**/auth/get-csrf-token/", (route) => route.fulfill({ json: { csrf_token: "test-csrf" } }));
   await page.route("**/api/workspaces/lab/lab/**", (route) => {
     const path = new URL(route.request().url()).pathname;
@@ -12,7 +15,7 @@ async function setup(page: Page, { status = "open", selected = "target", missing
       return route.fulfill({
         json: {
           user_id: "member",
-          projects: [{ id: "project", name: "测试项目", lead: false }],
+          projects: [{ id: "project", name: "测试项目", lead }],
           folders: [],
           items: [],
           categories: [],
@@ -23,9 +26,24 @@ async function setup(page: Page, { status = "open", selected = "target", missing
       });
     if (path.endsWith("/finance/overview/")) return route.fulfill({ json: { accounts: [] } });
     if (path.endsWith("/cash-bounties/target/claim/")) {
-      writes.push(path);
+      writes.push({ path, body: route.request().postDataJSON() });
       currentStatus = "claimed";
       return route.fulfill({ json: {} });
+    }
+    if (path.endsWith("/cash-bounties/target/accept/")) {
+      writes.push({ path, body: route.request().postDataJSON() });
+      currentStatus = "accepted";
+      return route.fulfill({ json: {} });
+    }
+    if (path.endsWith("/cash-bounties/target/pay/")) {
+      writes.push({ path, body: route.request().postDataJSON() });
+      if (failPayment) return route.fulfill({ status: 400, json: { detail: "项目现金余额不足" } });
+      currentStatus = "paid";
+      return route.fulfill({ json: {} });
+    }
+    if (path.endsWith("/cash-bounties/") && route.request().method() === "POST") {
+      writes.push({ path, body: route.request().postDataJSON() });
+      return route.fulfill({ status: 201, json: { id: "created" } });
     }
     if (path.endsWith("/cash-bounties/"))
       return route.fulfill({
@@ -46,6 +64,8 @@ async function setup(page: Page, { status = "open", selected = "target", missing
                 criteria: "覆盖成功、失败和移动端状态",
                 can_claim: currentStatus === "open",
                 can_submit: currentStatus === "claimed",
+                can_accept: lead && currentStatus === "submitted",
+                can_pay: lead && currentStatus === "accepted",
               },
               {
                 id: "another",
@@ -95,4 +115,59 @@ test("an unavailable target has an explicit error and can return to the full lis
   await expect(page.getByRole("article")).toHaveCount(0);
   await page.getByRole("button", { name: "查看全部现金悬赏" }).click();
   await expect(page.getByRole("article", { name: "UI点击测试" })).toBeVisible();
+});
+
+test("publishing supplies specific scope steps deliverables and acceptance without inventing a price", async ({
+  page,
+}) => {
+  const writes = await setup(page, { lead: true, selected: "" });
+  await page.getByRole("button", { name: "发布现金悬赏", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "发布现金悬赏", exact: true });
+  await expect(dialog.getByRole("button", { name: "发布", exact: true })).toBeDisabled();
+  await dialog.getByRole("button", { name: "填入人工测试模板" }).click();
+  await expect(dialog.getByLabel("任务入口与范围")).toHaveValue(/\/lab\/lab\/cash/);
+  await expect(dialog.getByLabel("操作步骤")).toHaveValue(/切换/);
+  await expect(dialog.getByLabel("验收标准", { exact: true })).not.toHaveValue("");
+  await expect(dialog.getByRole("button", { name: "发布", exact: true })).toBeDisabled();
+  await dialog.getByLabel("现金赏金", { exact: true }).fill("5");
+  await dialog.getByRole("button", { name: "发布", exact: true }).click();
+  await expect(dialog).toBeHidden();
+  expect(writes).toHaveLength(1);
+  expect(writes[0].body).toMatchObject({ title: "现金悬赏页面人工测试", amount: "5" });
+  for (const key of ["target", "steps", "deliverable", "criteria"]) expect(writes[0].body[key]).toBeTruthy();
+});
+
+test("acceptance does not post a payment and payment registration needs its own proof", async ({ page }) => {
+  const writes = await setup(page, { status: "submitted", lead: true });
+  const card = page.getByRole("article", { name: "UI点击测试", exact: true });
+  await card.getByRole("button", { name: "验收成果", exact: true }).click();
+  const acceptance = page.getByRole("dialog", { name: "验收成果", exact: true });
+  await acceptance.getByLabel("验收意见（可选）").fill("合成测试报告通过");
+  await acceptance.getByRole("button", { name: "验收通过", exact: true }).click();
+  await expect(card.getByRole("button", { name: "登记付款 ¥5.00" })).toBeVisible();
+  expect(writes).toHaveLength(1);
+  expect(writes[0].path).toMatch(/accept\/$/);
+  await card.getByRole("button", { name: "登记付款 ¥5.00" }).click();
+  const payment = page.getByRole("dialog", { name: "登记线下付款", exact: true });
+  await expect(payment).toContainText("不会发起银行卡、微信或支付宝转账");
+  await payment.getByRole("button", { name: "确认登记付款" }).click();
+  expect(writes).toHaveLength(1);
+  await payment.getByLabel("付款凭证或测试记账说明").fill("流程测试记账，未实际转账");
+  await payment.getByRole("button", { name: "确认登记付款" }).click();
+  await expect(card).toContainText("已登记付款");
+  expect(writes).toHaveLength(2);
+  expect(writes[1].body.payment_evidence).toBe("流程测试记账，未实际转账");
+});
+
+test("failed payment registration keeps the entered proof and does not show paid", async ({ page }) => {
+  await setup(page, { status: "accepted", lead: true, failPayment: true });
+  const card = page.getByRole("article", { name: "UI点击测试", exact: true });
+  await card.getByRole("button", { name: "登记付款 ¥5.00" }).click();
+  const dialog = page.getByRole("dialog", { name: "登记线下付款", exact: true });
+  await dialog.getByLabel("付款凭证或测试记账说明").fill("流程测试记账，未实际转账");
+  await dialog.getByRole("button", { name: "确认登记付款" }).click();
+  await expect(dialog.getByLabel("付款凭证或测试记账说明")).toHaveValue("流程测试记账，未实际转账");
+  await expect(dialog.getByRole("alert")).toContainText("余额不足");
+  await dialog.getByRole("button", { name: "关闭弹窗", exact: true }).click();
+  await expect(card).not.toContainText("已登记付款");
 });

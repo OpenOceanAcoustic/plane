@@ -35,7 +35,7 @@ from .labor_hours import work_hours
 from .models import AgentAction, AgentAnnotation, AgentLeadRequest, AgentMessage, AgentProposal, AgentReminder, AgentThread, Allocation, Bounty, CashBounty, Stage
 from .project_management import finance_overview, finance_mutation, latest_records, money_text, recognized_cost, record_data
 from .finance_services import account, perform
-from .cash_bounties import cash_amount, can_pay
+from .cash_bounties import cash_amount, can_pay, bounty_description, BOUNTY_REQUIREMENTS
 from .agent_bounties import cash_bounty_facts
 from .vc import stage_budget, stage_reserved
 from . import quotes, bounties
@@ -765,7 +765,7 @@ def _chat_prompt(user, project, members, context, history, today):
         "project_plan: {summary, stages:[{title, description, start_date, target_date, tasks:[{title, description, assignee_id, due_date, priority, acceptance}]}], risks:[], assumptions:[]}（intent=project_plan 时）\n"
         "project_lead: {target_user_id, reason}（intent=project_lead 时，只生成负责人变更草稿）\n"
         "project_create: {name, start_date, target_date, all_members, member_ids, budget, description}（intent=project_create 时，只生成新建项目草稿）\n"
-        "approval: {record_id, decision, note}（intent=approval 时；decision=approved/rejected）\nannotation: {record_id, note}（intent=annotate 时）\nbounty: {action, target_id, title, deliverable, criteria, amount, evidence, note}（intent=cash_bounty 时；action=create/claim/submit/accept/pay）\nbounty_quote: {bounty_id, vc, deliverable, basis}（intent=bounty_quote 时；团队悬赏报价）\nbounty_quote_review: {bounty_id, quote_id, decision, note}（intent=bounty_quote_review 时；负责人批准/驳回团队报价）\nbounty_team: {bounty_id, action, evidence, note}（intent=bounty_team 时；action=confirm/start/submit/accept）\nproposal: {title, description, category}（intent=proposal 时；两参一改建议）\nassign_issues: {issue_ids:[...], member_id}（intent=assign_issues 时；批量指派）\nissue_transition: {issue_ids:[...], action}（intent=issue_transition 时；action=start/complete/cancel/reopen）\nbatch_approval: {record_ids:[...], decision, note}（intent=batch_approval 时；批量审批工时）\n"
+        "approval: {record_id, decision, note}（intent=approval 时；decision=approved/rejected）\nannotation: {record_id, note}（intent=annotate 时）\nbounty: {action, target_id, title, target, steps, deliverable, criteria, amount, evidence, note}（intent=cash_bounty 时；action=create/claim/submit/accept/pay）\nbounty_quote: {bounty_id, vc, deliverable, basis}（intent=bounty_quote 时；团队悬赏报价）\nbounty_quote_review: {bounty_id, quote_id, decision, note}（intent=bounty_quote_review 时；负责人批准/驳回团队报价）\nbounty_team: {bounty_id, action, evidence, note}（intent=bounty_team 时；action=confirm/start/submit/accept）\nproposal: {title, description, category}（intent=proposal 时；两参一改建议）\nassign_issues: {issue_ids:[...], member_id}（intent=assign_issues 时；批量指派）\nissue_transition: {issue_ids:[...], action}（intent=issue_transition 时；action=start/complete/cancel/reopen）\nbatch_approval: {record_ids:[...], decision, note}（intent=batch_approval 时；批量审批工时）\n"
         "tool: brief|retro|quality|team|knowledge|finance（intent=tool 时）\n"
         "tool_args: {period, query}（intent=tool 时；brief 用 daily/weekly，retro 用 week/month，knowledge 用 query）\n"
         "work_item: {title, description}（intent=work_item 时，只写个人规划）\n"
@@ -787,6 +787,7 @@ def _chat_prompt(user, project, members, context, history, today):
         "3c. 用户要“批准/审核通过/驳回”某条工时或费用时用 intent=approval；record_id 优先使用 project_facts.finance_records 里的 id；只生成审批草稿，用户必须在聊天里点确认；绝不自动审批。\n3d. 用户要“批注/备注/说明”某条工时或费用时用 intent=annotate；record_id 优先使用 finance_records；只生成批注草稿，用户确认后才写入。\n"
         "4. 入账、工资、质量、成员参与可以生成草稿，但绝不执行付款、审批、加人或改权限；草稿必须由用户进入原表单确认。\n"
         "4a. 直接付款、审批通过、删除、冲正：没有对应草稿工具时才用 intent=unsupported。现金悬赏发钱用 cash_bounty action=pay，必须先生成草稿并由用户确认。团队悬赏 VC 不等于现金；现金奖励须走资金与奖励的核准、安排和登记支付流程，不生成 bounty_team action=pay。\n"
+        "4b. 发布现金悬赏必须明确 target（页面地址或任务对象及范围）、steps（可执行步骤）、deliverable（提交内容）、criteria（验收标准）和固定金额，缺一项就追问；不能把“UI测试”“一个可用页面”当作完整任务。领取后不改单价；范围或价格不明确时先协商，团队VC报价与现金赏金分开。现金悬赏 pay 仅登记线下付款，不会自动转账；evidence 必须是线下付款凭证或用户明确授权的测试记账说明，不能用成果反馈冒充付款凭证。\n"
         "5. 缺少必要信息时用 needs_input 追问。\n"
         "6. 结合最近对话理解“改成、再加、给他也记一笔”等指代；但每个字段仍要重新校验，不能沿用已失效的数据。\n"
         "6a. 如果 pending_clarification 非空，结合其 draft 和 previous_user 理解补充回答，保留未被修改的日期、工时、成员、费率和金额；reply_kind=new_request 时先判断是否改问了别的事项，不能强行填入上一张草稿。取消请求不应生成新草稿。\n"
@@ -1252,11 +1253,12 @@ class AgentChatView(LabView):
                 pending["amount"] = amount_match.group(1)
             elif not pending.get("title"):
                 pending["title"] = text
-            elif not pending.get("deliverable"):
-                pending["deliverable"] = text
-            elif not pending.get("criteria"):
-                pending["criteria"] = text
-            missing = [label for key, label in (("title", "名称"), ("deliverable", "交付要求"), ("amount", "金额")) if not pending.get(key)]
+            else:
+                for field, _ in BOUNTY_REQUIREMENTS:
+                    if not pending.get(field):
+                        pending[field] = text
+                        break
+            missing = [label for key, label in (("title", "名称"), *BOUNTY_REQUIREMENTS, ("amount", "金额")) if not pending.get(key)]
             if missing:
                 return server_response({"intent": "needs_input", "tool": "", "tool_args": {}, "reply": f"请补充现金悬赏的{'、'.join(missing)}。", "question": f"请补充现金悬赏的{'、'.join(missing)}。", "draft": pending, "provider": "server", "model": "", "thread_id": str(thread.id)})
             try:
@@ -1786,8 +1788,9 @@ class AgentChatView(LabView):
                     missing = []
                     if not title:
                         missing.append("名称")
-                    if not deliverable:
-                        missing.append("交付要求")
+                    for field, label in BOUNTY_REQUIREMENTS:
+                        if not str(item.get(field, "") or "").strip():
+                            missing.append(label)
                     if not amount:
                         missing.append("金额")
                     if missing:
@@ -1795,6 +1798,8 @@ class AgentChatView(LabView):
                             "kind": "pending_bounty",
                             "action": "create",
                             "title": title,
+                            "target": str(item.get("target", "") or "").strip(),
+                            "steps": str(item.get("steps", "") or "").strip(),
                             "deliverable": deliverable,
                             "amount": amount,
                             "criteria": str(item.get("criteria", "")).strip(),
@@ -1829,6 +1834,8 @@ class AgentChatView(LabView):
                         target_id=str(target.id) if target else "",
                         payload={
                             "title": str(item.get("title", "")).strip(),
+                            "target": str(item.get("target", "") or "").strip(),
+                            "steps": str(item.get("steps", "") or "").strip(),
                             "deliverable": str(item.get("deliverable", "")).strip(),
                             "criteria": str(item.get("criteria", "")).strip(),
                             "amount": str(item.get("amount", "")).strip(),
@@ -3913,7 +3920,7 @@ def execute_bounty_action(action, user, workspace):
         ).exists():
             raise PermissionDenied("只有项目成员可以发布现金悬赏")
         title = str(payload.get("title", "")).strip()
-        deliverable = str(payload.get("deliverable", "")).strip()
+        deliverable = bounty_description(payload)
         criteria = str(payload.get("criteria", "")).strip()
         if not title:
             raise ValidationError("请填写悬赏名称")
@@ -3978,6 +3985,9 @@ def execute_bounty_action(action, user, workspace):
             elif not can_pay(user, row):
                 raise PermissionDenied("无此项目付款权限")
             else:
+                payment_evidence = str(payload.get("evidence", "") or "").strip()
+                if not payment_evidence:
+                    raise ValidationError("请填写线下付款凭证；流程测试请明确注明测试记账")
                 cash = account(workspace, "project", project=project)
                 payee = row.claimed_by
                 result = perform(
@@ -3989,7 +3999,7 @@ def execute_bounty_action(action, user, workspace):
                         "amount": str(row.amount),
                         "purpose": f"现金悬赏：{row.title} / {payee.display_name if payee else '领取人'}",
                         "reason": f"现金悬赏验收付款：{row.title}",
-                        "evidence": row.evidence or f"现金悬赏验收通过：{row.title}",
+                        "evidence": payment_evidence,
                         "request_key": str(uuid.uuid5(uuid.NAMESPACE_URL, f"cash-bounty:{row.id}:pay")),
                         "cash_bounty_id": str(row.id),
                         "payee_id": str(row.claimed_by_id) if row.claimed_by_id else None,
