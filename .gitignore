@@ -124,3 +124,14 @@ packages/i18n/src/types/keys.generated.ts
 /apps/api/plane/static-assets/
 /test-results/
 /playwright-report/
+
+# Local work-in-progress snapshots and validation artifacts
+/.scratch/
+/.artifacts/
+*.bak
+*.bak-*
+*.deploy-backup
+__pycache__/
+.pytest_cache/
+.ruff_cache/
+/apps/api/plane/lab/deploy_status.json
