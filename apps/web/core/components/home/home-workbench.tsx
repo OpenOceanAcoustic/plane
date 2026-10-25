@@ -224,6 +224,18 @@ function ProjectCard({
   );
 }
 
+type NextAction = {
+  id: string;
+  kind: string;
+  title: string;
+  amount: string;
+  unit: string;
+  project: string;
+  status: string;
+  action: string;
+  url: string;
+};
+
 export function HomeWorkbenchView(props: HomeWorkbenchViewProps) {
   const {
     workspaceSlug,
@@ -250,6 +262,17 @@ export function HomeWorkbenchView(props: HomeWorkbenchViewProps) {
     onCreateProject,
     onCreateIdea,
   } = props;
+  const { data: nextActionData } = useSWR<{ items: NextAction[] }>(
+    workspaceSlug ? ["home-next-actions", workspaceSlug] : null,
+    workspaceSlug
+      ? () =>
+          fetch(`/api/workspaces/${workspaceSlug}/lab/me/next-actions/`, { credentials: "include" }).then((response) =>
+            response.ok ? response.json() : { items: [] }
+          )
+      : null,
+    { revalidateOnFocus: false }
+  );
+  const nextActions = nextActionData?.items ?? [];
   const activeWorkItems = Math.max(0, totalWorkItems - completedWorkItems);
   const completion = totalWorkItems > 0 ? Math.round((completedWorkItems / totalWorkItems) * 100) : 0;
   const statsValue = statsLoading ? "—" : `${activeWorkItems}`;
@@ -394,7 +417,34 @@ export function HomeWorkbenchView(props: HomeWorkbenchViewProps) {
           )}
         </section>
 
-        <aside className="lab-workbench-panel" aria-label="项目进度与快捷入口">
+        <aside className="lab-workbench-panel" aria-label="下一步与项目进度">
+          <header className="lab-workbench-panel-head">
+            <h2>下一步</h2>
+            <Sparkles size={15} className="text-secondary" aria-hidden="true" />
+          </header>
+          <div className="lab-next-actions" aria-label="待处理悬赏">
+            {nextActions.length ? (
+              nextActions.slice(0, 6).map((row) => (
+                <Link key={`${row.kind}-${row.id}`} href={row.url} className="lab-next-action">
+                  <span className="lab-next-action-main">
+                    <strong>{row.title}</strong>
+                    <small>
+                      {row.project}
+                      {row.amount ? ` · ${row.unit}${row.amount}` : ""}
+                    </small>
+                  </span>
+                  <span className="lab-next-action-tag">{row.action}</span>
+                  <ArrowRight size={13} aria-hidden="true" />
+                </Link>
+              ))
+            ) : (
+              <p className="text-12 text-secondary">当前没有待领取、待提交、待验收、待付款或待评审的事项。</p>
+            )}
+            <Link href={`/${workspaceSlug}/lab/bounties`} className="lab-next-all">
+              查看全部悬赏
+              <ArrowRight size={12} />
+            </Link>
+          </div>
           <header className="lab-workbench-panel-head">
             <h2>项目进度</h2>
             <Sparkles size={15} className="text-secondary" aria-hidden="true" />

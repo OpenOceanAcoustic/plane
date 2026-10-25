@@ -358,13 +358,15 @@ def overview_data(workspace, user, project_id=None):
         )
     batches = []
     for row in CashBatch.objects.filter(
-        budget_id__in=budget_ids, budget__stage__project_id_snapshot__in=leads
-    ).select_related("budget__stage", "operation"):
-        risk_entries = FinancialEntry.objects.filter(account__stage=row.budget.stage, account__kind="risk", batch=row)
+        operation__workspace=workspace, operation__project_id_snapshot__in=leads
+    ).filter(Q(budget_id__in=budget_ids) | Q(budget__isnull=True)).select_related("budget__stage", "operation"):
+        stage_id = row.budget.stage_id if row.budget_id else None
+        project_id = row.operation.project_id_snapshot
+        risk_entries = FinancialEntry.objects.filter(account__stage_id=stage_id, account__kind="risk", batch=row)
         remaining = aggregate(risk_entries, "delta")
         blocked = receipt_deletion_reason(row)
         if not blocked and (
-            row.budget.stage_id in removal["stages"] or row.budget.stage.project_id_snapshot in removal["projects"]
+            stage_id in removal["stages"] or project_id in removal["projects"]
         ):
             blocked = "请先恢复资金项目或阶段预算"
         batches.append(
@@ -372,8 +374,8 @@ def overview_data(workspace, user, project_id=None):
                 "id": str(row.id),
                 "operation_id": str(row.operation_id),
                 "kind": row.operation.kind,
-                "stage_id": str(row.budget.stage_id),
-                "project_id": str(row.budget.stage.project_id_snapshot),
+                "stage_id": str(stage_id) if stage_id else None,
+                "project_id": str(project_id),
                 "gross": str(row.gross),
                 "costs": str(row.costs),
                 "D": str(row.D),
@@ -398,12 +400,12 @@ def overview_data(workspace, user, project_id=None):
                 "created_at": row.created_at.isoformat(),
                 "occurred_at": row.operation.occurred_at.isoformat(),
                 "reversed": hasattr(row.operation, "reversal"),
-                "can_manage": can(row.budget.stage.project_id_snapshot, "record")
+                "can_manage": can(project_id, "record")
                 and not hasattr(row.operation, "reversal")
-                and scope_open(row.budget.stage.project_id_snapshot, row.budget.stage_id),
-                "can_pay": can(row.budget.stage.project_id_snapshot, "pay")
-                and scope_open(row.budget.stage.project_id_snapshot, row.budget.stage_id),
-                "can_delete": can(row.budget.stage.project_id_snapshot, "record") and blocked is None,
+                and scope_open(project_id, stage_id),
+                "can_pay": row.budget_id is not None and can(project_id, "pay")
+                and scope_open(project_id, stage_id),
+                "can_delete": can(project_id, "record") and blocked is None,
                 "delete_reason": blocked,
             }
         )

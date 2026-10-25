@@ -2,7 +2,7 @@
 
 import { expect, test } from "@playwright/test";
 import type { Page, Route } from "@playwright/test";
-import type { LabBounty } from "@plane/types";
+import type { LabBounty, LabBountyQuotes } from "@plane/types";
 import type { LabContributionEntry } from "../../../packages/types/src/lab-contributions";
 
 const summary = {
@@ -34,6 +34,9 @@ const summary = {
 
 async function fixture(page: Page) {
   await page.clock.setFixedTime(new Date("2026-09-30T16:30:00Z"));
+  await page.route("**/api/**", (route) => {
+    throw new Error(`Missing contribution API fixture: ${new URL(route.request().url()).pathname}`);
+  });
   await page.route("**/api/workspaces/lab/lab/me/contributions/", (route) => route.fulfill({ json: summary }));
   await page.route("**/api/workspaces/lab/lab/me/contributions/calendar/**", (route) =>
     route.fulfill({
@@ -209,13 +212,13 @@ test("month, project and day browsing keeps lifetime totals and a zero-net day r
   await page.goto("/contributions");
   const totals = page.getByRole("region", { name: "个人 VC 总额", exact: true });
   const calendar = page.getByRole("region", { name: "VC 日历", exact: true });
-  const zeroDay = calendar.getByRole("button", { name: "查看 2026-10-02 · 声学项目的 VC 明细", exact: true });
+  const zeroDay = calendar.getByRole("button", { name: "查看 2026-10-02 · 声学项目的 贡献点明细", exact: true });
   await expect(zeroDay).toContainText("+4.00");
   await expect(zeroDay).toContainText("−4.00 冲正");
   await page.getByRole("button", { name: "上一月", exact: true }).click();
   await expect(page.getByLabel("选择月份", { exact: true })).toHaveValue("2026-09");
   await expect(
-    calendar.getByRole("button", { name: "查看 2026-09-30 · 声学项目的 VC 明细", exact: true })
+    calendar.getByRole("button", { name: "查看 2026-09-30 · 声学项目的 贡献点明细", exact: true })
   ).toContainText("+40.00");
   await expect(totals.getByText("44.00 VC", { exact: true })).toBeVisible();
   await expect(totals.getByText("35.00 VC", { exact: true })).toBeVisible();
@@ -223,11 +226,11 @@ test("month, project and day browsing keeps lifetime totals and a zero-net day r
   await expect(page.getByLabel("选择月份", { exact: true })).toHaveValue("2026-10");
   await zeroDay.click();
   await expect(page.getByLabel("筛选项目", { exact: true })).toHaveValue("acoustic");
-  await expect(calendar.getByRole("button", { name: "查看 2026-10-02 的 VC 明细", exact: true })).toHaveAttribute(
+  await expect(calendar.getByRole("button", { name: "查看 2026-10-02 的 贡献点明细", exact: true })).toHaveAttribute(
     "aria-pressed",
     "true"
   );
-  const details = page.getByRole("region", { name: "VC 明细", exact: true });
+  const details = page.getByRole("region", { name: "贡献点明细", exact: true });
   await expect(details.getByRole("button", { name: /^查看贡献记录/ })).toHaveCount(2);
   await expect(details.getByText("+4.00 VC", { exact: true })).toBeVisible();
   await expect(details.getByText("-4.00 VC", { exact: true })).toBeVisible();
@@ -311,7 +314,7 @@ test("late previous-month responses cannot replace the visible current month", a
   await expect(page.getByRole("button", { name: "查看贡献记录 九月迟到成果 2026-09-30", exact: true })).toHaveCount(0);
   await expect(
     page.getByRole("region", { name: "VC 日历", exact: true }).getByRole("button", {
-      name: "查看 2026-10-01 · 声学项目的 VC 明细",
+      name: "查看 2026-10-01 · 声学项目的 贡献点明细",
       exact: true,
     })
   ).toContainText("+3.00");
@@ -332,7 +335,7 @@ test("loading the next page preserves entries without duplicating overlapping re
     });
   });
   await page.goto("/contributions");
-  const details = page.getByRole("region", { name: "VC 明细", exact: true });
+  const details = page.getByRole("region", { name: "贡献点明细", exact: true });
   await expect(details.getByRole("button", { name: /^查看贡献记录/ })).toHaveCount(1);
   await page.getByRole("button", { name: "加载更多", exact: true }).click();
   await expect.poll(() => Boolean(nextPage)).toBe(true);
@@ -584,7 +587,21 @@ test("task-only contributions read explicit shared materials through controlled 
     detailReads += 1;
     return route.fulfill({ json: bounty });
   });
-  await page.route("**/api/workspaces/lab/lab/bounties/task-only/workflow/", (route) =>
+  await page.route("**/api/workspaces/lab/lab/bounties/task-only/quotes/", (route) =>
+    route.fulfill({
+      json: {
+        quotes: [],
+        available: "0.00",
+        can_apply: false,
+        funding_source: "project",
+        project_available: null,
+        quote_limit: null,
+        reviewers: [],
+        file_size_limit: 0,
+      } satisfies LabBountyQuotes,
+    })
+  );
+  await page.route("**/api/workspaces/lab/lab/bounties/task-only/workflow/?quotes=1", (route) =>
     route.fulfill({
       json: {
         bounty_id: bounty.id,
@@ -730,7 +747,9 @@ test("the contribution calendar and controls fit a narrow viewport without page 
   );
   await page.goto("/contributions");
   await expect(page.getByRole("button", { name: "查看贡献记录 声学分析报告 2026-10-02", exact: true })).toBeVisible();
-  await expect(page.getByRole("button", { name: "查看 2026-10-02 · 声学项目的 VC 明细", exact: true })).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "查看 2026-10-02 · 声学项目的 贡献点明细", exact: true })
+  ).toBeVisible();
   await page.evaluate(() => document.fonts.ready);
   await page.screenshot({ path: "/tmp/lab-contributions-desktop.png", animations: "disabled", fullPage: true });
   await page.setViewportSize({ width: 390, height: 844 });
@@ -747,7 +766,7 @@ test("the contribution calendar and controls fit a narrow viewport without page 
   expect(zeroProject.y).toBeGreaterThanOrEqual(firstProject.y + firstProject.height);
   expect(zeroProject.x).toBeGreaterThanOrEqual(0);
   expect(zeroProject.x + zeroProject.width).toBeLessThanOrEqual(size.viewport);
-  await page.getByRole("button", { name: "查看 2026-10-02 的 VC 明细", exact: true }).click();
+  await page.getByRole("button", { name: "查看 2026-10-02 的 贡献点明细", exact: true }).click();
   await expect(page.getByRole("button", { name: "清除选日", exact: true })).toBeVisible();
   await page.getByRole("button", { name: "清除选日", exact: true }).click();
   await page.screenshot({ path: "/tmp/lab-contributions-mobile.png", animations: "disabled", fullPage: true });

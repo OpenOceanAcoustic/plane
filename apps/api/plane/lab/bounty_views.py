@@ -23,7 +23,7 @@ from .auth import audit
 from .models import Bounty, Ledger, PersonalCategory, PersonalItem, Stage, WIPException
 from .permissions import can_view_team, collaboration_projects as project_ids, readable_issues, require_bounty_manager
 from .planning_views import LabView
-from .bounty_access import access_level, accessible_bounties, bounty_access, issue_capabilities
+from .bounty_access import access_level, accessible_bounties, bounty_access, issue_capabilities, visible_allocations
 from .bounty_models import BountyPublication
 from .bounty_importance import EDITABLE, change_importance, importance_state
 from .bounty_budgets import project_budgets, publish_from_project
@@ -36,10 +36,8 @@ def bounty_data(row, user, reward_context=None):
     level = access_level(user, row)
     public = level == "public"
     publication = BountyPublication.objects.filter(bounty=row).first()
-    participants = list(row.allocations.all())
+    participants = visible_allocations(user, row, level=level)
     mine = next((p for p in participants if p.user_id == user.id), None)
-    if public:
-        participants = [mine] if mine else []
     acceptances = list(row.acceptances.all().order_by("-created_at"))
     capabilities = issue_capabilities(user, row)
     try:
@@ -143,6 +141,7 @@ def bounty_data(row, user, reward_context=None):
                 "approved": p.approved,
                 "confirmed": p.confirmed,
                 "closed": p.closed,
+                "paid_at": p.paid_at.isoformat() if p.paid_at else None,
             }
             for p in participants
         ],

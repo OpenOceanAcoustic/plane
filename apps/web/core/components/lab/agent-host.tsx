@@ -10,5 +10,5 @@ export function LabAgentHost() {
   const { pathname } = useLocation();
   const store = useMemo(() => new LabStore(API_BASE_URL, workspaceSlug), [workspaceSlug]);
   if (!workspaceSlug || pathname.endsWith("/lab/ai")) return null;
-  return <LabAgentChat store={store} workspaceSlug={workspaceSlug} />;
+  return <LabAgentChat key={workspaceSlug} store={store} workspaceSlug={workspaceSlug} />;
 }

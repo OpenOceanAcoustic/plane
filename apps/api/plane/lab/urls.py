@@ -2,13 +2,14 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 
 from django.urls import path
+from .agent_drafts import AgentMessageConfirmView
 from .analytics import AnalyticsDrilldownView, AnalyticsView
 from .document_urls import document_patterns
 from .field_urls import field_patterns
 from .gantt_urls import gantt_patterns
 from .workflow_urls import workflow_patterns
 from .bounty_urls import bounty_patterns
-from .agent_views import AgentBriefView, AgentReminderView, AgentRetroView, AgentQualityView, AgentTeamView, AgentKnowledgeView, AgentFinanceView, AgentMeetingView, AgentProposalView, AgentProposalApproveView, AgentHealthView, AgentMessageAppendView, AgentLeadRequestView, AgentLeadReviewView, AgentActionExecuteView, AgentChatView, AgentProjectIssueView, AgentProjectPlanView, AgentThreadDetailView, AgentThreadsView, TimeAgentHealthView, TimeAgentView
+from .agent_views import AgentBriefView, AgentReminderView, AgentRetroView, AgentQualityView, AgentTeamView, AgentKnowledgeView, AgentFinanceView, AgentMeetingView, AgentProposalView, AgentProposalApproveView, AgentHealthView, AgentMessageAppendView, AgentLeadRequestView, AgentLeadReviewView, AgentActionExecuteView, AgentChatView, AgentProjectIssueView, AgentProjectPlanView, AgentThreadDetailView, AgentThreadsView, AgentToolUsageView, TimeAgentHealthView, TimeAgentView
 from .cash_bounties import CashBountyActionView, CashBountyDetailView, CashBountyView
 from .lifecycle_workflow import lifecycle_patterns
 from .finance_urls import finance_patterns
@@ -16,10 +17,12 @@ from .project_management import ProjectFinanceManagementView
 from .project_labor import ProjectLaborTeamsView
 from .project_quality import ProjectQualityView
 from .chat_urls import chat_patterns
+from .invitation_views import LabInvitationCreateView
 from .auth_views import LabAuthView, LabBrowserView, LabInvitationView, LabSignOutView
 from .mobile import LiveTicketView
 from .contributions import ContributionsCalendarView, ContributionsEntriesView, ContributionsView
 from .workload import WorkloadView
+from .next_actions import MeNextActionsView
 from .planning_views import (
     BlockDetailView,
     CalendarView,
@@ -65,6 +68,7 @@ auth_patterns = [
 ]
 
 business_patterns = [
+    path("invitations/", LabInvitationCreateView.as_view()),
     path("projects/<uuid:pk>/finance-management/", ProjectFinanceManagementView.as_view()),
     path("projects/<uuid:pk>/labor-teams/", ProjectLaborTeamsView.as_view()),
     path("projects/<uuid:pk>/quality/", ProjectQualityView.as_view()),
@@ -72,6 +76,7 @@ business_patterns = [
     path("live-ticket/", LiveTicketView.as_view()),
     path("me/contributions/", ContributionsView.as_view()),
     path("me/workload/", WorkloadView.as_view()),
+    path("me/next-actions/", MeNextActionsView.as_view()),
     path("me/contributions/calendar/", ContributionsCalendarView.as_view()),
     path("me/contributions/entries/", ContributionsEntriesView.as_view()),
     path("analytics/", AnalyticsView.as_view()),
@@ -93,10 +98,12 @@ business_patterns = [
     path("agent/lead-requests/<uuid:pk>/review/", AgentLeadReviewView.as_view()),
     path("agent/actions/<uuid:pk>/execute/", AgentActionExecuteView.as_view()),
     path("agent/messages/", AgentMessageAppendView.as_view()),
+    path("agent/messages/<uuid:pk>/confirm/", AgentMessageConfirmView.as_view()),
     path("agent/chat/", AgentChatView.as_view()),
     path("agent/project-issue/", AgentProjectIssueView.as_view()),
     path("agent/project-plan/", AgentProjectPlanView.as_view()),
     path("agent/threads/", AgentThreadsView.as_view()),
+    path("agent/tool-usage/", AgentToolUsageView.as_view()),
     path("agent/threads/<uuid:pk>/", AgentThreadDetailView.as_view()),
     path("agent/time/", TimeAgentView.as_view()),
     path("cash-bounties/", CashBountyView.as_view()),

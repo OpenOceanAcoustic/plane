@@ -21,6 +21,7 @@ class Invitation(Record):
         max_length=16, choices=[("bootstrap", "bootstrap"), ("member", "member"), ("rebind", "rebind")]
     )
     workspace = models.ForeignKey("db.Workspace", on_delete=models.CASCADE, null=True)
+    project = models.ForeignKey("db.Project", on_delete=models.SET_NULL, null=True, blank=True, related_name="lab_invitations")
     workspace_slug = models.SlugField(max_length=48, blank=True)
     role = models.PositiveSmallIntegerField(default=15)
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, null=True)
@@ -235,6 +236,10 @@ class Allocation(Record):
     approved = models.BooleanField(default=False)
     confirmed = models.BooleanField(default=False)
     closed = models.BooleanField(default=False)
+    payment_operation = models.ForeignKey(
+        "lab.FinancialOperation", on_delete=models.SET_NULL, null=True, related_name="lab_team_bounty_allocations"
+    )
+    paid_at = models.DateTimeField(null=True)
 
     class Meta:
         constraints = [
@@ -370,6 +375,7 @@ class AgentMessage(Record):
     content = models.TextField()
     intent = models.CharField(max_length=24, blank=True)
     draft = models.JSONField(default=dict, blank=True)
+    tools = models.JSONField(default=list, blank=True)
 
     class Meta:
         indexes = [models.Index(fields=["thread", "created_at"], name="lab_agent_message_thread")]

@@ -516,6 +516,8 @@ def financial_action(user, project, body, permissions):
                 kind="project",
             )
             amount = Decimal(previous.data["amount"]) if kind == "payroll" else recognized_cost(previous, rows)
+            if "expected_amount" in data and decimal_value(data["expected_amount"], "确认金额") != amount:
+                raise BudgetConflict("应付金额已有变化，请重新生成支付草稿后确认")
             if amount <= ZERO:
                 raise ValidationError("应付金额为零")
             evidence = text_field(data.get("evidence"), "支付凭证", 4000, required=True)

@@ -258,7 +258,6 @@ export const LabFinance = observer(function LabFinance({
           tax: draft.tax ?? "0",
           management_fee: draft.management_fee ?? "0",
           source: draft.source ?? "",
-          ...(draft.stage_id ? { stage_id: draft.stage_id } : {}),
         },
       });
     } catch {
@@ -325,7 +324,12 @@ export const LabFinance = observer(function LabFinance({
   const activeBatches = data?.batches.filter((batch) => !batch.reversed && batch.kind !== "opening") ?? [];
   const receiptTotals = {
     gross: totalMoney(activeBatches.map((batch) => batch.gross)),
-    D: totalMoney(activeBatches.map((batch) => batch.D)),
+    net: labDecimalText(
+      activeBatches.reduce(
+        (sum, batch) => sum + (labDecimalUnits(batch.gross) ?? 0n) - (labDecimalUnits(batch.costs) ?? 0n),
+        0n
+      )
+    ),
   };
   const allowedActions = new Set(data?.allowed_actions ?? []);
   const canManage = allowedActions.size > 0;
@@ -374,7 +378,7 @@ export const LabFinance = observer(function LabFinance({
   ];
   const canReceipt =
     allowedActions.has("receipt") &&
-    (data?.stages.some((stage) => (stage.can_record ?? stage.can_manage) && !stage.deleted) ?? false);
+    (data?.projects.some((project) => !project.deleted && project.allowed_actions?.includes("receipt")) ?? false);
   const canOpening = allowedActions.has("opening");
   const canExpense = allowedActions.has("expense") && (data?.accounts.some((account) => account.can_manage) ?? false);
   const poolSources =
@@ -398,7 +402,8 @@ export const LabFinance = observer(function LabFinance({
   const activeTabMeta = financeTabMeta[tab];
   const ActiveTabIcon = activeTabMeta?.Icon;
   const memberName = (id: string) => data?.members.find((member) => member.id === id)?.name ?? "本人／历史成员";
-  const stageName = (id: string) => data?.stages.find((stage) => stage.stage_id === id)?.name ?? "阶段";
+  const stageName = (id: string | null) =>
+    id ? (data?.stages.find((stage) => stage.stage_id === id)?.name ?? "阶段") : "项目到账";
   const accountName = (id: string) => data?.accounts.find((account) => account.id === id)?.label ?? "资金账户";
   const open = (action: string, body?: Record<string, string>) => setChosen({ action, body });
   const managementActions = [
@@ -876,8 +881,8 @@ export const LabFinance = observer(function LabFinance({
             <Metric
               tone="indigo"
               icon={<Coins size={15} />}
-              label="累计核准 D"
-              value={`¥${receiptTotals.D}`}
+              label="累计到账净额"
+              value={`¥${receiptTotals.net}`}
               hint="可分配金额"
             />
             <Metric
@@ -1026,7 +1031,14 @@ export const LabFinance = observer(function LabFinance({
                 },
                 { label: "本次到账", cell: (row) => <Money amount={row.gross} /> },
                 { label: "成本", cell: (row) => <Money amount={row.costs} /> },
-                { label: "核准 D", cell: (row) => <Money amount={row.D} /> },
+                {
+                  label: "到账净额",
+                  cell: (row) => (
+                    <Money
+                      amount={labDecimalText((labDecimalUnits(row.gross) ?? 0n) - (labDecimalUnits(row.costs) ?? 0n))}
+                    />
+                  ),
+                },
                 {
                   label: "风险金／未释放",
                   cell: (row) => (
@@ -1171,44 +1183,53 @@ export const LabFinance = observer(function LabFinance({
                 },
                 {
                   label: "办理",
-                  cell: (row) =>
-                    row.can_manage &&
-                    allowedActions.has(
+                  cell: (row) => {
+                    const primaryAction =
                       row.kind === "execution"
                         ? "dispute"
                         : row.kind === "withholding"
                           ? "tax-remit"
                           : row.kind === "retained"
                             ? "stage-allocation"
-                            : "expense"
-                    ) ? (
-                      <Button
-                        size="sm"
-                        variant="neutral-primary"
-                        onClick={() =>
-                          open(
-                            row.kind === "execution"
-                              ? "dispute"
+                            : "expense";
+                    const canPrimary = row.can_manage && allowedActions.has(primaryAction);
+                    const canAllocate =
+                      row.can_manage &&
+                      row.kind === "project" &&
+                      allowedActions.has("stage-allocation") &&
+                      data.stages.some(
+                        (stage) => stage.project_id === row.project_id && stage.can_record && !stage.deleted
+                      );
+                    if (!canPrimary && !canAllocate) return "只读";
+                    return (
+                      <div className="flex flex-wrap gap-1">
+                        {canPrimary && (
+                          <Button
+                            size="sm"
+                            variant="neutral-primary"
+                            onClick={() => open(primaryAction, { account_id: row.id, from_account_id: row.id })}
+                          >
+                            {row.kind === "execution"
+                              ? "争议预留"
                               : row.kind === "withholding"
-                                ? "tax-remit"
+                                ? "扣缴上缴"
                                 : row.kind === "retained"
-                                  ? "stage-allocation"
-                                  : "expense",
-                            { account_id: row.id, from_account_id: row.id }
-                          )
-                        }
-                      >
-                        {row.kind === "execution"
-                          ? "争议预留"
-                          : row.kind === "withholding"
-                            ? "扣缴上缴"
-                            : row.kind === "retained"
-                              ? "拨付新阶段奖励"
-                              : "登记支出"}
-                      </Button>
-                    ) : (
-                      "只读"
-                    ),
+                                  ? "拨付阶段奖励"
+                                  : "登记支出"}
+                          </Button>
+                        )}
+                        {canAllocate && (
+                          <Button
+                            size="sm"
+                            variant="neutral-primary"
+                            onClick={() => open("stage-allocation", { from_account_id: row.id })}
+                          >
+                            拨付阶段奖励
+                          </Button>
+                        )}
+                      </div>
+                    );
+                  },
                 },
               ]}
             />
@@ -1234,9 +1255,9 @@ export const LabFinance = observer(function LabFinance({
                 </dd>
               </div>
               <div>
-                <dt className="text-secondary">累计核准 D</dt>
+                <dt className="text-secondary">累计到账净额</dt>
                 <dd>
-                  <Money amount={receiptTotals.D} />
+                  <Money amount={receiptTotals.net} />
                 </dd>
               </div>
             </dl>
@@ -1273,13 +1294,15 @@ export const LabFinance = observer(function LabFinance({
                   cell: (row) =>
                     row.can_manage && !row.reversed ? (
                       <div className="flex flex-wrap gap-1">
-                        <Button
-                          size="sm"
-                          variant="neutral-primary"
-                          onClick={() => open("risk-release", { batch_id: row.id })}
-                        >
-                          释放原批次风险金
-                        </Button>
+                        {Number(row.risk_remaining) > 0 && (
+                          <Button
+                            size="sm"
+                            variant="neutral-primary"
+                            onClick={() => open("risk-release", { batch_id: row.id })}
+                          >
+                            释放原批次风险金
+                          </Button>
+                        )}
                         {row.kind !== "opening" && (
                           <Button
                             size="sm"

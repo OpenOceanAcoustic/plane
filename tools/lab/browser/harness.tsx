@@ -2,7 +2,7 @@
  * Copyright (c) 2026 OpenOceanAcoustic and contributors
  * SPDX-License-Identifier: AGPL-3.0-only
  */
-import { StrictMode, useEffect, useMemo, useState } from "react";
+import { StrictMode, useCallback, useEffect, useMemo, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { observer } from "mobx-react";
 import { MemoryRouter, Route, Routes } from "react-router";
@@ -10,6 +10,7 @@ import { Toast } from "@plane/propel/toast";
 import { LabAuth } from "../../../packages/ui/src/lab-auth";
 import { LabStore } from "../../../packages/shared-state/src/lab.store";
 import { LabPlannerBoard } from "../../../apps/web/core/components/lab/planner";
+import { LabAgentChat } from "../../../apps/web/core/components/lab/agent-chat";
 import { LabCalendar } from "../../../apps/web/core/components/lab/calendar";
 import { LabCategoryManager } from "../../../apps/web/core/components/lab/categories";
 import { LabPanel } from "../../../apps/web/core/components/lab/panel";
@@ -18,7 +19,8 @@ import { LabContributions } from "../../../apps/web/core/components/lab/contribu
 import { FinancePermissionDialog as WebFinancePermissionDialog } from "../../../apps/web/core/components/lab/finance-permissions";
 import { FinancePermissionDialog as MobileFinancePermissionDialog } from "../../../apps/mobile/src/features/lab/finance-permissions";
 import type { LabStore as MobileLabStore } from "../../../apps/mobile/src/features/lab/transport";
-import type { LabItem } from "@plane/types";
+import type { LabItem, LabFinanceOverview } from "@plane/types";
+import { LabFinanceActionDialog } from "../../../apps/web/core/components/lab/finance-form";
 import { Planner as MobilePlanner } from "../../../apps/mobile/src/features/lab/planner";
 import { LabPlanningVisibilityFields } from "../../../packages/ui/src/lab-planning-visibility";
 import { MobileSelect } from "../../../apps/mobile/src/components/select";
@@ -75,13 +77,13 @@ const Planning = observer(function Planning() {
     void store.execute(store.loadPlanner);
   }, [store]);
   return (
-    <>
+    <MemoryRouter>
       {store.error && <p role="alert">{store.error}</p>}
       {store.notice && <p role="status">{store.notice}</p>}
       <LabCategoryManager store={store} />
       <LabPlannerBoard store={store} schedule={setScheduled} />
       <LabCalendar store={store} scheduled={scheduled} clearScheduled={() => setScheduled(undefined)} />
-    </>
+    </MemoryRouter>
   );
 });
 function FinancePermissions({ mobile = false }: { mobile?: boolean }) {
@@ -114,6 +116,33 @@ function FinancePermissions({ mobile = false }: { mobile?: boolean }) {
     <WebFinancePermissionDialog store={store} projectId="project-1" onClose={() => setClosed(true)} onSaved={onSaved} />
   );
 }
+const ReceiptForm = observer(function ReceiptForm() {
+  const store = useMemo(() => new LabStore("", "lab"), []);
+  const [data, setData] = useState<LabFinanceOverview>();
+  const [closed, setClosed] = useState(false);
+  const reload = useCallback(async () => {
+    await Promise.all([store.loadMarket(), store.request<LabFinanceOverview>("finance/overview/").then(setData)]);
+  }, [store]);
+  useEffect(() => {
+    void reload();
+  }, [reload]);
+  if (closed) return <p>入账已保存</p>;
+  if (!data) return null;
+  return (
+    <LabFinanceActionDialog
+      store={store}
+      data={data}
+      projectId={new URLSearchParams(window.location.search).get("scope") === "all" ? "" : "project-a"}
+      chosen={
+        new URLSearchParams(window.location.search).get("form") === "allocation"
+          ? { action: "stage-allocation", body: { from_account_id: "project-cash" } }
+          : { action: "receipt", body: { gross: "1000.00", source: "自筹资金", stage_id: "stale-ai-stage" } }
+      }
+      onClose={() => setClosed(true)}
+      onSaved={reload}
+    />
+  );
+});
 const path = window.location.pathname;
 function Workbench({ section = "planner" }: { section?: "planner" | "team" }) {
   return (
@@ -166,10 +195,22 @@ function Contributions() {
     </MemoryRouter>
   );
 }
+function AgentChat() {
+  const store = useMemo(() => new LabStore("", "lab"), []);
+  return (
+    <MemoryRouter>
+      <LabAgentChat store={store} workspaceSlug="lab" fullPage />
+    </MemoryRouter>
+  );
+}
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <Toast theme="light" />
-    {path === "/finance-permissions" || path === "/mobile-finance-permissions" ? (
+    {path === "/receipt-form" ? (
+      <ReceiptForm />
+    ) : path === "/agent-chat" ? (
+      <AgentChat />
+    ) : path === "/finance-permissions" || path === "/mobile-finance-permissions" ? (
       <FinancePermissions mobile={path.startsWith("/mobile")} />
     ) : path === "/contributions" ? (
       <Contributions />

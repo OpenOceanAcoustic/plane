@@ -25,6 +25,10 @@ const built = await build({
     "react-dom": dirname(webRequire.resolve("react-dom")),
     "mobx-react": webRequire.resolve("mobx-react"),
     "react-router": webRequire.resolve("react-router"),
+    // Match the compatibility aliases used by apps/web/vite.config.ts.
+    "next/navigation": fileURLToPath(new URL("../../../apps/web/app/compat/next/navigation.ts", import.meta.url)),
+    "next/link": fileURLToPath(new URL("../../../apps/web/app/compat/next/link.tsx", import.meta.url)),
+    "next/script": fileURLToPath(new URL("../../../apps/web/app/compat/next/script.tsx", import.meta.url)),
     "@plane/propel/toast": fileURLToPath(new URL("../../../packages/propel/src/toast/index.ts", import.meta.url)),
     "@plane/ui": fileURLToPath(new URL("ui-entry.ts", import.meta.url)),
   },

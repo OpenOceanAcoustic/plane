@@ -56,6 +56,13 @@ def access_level(user, bounty):
     raise NotFound("悬赏不可访问")
 
 
+def visible_allocations(user, bounty, *, level=None):
+    """Use the same team projection for native detail pages and AI readers."""
+    level = access_level(user, bounty) if level is None else level
+    participants = list(bounty.allocations.all())
+    return [row for row in participants if row.user_id == user.id] if level == "public" else participants
+
+
 def accessible_bounties(user, workspace):
     projects = collaboration_projects(user, workspace)
     grants = BountyTaskAccess.objects.filter(

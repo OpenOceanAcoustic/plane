@@ -2,14 +2,66 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router";
 import useSWR from "swr";
-import { ArrowRight, Bot, Send, Sparkles, X } from "lucide-react";
+import { observer } from "mobx-react";
+import { Bot, Send, Sparkles, X } from "lucide-react";
 import type { LabFinanceOverview } from "@plane/types";
 import type { LabStore } from "@plane/shared-state";
 import { Button, labInputClass } from "@plane/ui";
 // oxlint-disable-next-line import/no-unassigned-import -- AI drawer styles
 import "./agent-chat.css";
 
-type ChatDraft =
+const ACTION_TITLES: Record<string, string> = {
+  approved: "批准草稿",
+  rejected: "驳回草稿",
+  annotate: "批注草稿",
+  bounty_create: "发布悬赏草稿",
+  bounty_claim: "领取悬赏草稿",
+  bounty_submit: "提交成果草稿",
+  bounty_accept: "验收悬赏草稿",
+  bounty_pay: "发放悬赏草稿",
+  bounty_quote: "报价草稿",
+  bounty_quote_review: "报价审批草稿",
+  bounty_team: "团队悬赏草稿",
+  proposal_create: "提案草稿",
+  issue_assign: "指派工作项草稿",
+  issue_transition: "工作项状态草稿",
+  batch_approval: "批量审批草稿",
+};
+const STATE_LABELS: Record<string, string> = {
+  draft: "草稿",
+  open: "已发布",
+  claimed: "已领取",
+  submitted: "待验收",
+  accepted: "已验收",
+  paid: "已发放",
+  active: "进行中",
+  review: "待验收",
+  done: "已完成",
+  approved: "已通过",
+  rejected: "已驳回",
+  executed: "已执行",
+  cancelled: "已取消",
+};
+
+const ACTION_BUTTONS: Record<string, string> = {
+  approved: "批准",
+  rejected: "驳回",
+  annotate: "批注",
+  bounty_create: "发布",
+  bounty_claim: "领取",
+  bounty_submit: "提交",
+  bounty_accept: "验收",
+  bounty_pay: "发放",
+  bounty_quote: "报价",
+  bounty_quote_review: "审批报价",
+  bounty_team: "执行",
+  proposal_create: "提交",
+  issue_assign: "指派",
+  issue_transition: "推进",
+  batch_approval: "审批",
+};
+
+type ChatDraft = (
   | {
       kind: "time";
       project_id: string;
@@ -26,7 +78,7 @@ type ChatDraft =
   | { kind: "receipt"; gross: string; tax: string; management_fee: string; source: string; stage_id: string }
   | { kind: "payroll"; user_id: string; user_name: string; start: string; end: string }
   | { kind: "quality"; title: string; description: string }
-  | { kind: "participation"; action: string; user_id: string; user_name: string; note: string }
+  | { kind: "participation"; action: string; user_id: string; user_name: string; email: string; note: string }
   | {
       kind: "project_issue";
       title: string;
@@ -40,7 +92,22 @@ type ChatDraft =
   | {
       kind: "action";
       action_id: string;
-      action: "approved" | "rejected" | "annotate";
+      action:
+        | "approved"
+        | "rejected"
+        | "annotate"
+        | "bounty_create"
+        | "bounty_claim"
+        | "bounty_submit"
+        | "bounty_accept"
+        | "bounty_pay"
+        | "bounty_quote"
+        | "bounty_quote_review"
+        | "bounty_team"
+        | "proposal_create"
+        | "issue_assign"
+        | "issue_transition"
+        | "batch_approval";
       record: {
         id: string;
         date: string;
@@ -89,18 +156,34 @@ type ChatDraft =
       }[];
       risks: string[];
       assumptions: string[];
-    };
+    }
+  | {
+      kind: "payment";
+      project_id: string;
+      kind_label: "cost" | "payroll";
+      amount: string;
+      records: { id: string; version: number; user_name: string; work: string; amount: string }[];
+    }
+) & { project_id?: string; execution?: { status: string; executed_at: string } };
 
 type ChatResponse = {
   intent: "time_entry" | "work_item" | "query" | "needs_input" | "unsupported" | "tool";
   tool?: "brief" | "retro" | "quality" | "team" | "knowledge" | "finance" | "";
   tool_args?: { period?: string; query?: string };
+  tools_used?: string[];
   reply: string;
   question: string;
   draft: ChatDraft | null;
   provider: string;
   model: string;
   thread_id?: string;
+  message_id?: string;
+  project_id?: string | null;
+};
+
+type AgentToolUsage = {
+  count: number;
+  items: { message_id: string; thread_id: string; tools: string[]; intent: string; created_at: string }[];
 };
 
 type AgentThread = {
@@ -253,6 +336,7 @@ type AgentThreadDetail = AgentThread & {
 };
 
 type ChatMessage = {
+  projectId?: string;
   id: string;
   role: "user" | "assistant";
   text: string;
@@ -269,19 +353,27 @@ type ChatMessage = {
   proposal?: AgentProposal;
   leadRequest?: AgentLeadRequest;
   proposals?: AgentProposal[];
+  tools?: string[];
 };
 
 const welcome: ChatMessage = {
   id: "welcome",
   role: "assistant",
-  text: "你好，我可以帮你登记工时、记录工作项、查当前项目可用资金。发工资、入账、审批和权限变更会在第二批接入；现在这些请走对应表单。",
+  text: "你好，我可以帮你登记工时、推进工作项状态、发布/指派工作项、查资金和悬赏、审批、发工资、邀请成员。高风险动作都会先给草稿，确认后执行。",
 };
 
 const newId = () => `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
 function storedMessage(item: AgentThreadDetail["messages"][number]): ChatMessage {
-  const draft = item.draft as { kind?: string; data?: unknown } | null | undefined;
-  const base: ChatMessage = { id: item.id, role: item.role, text: item.content };
+  const draft = item.draft as { kind?: string; data?: unknown; project_id?: string } | null | undefined;
+  const base: ChatMessage = {
+    id: item.id,
+    projectId: draft?.project_id,
+    question: item.intent === "needs_input" ? item.content : undefined,
+    role: item.role,
+    text: item.content,
+    tools: (item as { tools?: string[] }).tools ?? [],
+  };
   if (draft?.kind && "data" in draft) {
     switch (draft.kind) {
       case "brief":
@@ -346,7 +438,7 @@ function ProposalCard({
   );
 }
 
-export function LabAgentChat({
+export const LabAgentChat = observer(function LabAgentChat({
   store,
   workspaceSlug,
   fullPage = false,
@@ -362,6 +454,14 @@ export function LabAgentChat({
   const [expanded, setExpanded] = useState(false);
   const [dockLeft, setDockLeft] = useState(false);
   const [executingAction, setExecutingAction] = useState("");
+  const [timeRates, setTimeRates] = useState<Record<string, string>>({});
+  const [confirmingDraft, setConfirmingDraft] = useState("");
+  const confirmationPending = useRef(false);
+  const [inviteBusy, setInviteBusy] = useState("");
+  const [inviteDone, setInviteDone] = useState<Set<string>>(new Set());
+  const [toolUsage, setToolUsage] = useState<AgentToolUsage | null>(null);
+  const [toolUsageLoading, setToolUsageLoading] = useState(false);
+  const [executedActions, setExecutedActions] = useState<Set<string>>(new Set());
   const [projectId, setProjectId] = useState(projects[0]?.id ?? "");
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
@@ -370,6 +470,9 @@ export function LabAgentChat({
   const [importingPlan, setImportingPlan] = useState(false);
   const [messages, setMessages] = useState<ChatMessage[]>([welcome]);
   const [threadId, setThreadId] = useState("");
+  const threadRef = useRef("");
+  const historyGeneration = useRef(0);
+  const [loadingThread, setLoadingThread] = useState(true);
   const [threads, setThreads] = useState<AgentThread[]>([]);
   const [reminders, setReminders] = useState<AgentReminder[]>([]);
   const [showReminders, setShowReminders] = useState(false);
@@ -380,6 +483,19 @@ export function LabAgentChat({
   const [reviewingLead, setReviewingLead] = useState("");
   const bottom = useRef<HTMLDivElement>(null);
   const loadedThreads = useRef(false);
+  const interactionBusy =
+    busy ||
+    loadingThread ||
+    !!confirmingDraft ||
+    !!executingAction ||
+    !!inviteBusy ||
+    creating ||
+    publishing ||
+    importingPlan ||
+    !!reviewingLead ||
+    !!reviewingProposal ||
+    !!publishingSuggestion ||
+    !!publishingMeetingTask;
   const { data: finance, error: financeError } = useSWR(
     ["lab-agent-finance", store.slug, projectId, open],
     () => (open && projectId ? store.request<LabFinanceOverview>(`finance/overview/?project_id=${projectId}`) : null),
@@ -432,32 +548,56 @@ export function LabAgentChat({
     setReminders(rows);
   }, [projectId, store]);
 
+  async function ensureThread() {
+    if (threadRef.current) return threadRef.current;
+    const row = await store.request<AgentThread>("agent/threads/", "POST", { project_id: projectId || undefined });
+    threadRef.current = row.id;
+    setThreadId(row.id);
+    void refreshThreads().catch(() => undefined);
+    return row.id;
+  }
+
   async function persistSpecial(content: string, draft: Record<string, unknown>) {
-    if (!threadId) return;
     try {
-      await store.request("agent/messages/", "POST", { thread_id: threadId, content, draft });
+      const id = await ensureThread();
+      await store.request("agent/messages/", "POST", { thread_id: id, project_id: projectId || null, content, draft });
     } catch {
-      // Persistence should not block the card the user just requested.
+      setMessages((current) => [
+        ...current,
+        { id: newId(), projectId, role: "assistant", text: "此卡片未保存到会话，请稍后重试。" },
+      ]);
     }
   }
 
   const loadThread = useCallback(
     async (id: string) => {
+      const generation = ++historyGeneration.current;
+      setLoadingThread(!!id);
       if (!id) {
+        threadRef.current = "";
         setThreadId("");
         setMessages([welcome]);
         return;
       }
       try {
         const detail = await store.request<AgentThreadDetail>(`agent/threads/${id}/`);
+        if (generation !== historyGeneration.current) return;
+        threadRef.current = id;
         setThreadId(id);
-        if (detail.project_id) setProjectId(detail.project_id);
+        setProjectId(detail.project_id ?? "");
         setMessages(detail.messages.length ? detail.messages.map(storedMessage) : [welcome]);
       } catch (problem) {
+        if (generation !== historyGeneration.current) return;
         setMessages((current) => [
           ...current,
-          { id: newId(), role: "assistant", text: problem instanceof Error ? problem.message : "读取会话失败" },
+          {
+            id: newId(),
+            role: "assistant",
+            text: problem instanceof Error ? problem.message : "读取会话失败",
+          },
         ]);
+      } finally {
+        if (generation === historyGeneration.current) setLoadingThread(false);
       }
     },
     [store]
@@ -477,6 +617,8 @@ export function LabAgentChat({
         if (rows[0]) await loadThread(rows[0].id);
       } catch {
         // A failed history load should not block a new chat.
+      } finally {
+        setLoadingThread(false);
       }
     })();
   }, [open, loadThread, refreshThreads]);
@@ -510,12 +652,22 @@ export function LabAgentChat({
       await refreshReminders();
       setMessages((current) => [
         ...current,
-        { id: newId(), role: "assistant", text: "提醒设置已保存。到点后会在「项目提醒」会话里生成只读简报。" },
+        {
+          id: newId(),
+          projectId,
+          role: "assistant",
+          text: "提醒设置已保存。到点后会在「项目提醒」会话里生成只读简报。",
+        },
       ]);
     } catch (problem) {
       setMessages((current) => [
         ...current,
-        { id: newId(), role: "assistant", text: problem instanceof Error ? problem.message : "保存提醒失败" },
+        {
+          id: newId(),
+          projectId,
+          role: "assistant",
+          text: problem instanceof Error ? problem.message : "保存提醒失败",
+        },
       ]);
     } finally {
       setSavingReminders(false);
@@ -524,9 +676,9 @@ export function LabAgentChat({
 
   async function send(text = input) {
     const message = text.trim();
-    if (!message || busy) return;
+    if (!message || interactionBusy) return;
     setInput("");
-    setMessages((current) => [...current, { id: newId(), role: "user", text: message }]);
+    setMessages((current) => [...current, { id: newId(), projectId, role: "user", text: message }]);
     const proposalMatch = message.match(/^提案[：:]\s*([\s\S]*)$/);
     if (proposalMatch) {
       await submitProposal(proposalMatch[1] || "");
@@ -551,9 +703,11 @@ export function LabAgentChat({
         context,
       });
       if (response.thread_id) {
+        threadRef.current = response.thread_id;
         setThreadId(response.thread_id);
-        void refreshThreads();
+        void refreshThreads().catch(() => undefined);
       }
+      if (response.project_id) setProjectId(response.project_id);
       if (response.tool === "brief") {
         await loadBrief(response.tool_args?.period === "weekly" ? "weekly" : "daily");
         return;
@@ -581,32 +735,111 @@ export function LabAgentChat({
       setMessages((current) => [
         ...current,
         {
-          id: newId(),
+          id: response.message_id || newId(),
+          projectId: response.project_id || projectId,
           role: "assistant",
           text: response.reply || response.question || "我没有生成结果。",
           draft: response.draft ?? undefined,
           question: response.intent === "needs_input" ? response.question : undefined,
+          tools: response.tools_used ?? [],
         },
       ]);
     } catch (problem) {
       setMessages((current) => [
         ...current,
-        { id: newId(), role: "assistant", text: problem instanceof Error ? problem.message : "AI 请求失败" },
+        { id: newId(), projectId, role: "assistant", text: problem instanceof Error ? problem.message : "AI 请求失败" },
       ]);
     } finally {
       setBusy(false);
     }
   }
 
-  function openTimeDraft(draft: Extract<ChatDraft, { kind: "time" }>) {
-    const encoded = encodeURIComponent(JSON.stringify(draft));
-    navigate(
-      `/${workspaceSlug}/lab/finance?finance_view=cost&project_id=${encodeURIComponent(draft.project_id)}&ai_time=${encoded}`
-    );
-    setOpen(false);
+  async function confirmDraft(message: ChatMessage) {
+    const draft = message.draft;
+    if (
+      !draft ||
+      !["time", "payroll", "payment"].includes(draft.kind) ||
+      confirmationPending.current ||
+      draft.execution?.status === "executed"
+    )
+      return;
+    if (draft.kind === "time" && !(draft.rate || timeRates[message.id] || "").trim()) return;
+    confirmationPending.current = true;
+    setConfirmingDraft(message.id);
+    try {
+      const result = await store.request<{ draft: ChatDraft }>(
+        `agent/messages/${message.id}/confirm/`,
+        "POST",
+        draft.kind === "time" ? { rate: draft.rate || timeRates[message.id] || "" } : {}
+      );
+      setMessages((current) => [
+        ...current.map((item) => (item.id === message.id ? { ...item, draft: result.draft } : item)),
+        {
+          id: newId(),
+          projectId,
+          role: "assistant",
+          text: draft.kind === "time" ? "工时已登记。" : draft.kind === "payroll" ? "工资单已生成。" : "支付已登记。",
+        },
+      ]);
+    } catch (problem) {
+      setMessages((current) => [
+        ...current,
+        {
+          id: newId(),
+          projectId,
+          role: "assistant",
+          text: problem instanceof Error ? problem.message : "确认失败，请重试",
+        },
+      ]);
+    } finally {
+      confirmationPending.current = false;
+      setConfirmingDraft("");
+    }
+  }
+
+  function isCurrentDraftProject(id: string | undefined) {
+    if (id && id === projectId) return true;
+    setMessages((current) => [
+      ...current,
+      { id: newId(), role: "assistant", text: id ? "请切换到草稿所属项目后确认。" : "旧草稿缺少项目，请重新生成。" },
+    ]);
+    return false;
+  }
+
+  async function sendInvite(draft: Extract<ChatDraft, { kind: "participation" }>) {
+    if (!isCurrentDraftProject(draft.project_id)) return;
+    if (!draft.email || inviteBusy) return;
+    setInviteBusy(draft.email);
+    try {
+      const invitation = await store.request<{ url: string }>("invitations/", "POST", { project_id: projectId });
+      const link = `${window.location.origin}${invitation.url}`;
+      setInviteDone((current) => new Set(current).add(draft.email));
+      setMessages((current) => [
+        ...current,
+        {
+          id: newId(),
+          projectId,
+          role: "assistant",
+          text: `已生成一次性邀请链接（24 小时有效），发给 ${draft.user_name || draft.email}：${link}`,
+        },
+      ]);
+    } catch (problem) {
+      setMessages((current) => [
+        ...current,
+        {
+          id: newId(),
+          projectId,
+          role: "assistant",
+          text: problem instanceof Error ? problem.message : "邀请发送失败",
+        },
+      ]);
+    } finally {
+      setInviteBusy("");
+    }
   }
 
   function openFinanceDraft(kind: "receipt" | "payroll", draft: ChatDraft) {
+    if (!isCurrentDraftProject(draft.project_id)) return;
     const encoded = encodeURIComponent(JSON.stringify(draft));
     const view = kind === "receipt" ? "income" : "payroll";
     navigate(
@@ -617,13 +850,27 @@ export function LabAgentChat({
 
   async function executeAction(draft: Extract<ChatDraft, { kind: "action" }>) {
     if (executingAction) return;
-    const label = draft.action === "approved" ? "批准" : draft.action === "rejected" ? "驳回" : "批注";
-    if (
-      !window.confirm(
-        `确认${label}这条工时？\n${draft.record.date} ${draft.record.user_name} ${draft.record.hours}小时`
-      )
-    )
-      return;
+    const labels: Record<string, string> = {
+      approved: "批准",
+      rejected: "驳回",
+      annotate: "批注",
+      bounty_create: "发布悬赏",
+      bounty_claim: "领取悬赏",
+      bounty_submit: "提交成果",
+      bounty_accept: "验收悬赏",
+      bounty_pay: "发放悬赏",
+      bounty_quote: "提交报价",
+      bounty_quote_review: "审批报价",
+      bounty_team: "团队悬赏",
+      proposal_create: "提交提案",
+      batch_approval: "批量审批",
+    };
+    const label = labels[draft.action] ?? "执行";
+    const isBounty = draft.action.startsWith("bounty_");
+    const target = isBounty
+      ? `「${draft.record.work}」金额 ${draft.record.amount}`
+      : `${draft.record.date} ${draft.record.user_name} ${draft.record.hours}小时`;
+    if (!window.confirm(`确认${label}${target}？`)) return;
     setExecutingAction(draft.action_id);
     try {
       const result = await store.request<{ status: string; result: Record<string, unknown> }>(
@@ -631,18 +878,31 @@ export function LabAgentChat({
         "POST",
         {}
       );
+      const nextState = String(result.result?.state ?? result.result?.status ?? "executed");
+      setExecutedActions((current) => new Set(current).add(draft.action_id));
       setMessages((current) => [
-        ...current,
+        ...current.map((message) =>
+          message.draft?.kind === "action" && message.draft.action_id === draft.action_id
+            ? {
+                ...message,
+                draft: {
+                  ...message.draft,
+                  record: { ...message.draft.record, state: nextState },
+                },
+              }
+            : message
+        ),
         {
           id: newId(),
+          projectId,
           role: "assistant",
-          text: `${label}已执行，记录状态：${String(result.result?.state ?? "已处理")}`,
+          text: `${label}已执行，记录状态：${STATE_LABELS[nextState] ?? nextState}`,
         },
       ]);
     } catch (problem) {
       setMessages((current) => [
         ...current,
-        { id: newId(), role: "assistant", text: problem instanceof Error ? problem.message : "执行失败" },
+        { id: newId(), projectId, role: "assistant", text: problem instanceof Error ? problem.message : "执行失败" },
       ]);
     } finally {
       setExecutingAction("");
@@ -650,6 +910,7 @@ export function LabAgentChat({
   }
 
   async function submitLeadRequest(draft: Extract<ChatDraft, { kind: "project_lead" }>) {
+    if (!isCurrentDraftProject(draft.project_id)) return;
     if (reviewingLead) return;
     setReviewingLead("submit");
     try {
@@ -662,6 +923,7 @@ export function LabAgentChat({
         ...current,
         {
           id: newId(),
+          projectId,
           role: "assistant",
           text: "项目负责人变更已提交，等待项目管理员审核。",
           leadRequest: request,
@@ -670,7 +932,12 @@ export function LabAgentChat({
     } catch (problem) {
       setMessages((current) => [
         ...current,
-        { id: newId(), role: "assistant", text: problem instanceof Error ? problem.message : "提交负责人变更失败" },
+        {
+          id: newId(),
+          projectId,
+          role: "assistant",
+          text: problem instanceof Error ? problem.message : "提交负责人变更失败",
+        },
       ]);
     } finally {
       setReviewingLead("");
@@ -692,7 +959,12 @@ export function LabAgentChat({
     } catch (problem) {
       setMessages((current) => [
         ...current,
-        { id: newId(), role: "assistant", text: problem instanceof Error ? problem.message : "审核负责人变更失败" },
+        {
+          id: newId(),
+          projectId,
+          role: "assistant",
+          text: problem instanceof Error ? problem.message : "审核负责人变更失败",
+        },
       ]);
     } finally {
       setReviewingLead("");
@@ -701,12 +973,18 @@ export function LabAgentChat({
 
   async function submitProposal(text: string) {
     if (!projectId) {
-      setMessages((current) => [...current, { id: newId(), role: "assistant", text: "请先选择项目，再提交提案。" }]);
+      setMessages((current) => [
+        ...current,
+        { id: newId(), projectId, role: "assistant", text: "请先选择项目，再提交提案。" },
+      ]);
       return;
     }
     const raw = text.replace(/^提案[：:]\s*/, "").trim();
     if (!raw) {
-      setMessages((current) => [...current, { id: newId(), role: "assistant", text: "请写成：提案：标题 | 说明" }]);
+      setMessages((current) => [
+        ...current,
+        { id: newId(), projectId, role: "assistant", text: "请写成：提案：标题 | 说明" },
+      ]);
       return;
     }
     const [title, ...rest] = raw.split("|");
@@ -722,25 +1000,54 @@ export function LabAgentChat({
         ...current,
         {
           id: newId(),
+          projectId,
           role: "assistant",
           text: "提案已提交三结合评审。需要负责人、成员、技术/财务三方分别确认。",
           proposal,
         },
       ]);
-      void persistSpecial("已提交三结合评审", { kind: "proposal", data: proposal });
+      await persistSpecial("已提交三结合评审", { kind: "proposal", data: proposal });
     } catch (problem) {
       setMessages((current) => [
         ...current,
-        { id: newId(), role: "assistant", text: problem instanceof Error ? problem.message : "提交提案失败" },
+        {
+          id: newId(),
+          projectId,
+          role: "assistant",
+          text: problem instanceof Error ? problem.message : "提交提案失败",
+        },
       ]);
     } finally {
       setBusy(false);
     }
   }
 
+  async function loadToolUsage() {
+    setToolUsageLoading(true);
+    try {
+      const data = await store.request<AgentToolUsage>("agent/tool-usage/", "GET");
+      setToolUsage(data);
+    } catch (problem) {
+      setMessages((current) => [
+        ...current,
+        {
+          id: newId(),
+          projectId,
+          role: "assistant",
+          text: problem instanceof Error ? problem.message : "工具审计加载失败",
+        },
+      ]);
+    } finally {
+      setToolUsageLoading(false);
+    }
+  }
+
   async function loadProposals() {
     if (!projectId) {
-      setMessages((current) => [...current, { id: newId(), role: "assistant", text: "请先选择项目，再查看评审。" }]);
+      setMessages((current) => [
+        ...current,
+        { id: newId(), projectId, role: "assistant", text: "请先选择项目，再查看评审。" },
+      ]);
       return;
     }
     setBusy(true);
@@ -752,16 +1059,22 @@ export function LabAgentChat({
         ...current,
         {
           id: newId(),
+          projectId,
           role: "assistant",
           text: `当前项目有 ${proposals.length} 条提案。`,
           proposals,
         },
       ]);
-      void persistSpecial(`当前项目有 ${proposals.length} 条提案`, { kind: "proposals", data: proposals });
+      await persistSpecial(`当前项目有 ${proposals.length} 条提案`, { kind: "proposals", data: proposals });
     } catch (problem) {
       setMessages((current) => [
         ...current,
-        { id: newId(), role: "assistant", text: problem instanceof Error ? problem.message : "读取评审失败" },
+        {
+          id: newId(),
+          projectId,
+          role: "assistant",
+          text: problem instanceof Error ? problem.message : "读取评审失败",
+        },
       ]);
     } finally {
       setBusy(false);
@@ -785,11 +1098,11 @@ export function LabAgentChat({
           return message;
         })
       );
-      void persistSpecial("提案状态已更新", { kind: "proposal", data: updated });
+      await persistSpecial("提案状态已更新", { kind: "proposal", data: updated });
     } catch (problem) {
       setMessages((current) => [
         ...current,
-        { id: newId(), role: "assistant", text: problem instanceof Error ? problem.message : "评审失败" },
+        { id: newId(), projectId, role: "assistant", text: problem instanceof Error ? problem.message : "评审失败" },
       ]);
     } finally {
       setReviewingProposal("");
@@ -800,14 +1113,14 @@ export function LabAgentChat({
     if (!projectId) {
       setMessages((current) => [
         ...current,
-        { id: newId(), role: "assistant", text: "请先选择项目，再整理会议纪要。" },
+        { id: newId(), projectId, role: "assistant", text: "请先选择项目，再整理会议纪要。" },
       ]);
       return;
     }
     if (text.trim().length < 10) {
       setMessages((current) => [
         ...current,
-        { id: newId(), role: "assistant", text: "请粘贴至少 10 个字的会议纪要。" },
+        { id: newId(), projectId, role: "assistant", text: "请粘贴至少 10 个字的会议纪要。" },
       ]);
       return;
     }
@@ -821,23 +1134,30 @@ export function LabAgentChat({
         ...current,
         {
           id: newId(),
+          projectId,
           role: "assistant",
           text: `会议纪要已整理：${meeting.decisions.length} 项决策，${meeting.tasks.length} 个任务，${meeting.risks.length} 个风险。`,
           meeting,
         },
       ]);
-      void persistSpecial(`会议纪要：${meeting.tasks.length} 个任务`, { kind: "meeting", data: meeting });
+      await persistSpecial(`会议纪要：${meeting.tasks.length} 个任务`, { kind: "meeting", data: meeting });
     } catch (problem) {
       setMessages((current) => [
         ...current,
-        { id: newId(), role: "assistant", text: problem instanceof Error ? problem.message : "整理会议纪要失败" },
+        {
+          id: newId(),
+          projectId,
+          role: "assistant",
+          text: problem instanceof Error ? problem.message : "整理会议纪要失败",
+        },
       ]);
     } finally {
       setBusy(false);
     }
   }
 
-  async function publishMeetingTask(task: AgentMeetingTask) {
+  async function publishMeetingTask(task: AgentMeetingTask, sourceProjectId?: string) {
+    if (!isCurrentDraftProject(sourceProjectId)) return;
     if (publishingMeetingTask) return;
     setPublishingMeetingTask(task.title);
     try {
@@ -859,6 +1179,7 @@ export function LabAgentChat({
         ...current,
         {
           id: newId(),
+          projectId,
           role: "assistant",
           text: `已从会议纪要创建工作项：${issue.title}（${issue.key}）`,
           link: { href: issue.url, label: "打开工作项" },
@@ -867,7 +1188,12 @@ export function LabAgentChat({
     } catch (problem) {
       setMessages((current) => [
         ...current,
-        { id: newId(), role: "assistant", text: problem instanceof Error ? problem.message : "创建会议任务失败" },
+        {
+          id: newId(),
+          projectId,
+          role: "assistant",
+          text: problem instanceof Error ? problem.message : "创建会议任务失败",
+        },
       ]);
     } finally {
       setPublishingMeetingTask("");
@@ -878,7 +1204,7 @@ export function LabAgentChat({
     if (!projectId) {
       setMessages((current) => [
         ...current,
-        { id: newId(), role: "assistant", text: "请先选择项目，再查看财务概览。" },
+        { id: newId(), projectId, role: "assistant", text: "请先选择项目，再查看财务概览。" },
       ]);
       return;
     }
@@ -891,6 +1217,7 @@ export function LabAgentChat({
         ...current,
         {
           id: newId(),
+          projectId,
           role: "assistant",
           text: financeData.can_view_finance
             ? `财务概览：预算 ¥${financeData.summary?.budget ?? "0"}，已发生 ¥${financeData.summary?.cost ?? "0"}，剩余 ¥${financeData.summary?.remaining ?? "0"}，异常 ${financeData.anomalies.length} 项。`
@@ -898,11 +1225,16 @@ export function LabAgentChat({
           finance: financeData,
         },
       ]);
-      void persistSpecial("财务概览", { kind: "finance", data: financeData });
+      await persistSpecial("财务概览", { kind: "finance", data: financeData });
     } catch (problem) {
       setMessages((current) => [
         ...current,
-        { id: newId(), role: "assistant", text: problem instanceof Error ? problem.message : "读取财务概览失败" },
+        {
+          id: newId(),
+          projectId,
+          role: "assistant",
+          text: problem instanceof Error ? problem.message : "读取财务概览失败",
+        },
       ]);
     } finally {
       setBusy(false);
@@ -913,14 +1245,14 @@ export function LabAgentChat({
     if (!projectId) {
       setMessages((current) => [
         ...current,
-        { id: newId(), role: "assistant", text: "请先选择项目，再查询项目知识库。" },
+        { id: newId(), projectId, role: "assistant", text: "请先选择项目，再查询项目知识库。" },
       ]);
       return;
     }
     if (query.trim().length < 2) {
       setMessages((current) => [
         ...current,
-        { id: newId(), role: "assistant", text: "请至少输入 2 个字，例如：查知识库：验收标准" },
+        { id: newId(), projectId, role: "assistant", text: "请至少输入 2 个字，例如：查知识库：验收标准" },
       ]);
       return;
     }
@@ -929,12 +1261,20 @@ export function LabAgentChat({
       const knowledge = await store.request<AgentKnowledge>(
         `agent/knowledge/?project_id=${encodeURIComponent(projectId)}&q=${encodeURIComponent(query.trim())}`
       );
-      setMessages((current) => [...current, { id: newId(), role: "assistant", text: knowledge.answer, knowledge }]);
-      void persistSpecial(knowledge.answer, { kind: "knowledge", data: knowledge });
+      setMessages((current) => [
+        ...current,
+        { id: newId(), projectId, role: "assistant", text: knowledge.answer, knowledge },
+      ]);
+      await persistSpecial(knowledge.answer, { kind: "knowledge", data: knowledge });
     } catch (problem) {
       setMessages((current) => [
         ...current,
-        { id: newId(), role: "assistant", text: problem instanceof Error ? problem.message : "查询知识库失败" },
+        {
+          id: newId(),
+          projectId,
+          role: "assistant",
+          text: problem instanceof Error ? problem.message : "查询知识库失败",
+        },
       ]);
     } finally {
       setBusy(false);
@@ -945,7 +1285,7 @@ export function LabAgentChat({
     if (!projectId) {
       setMessages((current) => [
         ...current,
-        { id: newId(), role: "assistant", text: "请先选择项目，再查看团队负载。" },
+        { id: newId(), projectId, role: "assistant", text: "请先选择项目，再查看团队负载。" },
       ]);
       return;
     }
@@ -956,16 +1296,22 @@ export function LabAgentChat({
         ...current,
         {
           id: newId(),
+          projectId,
           role: "assistant",
           text: `团队负载：平均 ${team.average_active} 个进行中，超载 ${team.overloaded.length} 人，无人负责 ${team.unassigned.length} 个。`,
           team,
         },
       ]);
-      void persistSpecial(`团队负载：平均 ${team.average_active}`, { kind: "team", data: team });
+      await persistSpecial(`团队负载：平均 ${team.average_active}`, { kind: "team", data: team });
     } catch (problem) {
       setMessages((current) => [
         ...current,
-        { id: newId(), role: "assistant", text: problem instanceof Error ? problem.message : "读取团队负载失败" },
+        {
+          id: newId(),
+          projectId,
+          role: "assistant",
+          text: problem instanceof Error ? problem.message : "读取团队负载失败",
+        },
       ]);
     } finally {
       setBusy(false);
@@ -976,7 +1322,7 @@ export function LabAgentChat({
     if (!projectId) {
       setMessages((current) => [
         ...current,
-        { id: newId(), role: "assistant", text: "请先选择项目，再查看质量反馈。" },
+        { id: newId(), projectId, role: "assistant", text: "请先选择项目，再查看质量反馈。" },
       ]);
       return;
     }
@@ -987,16 +1333,22 @@ export function LabAgentChat({
         ...current,
         {
           id: newId(),
+          projectId,
           role: "assistant",
           text: `质量反馈：缺失 ${quality.counts.missing}，失效 ${quality.counts.stale}，待审 ${quality.counts.pending}。`,
           quality,
         },
       ]);
-      void persistSpecial(`质量反馈：缺失 ${quality.counts.missing}`, { kind: "quality", data: quality });
+      await persistSpecial(`质量反馈：缺失 ${quality.counts.missing}`, { kind: "quality", data: quality });
     } catch (problem) {
       setMessages((current) => [
         ...current,
-        { id: newId(), role: "assistant", text: problem instanceof Error ? problem.message : "读取质量反馈失败" },
+        {
+          id: newId(),
+          projectId,
+          role: "assistant",
+          text: problem instanceof Error ? problem.message : "读取质量反馈失败",
+        },
       ]);
     } finally {
       setBusy(false);
@@ -1005,7 +1357,10 @@ export function LabAgentChat({
 
   async function loadRetro(period: "week" | "month") {
     if (!projectId) {
-      setMessages((current) => [...current, { id: newId(), role: "assistant", text: "请先选择项目，再查看复盘。" }]);
+      setMessages((current) => [
+        ...current,
+        { id: newId(), projectId, role: "assistant", text: "请先选择项目，再查看复盘。" },
+      ]);
       return;
     }
     setBusy(true);
@@ -1017,23 +1372,30 @@ export function LabAgentChat({
         ...current,
         {
           id: newId(),
+          projectId,
           role: "assistant",
           text: `${period === "week" ? "本周" : "本月"}复盘：完成 ${retro.counts.completed}，滚动 ${retro.counts.rolled}，逾期 ${retro.counts.overdue}。`,
           retro,
         },
       ]);
-      void persistSpecial(retro.period === "week" ? "本周复盘" : "本月复盘", { kind: "retro", data: retro });
+      await persistSpecial(retro.period === "week" ? "本周复盘" : "本月复盘", { kind: "retro", data: retro });
     } catch (problem) {
       setMessages((current) => [
         ...current,
-        { id: newId(), role: "assistant", text: problem instanceof Error ? problem.message : "读取复盘失败" },
+        {
+          id: newId(),
+          projectId,
+          role: "assistant",
+          text: problem instanceof Error ? problem.message : "读取复盘失败",
+        },
       ]);
     } finally {
       setBusy(false);
     }
   }
 
-  async function submitRetroProposal(suggestion: AgentRetroSuggestion) {
+  async function submitRetroProposal(suggestion: AgentRetroSuggestion, sourceProjectId?: string) {
+    if (!isCurrentDraftProject(sourceProjectId)) return;
     if (!projectId || reviewingProposal) return;
     setReviewingProposal(`retro-${suggestion.title}`);
     try {
@@ -1047,23 +1409,30 @@ export function LabAgentChat({
         ...current,
         {
           id: newId(),
+          projectId,
           role: "assistant",
           text: "已把复盘建议提交三结合评审，等待负责人、成员、技术/财务确认。",
           proposal,
         },
       ]);
-      void persistSpecial("已把复盘建议提交三结合评审", { kind: "proposal", data: proposal });
+      await persistSpecial("已把复盘建议提交三结合评审", { kind: "proposal", data: proposal });
     } catch (problem) {
       setMessages((current) => [
         ...current,
-        { id: newId(), role: "assistant", text: problem instanceof Error ? problem.message : "提交评审失败" },
+        {
+          id: newId(),
+          projectId,
+          role: "assistant",
+          text: problem instanceof Error ? problem.message : "提交评审失败",
+        },
       ]);
     } finally {
       setReviewingProposal("");
     }
   }
 
-  async function publishRetroSuggestion(suggestion: AgentRetroSuggestion) {
+  async function publishRetroSuggestion(suggestion: AgentRetroSuggestion, sourceProjectId?: string) {
+    if (!isCurrentDraftProject(sourceProjectId)) return;
     if (publishingSuggestion) return;
     setPublishingSuggestion(suggestion.title);
     try {
@@ -1083,6 +1452,7 @@ export function LabAgentChat({
         ...current,
         {
           id: newId(),
+          projectId,
           role: "assistant",
           text: `已从复盘建议创建工作项：${issue.title}（${issue.key}）`,
           link: { href: issue.url, label: "打开工作项" },
@@ -1091,7 +1461,12 @@ export function LabAgentChat({
     } catch (problem) {
       setMessages((current) => [
         ...current,
-        { id: newId(), role: "assistant", text: problem instanceof Error ? problem.message : "创建建议任务失败" },
+        {
+          id: newId(),
+          projectId,
+          role: "assistant",
+          text: problem instanceof Error ? problem.message : "创建建议任务失败",
+        },
       ]);
     } finally {
       setPublishingSuggestion("");
@@ -1102,7 +1477,7 @@ export function LabAgentChat({
     if (!projectId) {
       setMessages((current) => [
         ...current,
-        { id: newId(), role: "assistant", text: "请先选择项目，再查看执行简报。" },
+        { id: newId(), projectId, role: "assistant", text: "请先选择项目，再查看执行简报。" },
       ]);
       return;
     }
@@ -1111,12 +1486,17 @@ export function LabAgentChat({
       const brief = await store.request<AgentBrief>(
         `agent/brief/?project_id=${encodeURIComponent(projectId)}&period=${period}`
       );
-      setMessages((current) => [...current, { id: newId(), role: "assistant", text: brief.summary, brief }]);
-      void persistSpecial(brief.summary, { kind: "brief", data: brief });
+      setMessages((current) => [...current, { id: newId(), projectId, role: "assistant", text: brief.summary, brief }]);
+      await persistSpecial(brief.summary, { kind: "brief", data: brief });
     } catch (problem) {
       setMessages((current) => [
         ...current,
-        { id: newId(), role: "assistant", text: problem instanceof Error ? problem.message : "读取简报失败" },
+        {
+          id: newId(),
+          projectId,
+          role: "assistant",
+          text: problem instanceof Error ? problem.message : "读取简报失败",
+        },
       ]);
     } finally {
       setBusy(false);
@@ -1124,6 +1504,7 @@ export function LabAgentChat({
   }
 
   async function importProjectPlan(draft: Extract<ChatDraft, { kind: "project_plan" }>) {
+    if (!isCurrentDraftProject(draft.project_id)) return;
     if (importingPlan) return;
     setImportingPlan(true);
     try {
@@ -1145,6 +1526,7 @@ export function LabAgentChat({
         ...current,
         {
           id: newId(),
+          projectId,
           role: "assistant",
           text: `已导入项目计划：${result.stages.length} 个阶段、${result.count} 个任务。`,
           link: { href: `/${workspaceSlug}/lab/planning`, label: "打开项目规划" },
@@ -1154,7 +1536,12 @@ export function LabAgentChat({
     } catch (problem) {
       setMessages((current) => [
         ...current,
-        { id: newId(), role: "assistant", text: problem instanceof Error ? problem.message : "导入计划失败" },
+        {
+          id: newId(),
+          projectId,
+          role: "assistant",
+          text: problem instanceof Error ? problem.message : "导入计划失败",
+        },
       ]);
     } finally {
       setImportingPlan(false);
@@ -1162,6 +1549,7 @@ export function LabAgentChat({
   }
 
   async function publishProjectIssue(draft: Extract<ChatDraft, { kind: "project_issue" }>) {
+    if (!isCurrentDraftProject(draft.project_id)) return;
     if (publishing) return;
     setPublishing(true);
     try {
@@ -1183,6 +1571,7 @@ export function LabAgentChat({
         ...current,
         {
           id: newId(),
+          projectId,
           role: "assistant",
           text: `已发布项目工作项：${issue.title}（${issue.key}）`,
           link: { href: issue.url, label: "打开工作项" },
@@ -1192,7 +1581,7 @@ export function LabAgentChat({
     } catch (problem) {
       setMessages((current) => [
         ...current,
-        { id: newId(), role: "assistant", text: problem instanceof Error ? problem.message : "发布失败" },
+        { id: newId(), projectId, role: "assistant", text: problem instanceof Error ? problem.message : "发布失败" },
       ]);
     } finally {
       setPublishing(false);
@@ -1214,12 +1603,12 @@ export function LabAgentChat({
       await store.execute(store.loadPlanner);
       setMessages((current) => [
         ...current,
-        { id: newId(), role: "assistant", text: `已记录到个人规划：${draft.title}` },
+        { id: newId(), projectId, role: "assistant", text: `已记录到个人规划：${draft.title}` },
       ]);
     } catch (problem) {
       setMessages((current) => [
         ...current,
-        { id: newId(), role: "assistant", text: problem instanceof Error ? problem.message : "记录失败" },
+        { id: newId(), projectId, role: "assistant", text: problem instanceof Error ? problem.message : "记录失败" },
       ]);
     } finally {
       setCreating(false);
@@ -1277,6 +1666,15 @@ export function LabAgentChat({
             <button
               type="button"
               className="lab-agent-reminder-toggle"
+              aria-pressed={!!toolUsage}
+              disabled={toolUsageLoading}
+              onClick={() => void loadToolUsage()}
+            >
+              工具
+            </button>
+            <button
+              type="button"
+              className="lab-agent-reminder-toggle"
               aria-pressed={showReminders}
               onClick={() => setShowReminders((current) => !current)}
             >
@@ -1294,6 +1692,18 @@ export function LabAgentChat({
               <X size={17} />
             </button>
           </header>
+          {toolUsage && (
+            <div className="lab-agent-tool-audit">
+              <strong>最近工具调用（{toolUsage.count}）</strong>
+              <ul>
+                {toolUsage.items.slice(0, 8).map((item) => (
+                  <li key={item.message_id}>
+                    {item.tools.join("、")} · {item.intent}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
           {projects.length > 0 && (
             <label className="lab-agent-project">
               <span>项目</span>
@@ -1302,9 +1712,11 @@ export function LabAgentChat({
                 value={projectId}
                 onChange={(event) => {
                   setProjectId(event.target.value);
+                  threadRef.current = "";
                   setThreadId("");
                   setMessages([welcome]);
                 }}
+                disabled={interactionBusy}
                 aria-label="AI 项目"
               >
                 {projects.map((project) => (
@@ -1322,6 +1734,7 @@ export function LabAgentChat({
                 className={labInputClass}
                 value={threadId}
                 onChange={(event) => void loadThread(event.target.value)}
+                disabled={interactionBusy}
                 aria-label="历史会话"
               >
                 <option value="">新对话</option>
@@ -1332,7 +1745,7 @@ export function LabAgentChat({
                 ))}
               </select>
             </label>
-            <button type="button" onClick={() => void loadThread("")}>
+            <button type="button" disabled={interactionBusy} onClick={() => void loadThread("")}>
               新对话
             </button>
           </div>
@@ -1385,28 +1798,28 @@ export function LabAgentChat({
             ))}
           </div>
           <div className="lab-agent-chips" aria-label="执行简报">
-            <button type="button" onClick={() => void loadBrief("daily")}>
+            <button type="button" disabled={interactionBusy} onClick={() => void loadBrief("daily")}>
               今日简报
             </button>
-            <button type="button" onClick={() => void loadBrief("weekly")}>
+            <button type="button" disabled={interactionBusy} onClick={() => void loadBrief("weekly")}>
               本周简报
             </button>
-            <button type="button" onClick={() => void loadRetro("week")}>
+            <button type="button" disabled={interactionBusy} onClick={() => void loadRetro("week")}>
               本周复盘
             </button>
-            <button type="button" onClick={() => void loadRetro("month")}>
+            <button type="button" disabled={interactionBusy} onClick={() => void loadRetro("month")}>
               本月复盘
             </button>
-            <button type="button" onClick={() => void loadQuality()}>
+            <button type="button" disabled={interactionBusy} onClick={() => void loadQuality()}>
               质量检查
             </button>
-            <button type="button" onClick={() => void loadTeam()}>
+            <button type="button" disabled={interactionBusy} onClick={() => void loadTeam()}>
               团队负载
             </button>
             <button type="button" onClick={() => setInput("查知识库：")}>
               查知识库
             </button>
-            <button type="button" onClick={() => void loadFinance()}>
+            <button type="button" disabled={interactionBusy} onClick={() => void loadFinance()}>
               财务概览
             </button>
             <button type="button" onClick={() => setInput("会议纪要：")}>
@@ -1415,7 +1828,7 @@ export function LabAgentChat({
             <button type="button" onClick={() => setInput("提案：")}>
               提交提案
             </button>
-            <button type="button" onClick={() => void loadProposals()}>
+            <button type="button" disabled={interactionBusy} onClick={() => void loadProposals()}>
               评审列表
             </button>
           </div>
@@ -1423,6 +1836,9 @@ export function LabAgentChat({
             {messages.map((message) => (
               <div key={message.id} className="lab-agent-message" data-role={message.role}>
                 <p>{message.text}</p>
+                {!!message.tools?.length && (
+                  <small className="lab-agent-tools-used">工具：{message.tools.join("、")}</small>
+                )}
                 {message.link && (
                   <a className="lab-agent-link" href={message.link.href}>
                     {message.link.label} →
@@ -1488,36 +1904,41 @@ export function LabAgentChat({
                 {message.draft?.kind === "action" && (
                   <div className="lab-agent-action">
                     <strong>
-                      {message.draft.action === "approved"
-                        ? "批准草稿"
-                        : message.draft.action === "rejected"
-                          ? "驳回草稿"
-                          : "批注草稿"}
+                      {ACTION_TITLES[message.draft.action] ?? "动作草稿"}
+                      {executedActions.has(message.draft.action_id) ? "（已执行）" : ""}
                     </strong>
                     <dl>
-                      <div>
-                        <dt>日期</dt>
-                        <dd>{message.draft.record.date}</dd>
-                      </div>
-                      <div>
-                        <dt>成员</dt>
-                        <dd>{message.draft.record.user_name}</dd>
-                      </div>
+                      {message.draft.record.date && (
+                        <div>
+                          <dt>日期</dt>
+                          <dd>{message.draft.record.date}</dd>
+                        </div>
+                      )}
+                      {message.draft.record.user_name && (
+                        <div>
+                          <dt>成员</dt>
+                          <dd>{message.draft.record.user_name}</dd>
+                        </div>
+                      )}
                       <div>
                         <dt>工作</dt>
                         <dd>{message.draft.record.work}</dd>
                       </div>
-                      <div>
-                        <dt>工时</dt>
-                        <dd>{message.draft.record.hours}</dd>
-                      </div>
-                      <div>
-                        <dt>金额</dt>
-                        <dd>¥{message.draft.record.amount}</dd>
-                      </div>
+                      {message.draft.record.hours && (
+                        <div>
+                          <dt>工时</dt>
+                          <dd>{message.draft.record.hours}</dd>
+                        </div>
+                      )}
+                      {message.draft.record.amount && (
+                        <div>
+                          <dt>金额</dt>
+                          <dd>¥{message.draft.record.amount}</dd>
+                        </div>
+                      )}
                       <div>
                         <dt>状态</dt>
-                        <dd>{message.draft.record.state}</dd>
+                        <dd>{STATE_LABELS[message.draft.record.state] ?? message.draft.record.state}</dd>
                       </div>
                     </dl>
                     <Button
@@ -1525,14 +1946,12 @@ export function LabAgentChat({
                       size="sm"
                       variant="primary"
                       loading={executingAction === message.draft.action_id}
+                      disabled={executedActions.has(message.draft.action_id)}
                       onClick={() => void executeAction(message.draft as Extract<ChatDraft, { kind: "action" }>)}
                     >
-                      确认
-                      {message.draft.action === "approved"
-                        ? "批准"
-                        : message.draft.action === "rejected"
-                          ? "驳回"
-                          : "批注"}
+                      {executedActions.has(message.draft.action_id)
+                        ? "已执行"
+                        : `确认${ACTION_BUTTONS[message.draft.action] ?? "执行"}`}
                     </Button>
                   </div>
                 )}
@@ -1640,6 +2059,7 @@ export function LabAgentChat({
                       size="sm"
                       variant="primary"
                       loading={reviewingLead === "submit"}
+                      disabled={message.draft.project_id !== projectId}
                       onClick={() =>
                         void submitLeadRequest(message.draft as Extract<ChatDraft, { kind: "project_lead" }>)
                       }
@@ -1731,8 +2151,8 @@ export function LabAgentChat({
                             </span>
                             <button
                               type="button"
-                              disabled={!!publishingMeetingTask}
-                              onClick={() => void publishMeetingTask(task)}
+                              disabled={!!publishingMeetingTask || message.projectId !== projectId}
+                              onClick={() => void publishMeetingTask(task, message.projectId)}
                             >
                               {publishingMeetingTask === task.title ? "创建中…" : "发布"}
                             </button>
@@ -1909,15 +2329,15 @@ export function LabAgentChat({
                             <span>{suggestion.title}</span>
                             <button
                               type="button"
-                              disabled={!!publishingSuggestion}
-                              onClick={() => void publishRetroSuggestion(suggestion)}
+                              disabled={!!publishingSuggestion || message.projectId !== projectId}
+                              onClick={() => void publishRetroSuggestion(suggestion, message.projectId)}
                             >
                               {publishingSuggestion === suggestion.title ? "创建中…" : "变成工作项"}
                             </button>
                             <button
                               type="button"
-                              disabled={!!reviewingProposal}
-                              onClick={() => void submitRetroProposal(suggestion)}
+                              disabled={!!reviewingProposal || message.projectId !== projectId}
+                              onClick={() => void submitRetroProposal(suggestion, message.projectId)}
                             >
                               提交评审
                             </button>
@@ -1931,6 +2351,14 @@ export function LabAgentChat({
                   </div>
                 )}
                 {message.question && <p className="lab-agent-question">{message.question}</p>}
+                {(message.draft?.project_id || message.projectId) &&
+                  (message.draft || message.meeting || message.retro) && (
+                    <p className="lab-agent-source-project">
+                      项目：
+                      {projects.find((item) => item.id === (message.draft?.project_id || message.projectId))?.name ||
+                        "原项目"}
+                    </p>
+                  )}
                 {message.draft?.kind === "time" && (
                   <div className="lab-agent-draft">
                     <strong>工时草稿</strong>
@@ -1957,17 +2385,36 @@ export function LabAgentChat({
                       </div>
                       <div>
                         <dt>时薪</dt>
-                        <dd>{message.draft.rate || "未识别，表单里补"}</dd>
+                        <dd>
+                          {message.draft.rate ? (
+                            message.draft.rate
+                          ) : (
+                            <input
+                              aria-label="时薪"
+                              className="lab-agent-inline-input"
+                              inputMode="decimal"
+                              placeholder="每小时多少元"
+                              value={timeRates[message.id] ?? ""}
+                              onChange={(event) =>
+                                setTimeRates((current) => ({ ...current, [message.id]: event.target.value }))
+                              }
+                            />
+                          )}
+                        </dd>
                       </div>
                     </dl>
                     <Button
                       type="button"
                       size="sm"
                       variant="primary"
-                      onClick={() => openTimeDraft(message.draft as Extract<ChatDraft, { kind: "time" }>)}
+                      loading={confirmingDraft === message.id}
+                      disabled={
+                        message.draft.execution?.status === "executed" ||
+                        (!message.draft.rate && !(timeRates[message.id] ?? "").trim())
+                      }
+                      onClick={() => void confirmDraft(message)}
                     >
-                      填入工时表
-                      <ArrowRight size={13} className="ml-1" />
+                      {message.draft.execution?.status === "executed" ? "已登记" : "确认登记"}
                     </Button>
                   </div>
                 )}
@@ -1996,6 +2443,7 @@ export function LabAgentChat({
                       type="button"
                       size="sm"
                       variant="primary"
+                      disabled={message.draft.project_id !== projectId}
                       onClick={() => openFinanceDraft("receipt", message.draft!)}
                     >
                       去入账确认
@@ -2023,9 +2471,44 @@ export function LabAgentChat({
                       type="button"
                       size="sm"
                       variant="primary"
-                      onClick={() => openFinanceDraft("payroll", message.draft!)}
+                      loading={confirmingDraft === message.id}
+                      disabled={message.draft.execution?.status === "executed"}
+                      onClick={() => void confirmDraft(message)}
                     >
-                      去工资单确认
+                      {message.draft.execution?.status === "executed" ? "工资单已生成" : "生成工资单"}
+                    </Button>
+                  </div>
+                )}
+                {message.draft?.kind === "payment" && (
+                  <div className="lab-agent-draft">
+                    <strong>支付草稿</strong>
+                    <dl>
+                      <div>
+                        <dt>笔数</dt>
+                        <dd>{message.draft.records.length}</dd>
+                      </div>
+                      <div>
+                        <dt>合计</dt>
+                        <dd>¥{message.draft.amount}</dd>
+                      </div>
+                      {message.draft.records.map((record) => (
+                        <div key={record.id}>
+                          <dt>{record.user_name || "成员"}</dt>
+                          <dd>
+                            {record.work} · ¥{record.amount}
+                          </dd>
+                        </div>
+                      ))}
+                    </dl>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="primary"
+                      loading={confirmingDraft === message.id}
+                      disabled={message.draft.execution?.status === "executed" || !!confirmingDraft}
+                      onClick={() => void confirmDraft(message)}
+                    >
+                      {message.draft.execution?.status === "executed" ? "支付已登记" : "确认登记支付"}
                     </Button>
                   </div>
                 )}
@@ -2059,6 +2542,12 @@ export function LabAgentChat({
                         <dt>成员</dt>
                         <dd>{message.draft.user_name || "未指定"}</dd>
                       </div>
+                      {message.draft.email && (
+                        <div>
+                          <dt>邮箱</dt>
+                          <dd>{message.draft.email}</dd>
+                        </div>
+                      )}
                       {message.draft.note && (
                         <div>
                           <dt>说明</dt>
@@ -2066,17 +2555,30 @@ export function LabAgentChat({
                         </div>
                       )}
                     </dl>
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="primary"
-                      onClick={() => {
-                        navigate(`/${workspaceSlug}/lab/participation`);
-                        setOpen(false);
-                      }}
-                    >
-                      去参与管理
-                    </Button>
+                    {message.draft.action === "invite" && message.draft.email ? (
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="primary"
+                        loading={inviteBusy === message.draft.email}
+                        disabled={inviteDone.has(message.draft.email) || message.draft.project_id !== projectId}
+                        onClick={() => void sendInvite(message.draft as Extract<ChatDraft, { kind: "participation" }>)}
+                      >
+                        {inviteDone.has(message.draft.email) ? "链接已生成" : "生成邀请链接"}
+                      </Button>
+                    ) : (
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="primary"
+                        onClick={() => {
+                          navigate(`/${workspaceSlug}/lab/participation`);
+                          setOpen(false);
+                        }}
+                      >
+                        去参与管理
+                      </Button>
+                    )}
                   </div>
                 )}
                 {message.draft?.kind === "project_plan" && (
@@ -2109,6 +2611,7 @@ export function LabAgentChat({
                       size="sm"
                       variant="primary"
                       loading={importingPlan}
+                      disabled={message.draft.project_id !== projectId}
                       onClick={() =>
                         void importProjectPlan(message.draft as Extract<ChatDraft, { kind: "project_plan" }>)
                       }
@@ -2149,6 +2652,7 @@ export function LabAgentChat({
                       size="sm"
                       variant="primary"
                       loading={publishing}
+                      disabled={message.draft.project_id !== projectId}
                       onClick={() =>
                         void publishProjectIssue(message.draft as Extract<ChatDraft, { kind: "project_issue" }>)
                       }
@@ -2175,6 +2679,7 @@ export function LabAgentChat({
                 )}
               </div>
             ))}
+            {loadingThread && <p role="status">正在读取会话…</p>}
             {busy && (
               <div className="lab-agent-message" data-role="assistant">
                 <p className="lab-agent-thinking">正在理解…</p>
@@ -2193,17 +2698,24 @@ export function LabAgentChat({
               className={labInputClass}
               rows={2}
               value={input}
+              disabled={loadingThread}
               onChange={(event) => setInput(event.target.value)}
               placeholder="例如：今天在 APP内容设计 做了 3 小时，整理现金悬赏页面"
               aria-label="给 AI 助手发消息"
               onKeyDown={(event) => {
-                if (event.key === "Enter" && !event.shiftKey) {
+                if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
                   event.preventDefault();
                   void send();
                 }
               }}
             />
-            <Button type="submit" size="sm" variant="primary" loading={busy} disabled={!input.trim()}>
+            <Button
+              type="submit"
+              size="sm"
+              variant="primary"
+              loading={busy}
+              disabled={!input.trim() || interactionBusy}
+            >
               <Send size={14} className="mr-1" />
               发送
             </Button>
@@ -2212,4 +2724,4 @@ export function LabAgentChat({
       )}
     </>
   );
-}
+});

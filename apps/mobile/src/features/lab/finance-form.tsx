@@ -140,6 +140,12 @@ export function LabFinanceActionDialog({
   const stages = data.stages
     .filter((stage) => stage.can_manage && projectAllowed(stage.project_id) && !stage.deleted)
     .map((stage) => ({ value: stage.stage_id, label: `${stage.name} · 执行实额 ¥${stage.execution_funded}` }));
+  const receiptProjects = data.projects
+    .filter(
+      (project) =>
+        !project.deleted && project.allowed_actions?.includes("receipt") && (!projectId || project.id === projectId)
+    )
+    .map((project) => ({ value: project.id, label: project.name }));
   const unsettledStages = (store.stages ?? [])
     .filter(
       (stage) =>
@@ -291,10 +297,9 @@ export function LabFinanceActionDialog({
       break;
     case "receipt":
       fields = [
-        select("stage_id", "阶段", stages),
+        select("project_id", "项目", receiptProjects),
         number("gross", "本次真实到账（元）"),
         number("costs", "本次成本扣除（元）", true, "0"),
-        number("D", "本次核准可分配 D（元）"),
         { key: "source", label: "到账来源", required: true },
       ];
       break;
@@ -481,6 +486,8 @@ export function LabFinanceActionDialog({
     setError("");
     setValues((current) => ({ ...current, [key]: value }));
   };
+  if (action === "receipt" && receiptProjects.length === 1)
+    fields.find((field) => field.key === "project_id")!.value = receiptProjects[0].value;
   const limits: Record<string, string | undefined> = {};
   const minimums: Record<string, string | undefined> = {};
   const selectedStage = data.stages.find((row) => row.stage_id === valueOf("stage_id"));
@@ -618,7 +625,11 @@ export function LabFinanceActionDialog({
       for (const id of history)
         stageErrors.push(labAmountError(values[`history-vc-${id}`] ?? "", { min: "0.01", unit: "VC" }));
   }
-  const invalid = [...numericErrors, ...stageErrors].some(Boolean);
+  const invalid =
+    [...numericErrors, ...stageErrors].some(Boolean) ||
+    (action === "receipt" &&
+      (!receiptProjects.some((project) => project.value === valueOf("project_id")) ||
+        (units(valueOf("costs")) ?? 0n) > (units(valueOf("gross")) ?? 0n)));
   return (
     <LabDialog
       title={financeActionLabels[action] ?? "办理资金事项"}
@@ -639,6 +650,10 @@ export function LabFinanceActionDialog({
         for (const field of fields) {
           const value = text(form, field.key);
           if (value && !(field.key === "project_id" && value === "public")) body[field.key] = value;
+        }
+        if (action === "receipt") {
+          delete body.stage_id;
+          body.D = labDecimalText(positive((units(text(form, "gross")) ?? 0n) - (units(text(form, "costs")) ?? 0n)));
         }
         const occurredAt = text(form, "occurred_at");
         if (occurredAt) body.occurred_at = calendarInstant(occurredAt);

@@ -1,6 +1,7 @@
 /** Copyright (c) 2026 OpenOceanAcoustic and contributors. SPDX-License-Identifier: AGPL-3.0-only */
 import { expect, test } from "@playwright/test";
 import type { Page } from "@playwright/test";
+import type { LabBountyQuotes } from "@plane/types";
 
 async function setup(page: Page, canOpen: boolean) {
   const item = {
@@ -54,17 +55,31 @@ async function setup(page: Page, canOpen: boolean) {
                 actions: [],
                 current_node: "started",
               }
-            : {
-                user_id: "member",
-                team_access: false,
-                items: [item],
-                folders: [],
-                projects: [],
-                categories: [],
-                timezone: "Asia/Shanghai",
-                week_start: 1,
-                step_minutes: 15,
-              };
+            : path.endsWith("/quotes/")
+              ? ({
+                  quotes: [],
+                  available: "0.00",
+                  can_apply: false,
+                  funding_source: "project",
+                  project_available: null,
+                  quote_limit: null,
+                  reviewers: [],
+                  file_size_limit: 0,
+                } satisfies LabBountyQuotes)
+              : path.endsWith("/planner/")
+                ? {
+                    user_id: "member",
+                    team_access: false,
+                    items: [item],
+                    folders: [],
+                    projects: [],
+                    categories: [],
+                    timezone: "Asia/Shanghai",
+                    week_start: 1,
+                    step_minutes: 15,
+                  }
+                : undefined;
+    if (json === undefined) throw new Error(`Missing item overview API fixture: ${path}`);
     await route.fulfill({ json });
   });
   await page.goto("/workbench");

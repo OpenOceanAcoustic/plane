@@ -577,6 +577,8 @@ test("monthly native selection moves and resizing retain quarter-hour precision"
     .click();
   await pane.getByRole("button", { name: "放大时间轴", exact: true }).click();
   const day = pane.locator('[data-date^="2026-10-08"]').first();
+  // The target row can be clipped below the calendar even while its date header is visible.
+  await pane.locator('[data-lab-item="unscheduled-item"]').scrollIntoViewIfNeeded();
   await day.scrollIntoViewIfNeeded();
   const column = await day.boundingBox();
   const lane = await pane.locator('[data-lab-item="unscheduled-item"]').boundingBox();

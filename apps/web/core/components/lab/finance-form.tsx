@@ -1,5 +1,6 @@
 /** Copyright (c) 2026 OpenOceanAcoustic and contributors. SPDX-License-Identifier: AGPL-3.0-only */
 import { useState } from "react";
+import { observer } from "mobx-react";
 import { v4 as uuidv4 } from "uuid";
 import type { LabFinanceOverview } from "@plane/types";
 import type { LabStore } from "@plane/shared-state";
@@ -37,7 +38,7 @@ export const financeActionLabels: Record<string, string> = {
   manager: "指定公共资金管理员",
   "vc-stage": "设置项目贡献点预算",
   "exploration-allocation": "拨付探索阶段奖励",
-  "stage-allocation": "拨付留存至新阶段奖励",
+  "stage-allocation": "拨付阶段奖励",
   "risk-use": "登记风险事项实际支出",
   "public-duty": "核准公共职责奖励",
   "public-commit": "安排公共职责支付",
@@ -101,7 +102,7 @@ const select = (key: string, label: string, options: Option[], required = true):
   required,
 });
 
-export function LabFinanceActionDialog({
+export const LabFinanceActionDialog = observer(function FinanceActionDialog({
   store,
   data,
   projectId,
@@ -146,11 +147,18 @@ export function LabFinanceActionDialog({
   const stages = data.stages
     .filter(
       (stage) =>
+        (!projectId || stage.project_id === projectId) &&
         (action === "receipt" ? (stage.can_record ?? stage.can_manage) : stage.can_manage) &&
         projectAllowed(stage.project_id) &&
         !stage.deleted
     )
     .map((stage) => ({ value: stage.stage_id, label: `${stage.name} · 执行实额 ¥${stage.execution_funded}` }));
+  const receiptProjects = data.projects
+    .filter(
+      (project) =>
+        !project.deleted && project.allowed_actions?.includes("receipt") && (!projectId || project.id === projectId)
+    )
+    .map((project) => ({ value: project.id, label: project.name }));
   const unsettledStages = (store.stages ?? [])
     .filter(
       (stage) =>
@@ -177,9 +185,9 @@ export function LabFinanceActionDialog({
       fields = [
         select(
           "from_account_id",
-          "同项目留存来源账户",
+          "同项目来源账户",
           manageable
-            .filter((account) => account.kind === "retained")
+            .filter((account) => ["project", "retained"].includes(account.kind))
             .map((account) => ({ value: account.id, label: `${account.label} · 可用 ¥${account.available}` }))
         ),
         select(
@@ -195,7 +203,7 @@ export function LabFinanceActionDialog({
             )
             .map((stage) => ({ value: stage.stage_id, label: `${stage.name} · 预算 E ¥${stage.E}` }))
         ),
-        number("amount", "留存拨付执行奖励（元）"),
+        number("amount", "拨付执行奖励（元）"),
       ];
       break;
     case "risk-use":
@@ -302,7 +310,7 @@ export function LabFinanceActionDialog({
       break;
     case "receipt":
       fields = [
-        select("stage_id", "阶段", stages),
+        select("project_id", "项目", receiptProjects),
         { ...number("gross", "实际到账（元）"), min: "0.01" },
         number("tax", "税金（元）", false, "0"),
         number("management_fee", "管理费用（元）", false, "0"),
@@ -507,7 +515,7 @@ export function LabFinanceActionDialog({
     values[key] ??
     defaults[key] ??
     fields.find((field) => field.key === key)?.value ??
-    (key === "project_id" ? projectId || "public" : "");
+    (key === "project_id" ? projectId || (action === "receipt" ? "" : "public") : "");
   const changeValue = (key: string, value: string) => {
     setError("");
     setValues((current) => ({ ...current, [key]: value }));
@@ -516,6 +524,8 @@ export function LabFinanceActionDialog({
     const stageField = fields.find((field) => field.key === "stage_id");
     if (stageField?.options?.length === 1 && !stageField.value) stageField.value = stageField.options[0].value;
   }
+  if (action === "receipt" && receiptProjects.length === 1)
+    fields.find((field) => field.key === "project_id")!.value = receiptProjects[0].value;
   const limits: Record<string, string | undefined> = {};
   const minimums: Record<string, string | undefined> = {};
   const selectedStage = data.stages.find((row) => row.stage_id === valueOf("stage_id"));
@@ -654,7 +664,9 @@ export function LabFinanceActionDialog({
   const receiptDeductions = receiptTax + receiptManagement;
   const receiptNet = positive(receiptGross - receiptDeductions);
   const receiptInvalid = action === "receipt" && receiptDeductions > receiptGross;
-  const invalid = [...numericErrors, ...stageErrors].some(Boolean) || receiptInvalid;
+  const receiptProjectMissing =
+    action === "receipt" && !receiptProjects.some((project) => project.value === valueOf("project_id"));
+  const invalid = [...numericErrors, ...stageErrors].some(Boolean) || receiptInvalid || receiptProjectMissing;
   return (
     <LabDialog
       title={financeActionLabels[action] ?? "办理资金事项"}
@@ -677,6 +689,7 @@ export function LabFinanceActionDialog({
           if (value && value !== "public") body[field.key] = value;
         }
         if (action === "receipt") {
+          delete body.stage_id;
           const gross = units(text(form, "gross")) ?? 0n;
           const costs = (units(text(form, "tax")) ?? 0n) + (units(text(form, "management_fee")) ?? 0n);
           body.costs = labDecimalText(costs);
@@ -765,7 +778,7 @@ export function LabFinanceActionDialog({
               required={field.required}
               rows={3}
               className={labInputClass}
-              defaultValue={defaults[field.key] ?? field.value}
+              defaultValue={values[field.key] ?? defaults[field.key] ?? field.value}
             />
           ) : field.type === "number" && field.key !== "year" ? (
             <LabAmountInput
@@ -787,7 +800,7 @@ export function LabFinanceActionDialog({
               step={field.type === "number" ? (field.key === "year" ? "1" : "0.01") : undefined}
               required={field.required}
               className={labInputClass}
-              defaultValue={defaults[field.key] ?? field.value}
+              defaultValue={values[field.key] ?? defaults[field.key] ?? field.value}
               onChange={(event) => {
                 if (field.key === "year") changeValue(field.key, event.target.value);
               }}
@@ -817,7 +830,7 @@ export function LabFinanceActionDialog({
             <strong>{receiptManagement > 0n ? `−¥${labDecimalText(receiptManagement)}` : "—"}</strong>
           </div>
           <div className="lab-incoming-calculation-total">
-            <span>可分配净额 D</span>
+            <span>到账净额</span>
             <strong>¥{labDecimalText(receiptNet)}</strong>
           </div>
           {receiptInvalid && (
@@ -1011,11 +1024,18 @@ export function LabFinanceActionDialog({
         </>
       )}
       <LabField label="操作／核准依据">
-        <textarea name="reason" required rows={3} className={labInputClass} defaultValue={defaults.reason} />
+        <textarea
+          name="reason"
+          required
+          rows={3}
+          className={labInputClass}
+          defaultValue={values.reason ?? defaults.reason}
+        />
       </LabField>
       <LabField label="凭证或证据引用">
         <textarea
           name="evidence"
+          defaultValue={values.evidence ?? defaults.evidence}
           required={
             [
               "receipt",
@@ -1034,8 +1054,13 @@ export function LabFinanceActionDialog({
         />
       </LabField>
       <LabField label="事实发生时间（上海，可选）">
-        <input type="datetime-local" name="occurred_at" className={labInputClass} />
+        <input
+          type="datetime-local"
+          name="occurred_at"
+          className={labInputClass}
+          defaultValue={values.occurred_at ?? defaults.occurred_at}
+        />
       </LabField>
     </LabDialog>
   );
-}
+});

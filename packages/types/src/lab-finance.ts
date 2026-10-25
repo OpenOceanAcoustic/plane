@@ -131,7 +131,7 @@ export type LabFinanceBatch = {
   id: string;
   operation_id?: string;
   kind?: "receipt" | "opening";
-  stage_id: string;
+  stage_id: string | null;
   project_id: string;
   gross: string;
   costs: string;

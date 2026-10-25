@@ -365,13 +365,15 @@ export const LabMarket = observer(function LabMarket({ store }: { store: LabStor
                         <strong>{allocation.name}</strong>
                         <span>
                           {allocation.awarded}/{allocation.planned} VC ·{" "}
-                          {allocation.closed
-                            ? "已完成"
-                            : allocation.confirmed
-                              ? "已确认"
-                              : allocation.approved
-                                ? "待本人确认"
-                                : "待负责人批准"}
+                          {allocation.paid_at
+                            ? "已发放"
+                            : allocation.closed
+                              ? "待发放"
+                              : allocation.confirmed
+                                ? "已确认"
+                                : allocation.approved
+                                  ? "待本人确认"
+                                  : "待负责人批准"}
                         </span>
                         {bounty.is_lead && !allocation.approved && bounty.status === "open" && (
                           <Button

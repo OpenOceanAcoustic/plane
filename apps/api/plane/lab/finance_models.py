@@ -129,7 +129,7 @@ class FinancialAccount(Record):
 
 class CashBatch(FinancialRecord):
     operation = models.OneToOneField(FinancialOperation, on_delete=models.PROTECT)
-    budget = models.ForeignKey(StageBudget, on_delete=models.PROTECT, related_name="batches")
+    budget = models.ForeignKey(StageBudget, on_delete=models.PROTECT, related_name="batches", null=True)
     gross = models.DecimalField(max_digits=14, decimal_places=2)
     costs = models.DecimalField(max_digits=14, decimal_places=2)
     D = models.DecimalField(max_digits=14, decimal_places=2)

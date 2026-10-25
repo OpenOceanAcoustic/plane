@@ -163,7 +163,7 @@ class CashBountyActionView(LabView):
     def post(self, request, slug, pk, action):
         with transaction.atomic():
             row = get_object_or_404(
-                CashBounty.objects.select_for_update().select_related("project", "publisher", "reviewer", "claimed_by"),
+                CashBounty.objects.select_for_update(of=("self",)).select_related("project", "publisher", "reviewer", "claimed_by"),
                 id=pk,
                 workspace=self.workspace,
             )

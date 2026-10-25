@@ -608,8 +608,28 @@ def create_budget(operation, user, workspace, data):
 
 
 def create_receipt(operation, user, workspace, data):
-    budget = stage_budget(user, workspace, data.get("stage_id"))
     require_evidence(data)
+    # Explicit project receipts retain the net cash in the project account. Legacy
+    # stage-only requests keep their frozen allocation rules and audit history.
+    if data.get("project_id"):
+        project = get_object_or_404(Project, id=data["project_id"], workspace=workspace)
+        require_project_finance(user, project, "record")
+        gross, costs = money(data.get("gross"), True), money(data.get("costs", "0"))
+        if costs > gross:
+            raise ValidationError("成本扣除不能超过实际到账")
+        net = gross - costs
+        if "D" in data and money(data["D"]) != net:
+            raise ValidationError("项目到账净额须等于实际到账减去成本扣除")
+        row = CashBatch.objects.create(
+            operation=operation, budget=None, gross=gross, costs=costs, D=net,
+            source=require_reason(data, "source"), risk=ZERO, execution=ZERO, history=ZERO,
+        )
+        target = account(workspace, "project", project=project)
+        posting(operation, target, gross, row)
+        if costs:
+            posting(operation, target, -costs, row)
+        return row, None
+    budget = stage_budget(user, workspace, data.get("stage_id"))
     gross, costs, value = money(data.get("gross"), True), money(data.get("costs", "0")), money(data.get("D"))
     if value > gross - costs:
         raise ValidationError("核准D不能超过本次到账扣除实际成本后的余额")
@@ -855,7 +875,13 @@ def move_reserved(operation, user, workspace, data, action):
 def reversal_entries(workspace, original):
     """Validate real balances, commitments and source-specific downstream dependencies."""
     from .management_models import latest_records
+    from .models import CashBounty
 
+    if (
+        CashBounty.objects.filter(payment_operation=original).exists()
+        or Allocation.objects.filter(payment_operation=original).exists()
+    ):
+        raise ValidationError("悬赏支付关联任务状态，不能直接冲正；请先核查原悬赏付款记录")
     if (
         original.project_id_snapshot
         and latest_records(original.project_id_snapshot)
@@ -1005,6 +1031,13 @@ def operation_scope(workspace, action, data):
         if original.reverses_id or hasattr(original, "reversal"):
             raise ValidationError("记录已冲正或是冲正记录")
         return original.stage, original.project, original
+    if action == "receipt" and data.get("project_id"):
+        project = get_object_or_404(Project, id=data["project_id"], workspace=workspace)
+        if data.get("stage_id"):
+            stage = get_object_or_404(Stage, id=data["stage_id"], workspace_id_snapshot=workspace.id)
+            if stage.project_id_snapshot != project.id:
+                raise ValidationError("到账阶段与项目不一致")
+        return None, project, None
     if (
         action
         in {
@@ -1369,8 +1402,8 @@ def perform(user, workspace, action, data):
     elif action == "stage-allocation":
         budget = stage_budget(user, workspace, data.get("stage_id"))
         source = account_by_id(user, workspace, data.get("from_account_id"))
-        if source.kind != "retained" or source.project_id_snapshot != budget.stage.project_id_snapshot:
-            raise ValidationError("阶段结转仅允许同一项目的未用留存资金")
+        if source.kind not in {"project", "retained"} or source.project_id_snapshot != budget.stage.project_id_snapshot:
+            raise ValidationError("阶段拨付仅允许同一项目的项目资金或未用留存资金")
         if source.stage_id == budget.stage_id:
             raise ValidationError("留存资金须明确结转到另一个已冻结阶段")
         value = money(data.get("amount"), True)

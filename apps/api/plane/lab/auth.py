@@ -25,7 +25,7 @@ from django.db import connection, transaction
 from django.utils import timezone
 from django.views.decorators.debug import sensitive_variables
 
-from plane.db.models import APIToken, Profile, Session, User, Workspace, WorkspaceMember
+from plane.db.models import APIToken, Profile, ProjectMember, Session, User, Workspace, WorkspaceMember
 from plane.settings.redis import redis_instance
 from redis.exceptions import RedisError
 from plane.license.models import Instance, InstanceAdmin
@@ -224,7 +224,7 @@ def revoke_live_sessions(user_id):
 
 @transaction.atomic
 @sensitive_variables()
-def issue_invitation(kind, workspace=None, workspace_slug="", role=15, user=None):
+def issue_invitation(kind, workspace=None, workspace_slug="", role=15, user=None, project=None):
     cipher()  # Fail before distributing a link that cannot be redeemed.
     if kind == "bootstrap":
         lock("lab-bootstrap")
@@ -258,6 +258,7 @@ def issue_invitation(kind, workspace=None, workspace_slug="", role=15, user=None
         kind=kind,
         token_hash=digest(token),
         workspace=workspace,
+        project=project,
         workspace_slug=workspace_slug,
         role=role,
         user=user,
@@ -405,6 +406,10 @@ def confirm_enrollment(data):
                 WorkspaceMember.objects.create(
                     workspace=workspace, member=user, role=20 if invitation.kind == "bootstrap" else invitation.role
                 )
+                if invitation.project_id:
+                    ProjectMember.objects.get_or_create(
+                        project=invitation.project, workspace=workspace, member=user, defaults={"role": 15}
+                    )
                 WorkspacePolicy.objects.get_or_create(workspace=workspace)
                 Profile.objects.update_or_create(
                     user=user,

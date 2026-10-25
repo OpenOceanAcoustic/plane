@@ -266,6 +266,11 @@ export const LabParticipation = observer(function LabParticipation({
             <ArrowRight size={12} />
           </Link>
         )}
+        <Link className="lab-quick-action" to={`/${store.slug}/settings/projects/${projectId}/members/`}>
+          <Users size={14} />
+          邀请/管理成员
+          <ArrowRight size={12} />
+        </Link>
       </div>
 
       {managementError && (

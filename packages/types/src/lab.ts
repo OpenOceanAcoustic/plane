@@ -211,6 +211,7 @@ export type LabAllocation = {
   approved: boolean;
   confirmed: boolean;
   closed: boolean;
+  paid_at?: string | null;
 };
 export type LabAcceptance = {
   id: string;
@@ -322,14 +323,7 @@ export type LabBountyQuotes = {
   file_size_limit: number;
 };
 
-export type LabCashBountyStatus =
-  | "proposed"
-  | "open"
-  | "claimed"
-  | "submitted"
-  | "accepted"
-  | "paid"
-  | "cancelled";
+export type LabCashBountyStatus = "proposed" | "open" | "claimed" | "submitted" | "accepted" | "paid" | "cancelled";
 
 export type LabCashBounty = {
   id: string;

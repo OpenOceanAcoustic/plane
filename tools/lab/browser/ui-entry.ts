@@ -4,6 +4,11 @@
  */
 // Use real shared components without bundling every unrelated editor feature into the test harness.
 export { Button } from "../../../packages/ui/src/button";
+export { Avatar } from "../../../packages/ui/src/avatar";
+export { CustomMenu } from "../../../packages/ui/src/dropdowns/custom-menu";
+export { Input } from "../../../packages/ui/src/form-fields/input";
+export { Loader } from "../../../packages/ui/src/loader";
+export { Tooltip } from "../../../packages/ui/src/tooltip";
 export { LabDialog, LabField, LabSelect, labInputClass } from "../../../packages/ui/src/lab-form";
 export {
   LabAmountInput,

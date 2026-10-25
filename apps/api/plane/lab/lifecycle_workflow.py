@@ -133,6 +133,19 @@ def projection(workspace, user, overview, project=None, scope="finance", selecte
             next_y += 190
         if row.get("can_restore"):
             action("project-restore", "恢复资金项目", identifier, {"project_id": row["id"]})
+    # Project cash can arrive before any stage or reward plan exists.
+    for row in overview["projects"]:
+        if row.get("deleted"):
+            continue
+        receipts = [batch for batch in overview["batches"] if batch["project_id"] == row["id"] and batch["stage_id"] is None]
+        cash_node = node(
+            f"project:{row['id']}:receipts", f"{row['name']} · 项目到账", 0, next_y,
+            "completed" if any(not batch.get("reversed") for batch in receipts) else "current", root_id,
+        )
+        project_nodes[row["id"]] = cash_node
+        next_y += 190
+        if "receipt" in row.get("allowed_actions", []):
+            action("receipt", "登记项目到账", cash_node, {"project_id": row["id"]})
     for stage in Stage.objects.filter(workspace_id_snapshot=workspace.id, project_id_snapshot__in=managed_projects):
         if str(stage.id) in stages:
             continue
