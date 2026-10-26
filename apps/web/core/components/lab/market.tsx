@@ -20,6 +20,7 @@ import { LabBountyMaterials } from "./bounty-materials";
 import { LabBountyImportance } from "./bounty-importance";
 import { LabBountyPublish } from "./bounty-publish";
 import { LabVCWallets } from "./vc-wallets";
+import { VCCalculator } from "./vc-calculator";
 // oxlint-disable-next-line import/no-unassigned-import -- local financial and task surfaces
 import "./finance-market.css";
 
@@ -75,6 +76,7 @@ export const LabMarket = observer(function LabMarket({ store }: { store: LabStor
   }>();
   const [deleting, setDeleting] = useState<LabBounty>();
   const [walletsOpen, setWalletsOpen] = useState(false);
+  const [calculatorOpen, setCalculatorOpen] = useState(false);
   useEffect(() => {
     void store.execute(store.loadMarket);
   }, [store]);
@@ -146,10 +148,13 @@ export const LabMarket = observer(function LabMarket({ store }: { store: LabStor
     <div className="lab-market flex flex-col gap-5">
       <div className="flex flex-wrap items-center gap-2">
         <Button disabled={!planner.projects.length} onClick={() => setMode("publish")}>
-          发布悬赏
+          发布 VC 悬赏
         </Button>
         <Button variant="neutral-primary" onClick={() => setWalletsOpen(true)}>
           我的贡献点
+        </Button>
+        <Button variant="neutral-primary" onClick={() => setCalculatorOpen(true)}>
+          VC 计算示例
         </Button>
         <select
           aria-label="按项目查看"
@@ -157,7 +162,7 @@ export const LabMarket = observer(function LabMarket({ store }: { store: LabStor
           value={projectFilter}
           onChange={(event) => setProjectFilter(event.target.value)}
         >
-          <option value="">全实验室公开悬赏</option>
+          <option value="">公开 VC 悬赏</option>
           {Array.from(
             new Map(
               [
@@ -173,6 +178,7 @@ export const LabMarket = observer(function LabMarket({ store }: { store: LabStor
         </select>
       </div>
       {walletsOpen && <LabVCWallets store={store} onClose={() => setWalletsOpen(false)} />}
+      {calculatorOpen && <VCCalculator onClose={() => setCalculatorOpen(false)} />}
       {store.todos.length > 0 && (
         <section className="lab-market-todos rounded-lg border border-subtle bg-layer-1 p-4">
           <h2 className="mb-2 text-14 font-semibold">我的待办</h2>
@@ -191,12 +197,12 @@ export const LabMarket = observer(function LabMarket({ store }: { store: LabStor
           </div>
         </section>
       )}
-      <nav aria-label="悬赏筛选" className="lab-market-tabs flex gap-2">
+      <nav aria-label="VC 悬赏筛选" className="lab-market-tabs flex gap-2">
         {(
           [
             { id: "open", name: "开放认领" },
             { id: "mine", name: "我的参与" },
-            { id: "all", name: "全部悬赏" },
+            { id: "all", name: "全部 VC 悬赏" },
           ] as const
         ).map((tab) => (
           <Button
@@ -210,7 +216,7 @@ export const LabMarket = observer(function LabMarket({ store }: { store: LabStor
           </Button>
         ))}
       </nav>
-      <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3" aria-label="悬赏工作项卡片">
+      <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3" aria-label="VC 悬赏工作项卡片">
         {store.bounties
           .filter(
             (row) =>
@@ -230,7 +236,7 @@ export const LabMarket = observer(function LabMarket({ store }: { store: LabStor
                 onClick={() => openDetail(bounty.id)}
                 style={bountyCardStyle(bounty.category_color)}
                 className={`lab-market-card rounded-lg border bg-surface-1 p-4 text-left ${detailId === bounty.id ? "ring-accent-primary ring-2" : ""}`}
-                aria-label={`查看悬赏 ${bounty.title}`}
+                aria-label={`查看 VC 悬赏 ${bounty.title}`}
               >
                 <div className="flex items-center gap-2 text-12">
                   <LabBountyBadge color={bounty.category_color} />
@@ -248,12 +254,12 @@ export const LabMarket = observer(function LabMarket({ store }: { store: LabStor
                   {bounty.public_summary || bounty.deliverable}
                 </p>
                 <p className="lab-bounty-quota mt-3 text-12">
-                  贡献点配额 <strong className="font-mono font-semibold">{bounty.budget}</strong>
+                  VC 配额 <strong className="font-mono font-semibold">{bounty.budget}</strong>
                 </p>
                 <p className="mt-1 text-12 text-accent-primary">
                   {(bounty.reward_estimate?.amount ?? bounty.estimated_reward)
-                    ? `预计 ¥${bounty.reward_estimate?.amount ?? bounty.estimated_reward} · 公式 v${bounty.reward_estimate?.formula_version ?? bounty.reward_formula_version ?? "—"}`
-                    : bounty.reward_estimate?.error || "预计奖励待负责人配置"}
+                    ? `现金参考 ¥${bounty.reward_estimate?.amount ?? bounty.estimated_reward} · 公式 v${bounty.reward_estimate?.formula_version ?? bounty.reward_formula_version ?? "—"}`
+                    : bounty.reward_estimate?.error || "现金参考待配置"}
                 </p>
                 <div className="lab-bounty-progress" aria-label="悬赏参与进度">
                   {["待批准", "待确认", "进行中", "待验收"].map((label, index) => (
@@ -273,7 +279,7 @@ export const LabMarket = observer(function LabMarket({ store }: { store: LabStor
       </div>
       {detailId && (
         <div className="flex items-center justify-between">
-          <h2 className="text-16 font-semibold">悬赏任务详情</h2>
+          <h2 className="text-16 font-semibold">VC 悬赏详情</h2>
           <Button
             size="sm"
             variant="neutral-primary"
@@ -329,7 +335,7 @@ export const LabMarket = observer(function LabMarket({ store }: { store: LabStor
                 </p>
                 {bounty.reward_estimate && (
                   <p className="mt-2 text-13">
-                    预算预计奖励{" "}
+                    预算现金参考{" "}
                     {bounty.reward_estimate.amount === null
                       ? bounty.reward_estimate.error || "待配置"
                       : `¥${bounty.reward_estimate.amount}`}{" "}
@@ -338,7 +344,7 @@ export const LabMarket = observer(function LabMarket({ store }: { store: LabStor
                 )}
                 {bounty.received_estimate && (
                   <p className="mt-1 text-13">
-                    到账奖励测算{" "}
+                    到账现金参考{" "}
                     {bounty.received_estimate.amount === null
                       ? bounty.received_estimate.error || "待计算"
                       : `¥${bounty.received_estimate.amount}`}{" "}
@@ -410,7 +416,7 @@ export const LabMarket = observer(function LabMarket({ store }: { store: LabStor
                       disabled={store.busy}
                       onClick={() => setDeleting(bounty)}
                     >
-                      删除悬赏
+                      删除 VC 悬赏
                     </Button>
                   )}
                   <Button
@@ -517,7 +523,7 @@ export const LabMarket = observer(function LabMarket({ store }: { store: LabStor
       </div>
       {store.bounties.length === 0 && (
         <p className="rounded border border-dashed border-subtle p-10 text-center text-13 text-tertiary">
-          暂无悬赏任务。
+          暂无 VC 悬赏。
         </p>
       )}
       {reasonAction && (
@@ -548,7 +554,7 @@ export const LabMarket = observer(function LabMarket({ store }: { store: LabStor
       )}
       {deleting && (
         <LabDialog
-          title="删除悬赏"
+          title="删除 VC 悬赏"
           submitLabel="删除"
           busy={store.busy}
           error={store.error}

@@ -5,6 +5,7 @@ import type { LabFinanceManagement, LabManagementRecord } from "@plane/types";
 import type { LabStore } from "@plane/shared-state";
 import { Button, LabDialog, LabField, LabAmountInput, labDecimalUnits, labDecimalText, labInputClass } from "@plane/ui";
 import { CostEntryDialog } from "./cost-entry-form";
+import { MonthlyPayrollDialog } from "./finance-monthly-payroll";
 
 export type FinanceManagementAction = {
   kind: LabManagementRecord["kind"];
@@ -38,6 +39,9 @@ type FinanceDialogProps = {
   accountActions?: string[];
 };
 export function FinanceManagementDialog(props: FinanceDialogProps) {
+  const [individualPayroll, setIndividualPayroll] = useState(
+    Boolean(props.chosen.prefill?.user_id || props.chosen.prefill?.start || props.chosen.prefill?.end)
+  );
   if (props.chosen.kind === "cost" && props.chosen.action === "save")
     return (
       <CostEntryDialog
@@ -51,7 +55,17 @@ export function FinanceManagementDialog(props: FinanceDialogProps) {
         onSaved={props.onSaved}
       />
     );
-  return <FinanceActionDialog {...props} />;
+  if (props.chosen.kind === "payroll" && props.chosen.action === "save" && !individualPayroll)
+    return (
+      <MonthlyPayrollDialog
+        store={props.store}
+        projectId={props.data.project_id}
+        onClose={props.onClose}
+        onSaved={props.onSaved}
+        onIndividual={() => setIndividualPayroll(true)}
+      />
+    );
+  return <FinanceActionDialog {...props} onMonthly={() => setIndividualPayroll(false)} />;
 }
 function FinanceActionDialog({
   store,
@@ -62,7 +76,8 @@ function FinanceActionDialog({
   onSaved,
   onAccountAction,
   accountActions = [],
-}: FinanceDialogProps) {
+  onMonthly,
+}: FinanceDialogProps & { onMonthly: () => void }) {
   const { kind, action, row } = chosen;
   const [values, setValues] = useState<Record<string, string>>(
     () =>
@@ -226,6 +241,9 @@ function FinanceActionDialog({
         )}
         {action === "save" && kind === "payroll" && (
           <>
+            <Button size="sm" variant="neutral-primary" onClick={onMonthly}>
+              按月批量生成
+            </Button>
             {input("user_id", "计薪成员", memberOptions)}
             {input("start", "计薪开始日期", undefined, "date")}
             {input("end", "计薪结束日期", undefined, "date")}

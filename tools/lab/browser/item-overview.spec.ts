@@ -92,7 +92,7 @@ test("task-only access opens a controlled right overview without requesting nati
   const { requests } = await setup(page, false);
   const card = page.getByRole("article", { name: "受控实验任务", exact: true });
   await card.locator(".lab-planner-card-meta").first().click();
-  const overview = page.getByRole("dialog", { name: "悬赏任务详情", exact: true });
+  const overview = page.getByRole("dialog", { name: "VC 悬赏详情", exact: true });
   await expect(overview).toBeVisible();
   await expect(overview.getByRole("region", { name: "事项内容", exact: true })).toContainText("任务授权可见的交付要求");
   await expect(overview).toContainText("VC配额");
@@ -127,7 +127,7 @@ test("readable native issues keep the native overview path even when editing is 
     "data-opened-lab-project-issue",
     JSON.stringify({ issue_id: "issue", project_id: "project" })
   );
-  await expect(page.getByRole("dialog", { name: "悬赏任务详情", exact: true })).toHaveCount(0);
+  await expect(page.getByRole("dialog", { name: "VC 悬赏详情", exact: true })).toHaveCount(0);
   await expect(page).toHaveURL(/\/workbench$/);
 });
 
@@ -135,7 +135,7 @@ test("revoked task access hides cached execution details on the next open", asyn
   await setup(page, false);
   const card = page.getByRole("article", { name: "受控实验任务", exact: true });
   await card.getByRole("link", { name: "受控实验任务", exact: true }).click();
-  const overview = page.getByRole("dialog", { name: "悬赏任务详情", exact: true });
+  const overview = page.getByRole("dialog", { name: "VC 悬赏详情", exact: true });
   await expect(overview.getByRole("region", { name: "事项内容", exact: true })).toContainText("任务授权可见的交付要求");
   await overview.getByRole("button", { name: "关闭弹窗", exact: true }).click();
   await page.route("**/bounties/bounty/detail/", (route) =>

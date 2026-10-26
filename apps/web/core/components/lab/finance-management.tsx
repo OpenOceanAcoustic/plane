@@ -12,6 +12,7 @@ import { Banknote, Coins, PiggyBank, ReceiptText, ShieldCheck, TrendingUp, Walle
 import { Button, labDecimalText, labDecimalUnits } from "@plane/ui";
 import { Metric, StatusPill } from "./finance-workbench";
 import { FinanceManagementDialog } from "./finance-management-form";
+import { MonthlyPayrollSchedule } from "./finance-monthly-payroll";
 import type { FinanceManagementAction } from "./finance-management-form";
 import {
   costCategories,
@@ -287,6 +288,7 @@ export function LabFinanceManagement({
               )}
             </div>
           </header>
+          {tab === "payroll" && data.can_view_finance && <MonthlyPayrollSchedule store={store} projectId={projectId} />}
           {records.length ? (
             <ManagementTable
               headings={

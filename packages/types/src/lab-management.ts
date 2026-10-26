@@ -121,6 +121,57 @@ export type LabLaborTeam = {
   version: number;
   data: { name: string; member_ids: string[]; members: { id: string; name: string }[] };
 };
+export type LabMonthlyPayrollProject = {
+  project_id: string;
+  project_name: string;
+  can_generate: boolean;
+  can_manage_schedule: boolean;
+  eligible_count: number;
+  eligible_people: number;
+  eligible_amount: string;
+  schedule: {
+    enabled: boolean;
+    actor_name: string | null;
+    next_run_at: string | null;
+    last_run_at: string | null;
+    last_status: "success" | "partial" | "failed" | null;
+    last_error: string | null;
+    last_month: string | null;
+  };
+};
+export type LabMonthlyPayrollOverview = {
+  month: string;
+  current_month: string;
+  start: string;
+  end: string;
+  timezone: string;
+  time: string;
+  projects: LabMonthlyPayrollProject[];
+  runs: {
+    id: string;
+    project_id: string;
+    month: string;
+    source: string;
+    status: "success" | "partial" | "failed";
+    created_count: number;
+    created_amount: string;
+    error: string;
+    created_at: string;
+  }[];
+};
+export type LabMonthlyPayrollResult = {
+  month: string;
+  created_count: number;
+  created_amount: string;
+  projects: {
+    project_id: string;
+    created_count: number;
+    created_amount: string;
+    status: "success" | "partial" | "failed";
+    error: string;
+    records: LabManagementRecord[];
+  }[];
+};
 export type LabProjectQuality = {
   project_id: string;
   plan_id: string;

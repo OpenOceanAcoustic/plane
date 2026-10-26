@@ -141,7 +141,7 @@ function ProjectCard({
   const completed = project.completedWorkItems;
   const total = project.totalWorkItems;
   const pct = total > 0 ? Math.min(100, Math.round((completed / total) * 100)) : 0;
-  const issuesHref = `/${workspaceSlug}/projects/${project.id}/issues`;
+  const issuesHref = `/${workspaceSlug}/lab/tasks?project_id=${encodeURIComponent(project.id)}`;
   return (
     <article className="lab-home-project-card" data-tone={tone} aria-label={project.name}>
       <div className="lab-home-project-head">
@@ -445,7 +445,7 @@ export function HomeWorkbenchView(props: HomeWorkbenchViewProps) {
               <ArrowRight size={12} />
             </Link>
             <Link href={`/${workspaceSlug}/lab/bounties`} className="lab-next-all">
-              查看团队悬赏
+              查看 VC 悬赏
               <ArrowRight size={12} />
             </Link>
           </div>
@@ -505,7 +505,7 @@ export function HomeWorkbenchView(props: HomeWorkbenchViewProps) {
             <QuickLink href={`/${workspaceSlug}/lab/finance`} icon={<Wallet size={14} />} label="资金与奖励" />
             <QuickLink href={`/${workspaceSlug}/lab/quality`} icon={<ClipboardCheck size={14} />} label="项目与质量" />
             <QuickLink href={`/${workspaceSlug}/lab/planning`} icon={<CalendarRange size={14} />} label="项目规划" />
-            <QuickLink href={`/${workspaceSlug}/lab/bounties`} icon={<Target size={14} />} label="悬赏大厅" />
+            <QuickLink href={`/${workspaceSlug}/lab/bounties`} icon={<Target size={14} />} label="VC 悬赏" />
             <QuickLink href={`/${workspaceSlug}/lab/analytics`} icon={<BarChart3 size={14} />} label="数据总览" />
           </div>
         </aside>

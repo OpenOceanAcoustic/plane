@@ -30,7 +30,7 @@ export const LabTaskOverview = observer(function LabTaskOverview({
   const bounty =
     !error && !isValidating && data ? (store.bounties.find((row) => row.id === item.bounty_id) ?? data) : undefined;
   return (
-    <LabItemOverviewSurface title="悬赏任务详情" onClose={onClose}>
+    <LabItemOverviewSurface title="VC 悬赏详情" onClose={onClose}>
       <div className="space-y-3">
         {item.issue_key && <p className="text-13 text-tertiary">{item.issue_key}</p>}
         <h2 className="text-20 font-semibold break-words">{item.title}</h2>
@@ -86,7 +86,7 @@ export const LabTaskOverview = observer(function LabTaskOverview({
           className="rounded px-3 py-2 text-13 text-accent-primary"
           href={`/${store.slug}/lab/bounties?bounty_id=${encodeURIComponent(item.bounty_id ?? "")}`}
         >
-          打开悬赏大厅
+          打开VC 悬赏
         </a>
       </div>
     </LabItemOverviewSurface>

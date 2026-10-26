@@ -15,6 +15,7 @@ from .lifecycle_workflow import lifecycle_patterns
 from .finance_urls import finance_patterns
 from .project_management import ProjectFinanceManagementView
 from .project_labor import ProjectLaborTeamsView
+from .monthly_payroll import MonthlyPayrollView
 from .project_quality import ProjectQualityView
 from .chat_urls import chat_patterns
 from .invitation_views import LabInvitationCreateView
@@ -69,6 +70,7 @@ auth_patterns = [
 
 business_patterns = [
     path("invitations/", LabInvitationCreateView.as_view()),
+    path("payroll-monthly/", MonthlyPayrollView.as_view()),
     path("projects/<uuid:pk>/finance-management/", ProjectFinanceManagementView.as_view()),
     path("projects/<uuid:pk>/labor-teams/", ProjectLaborTeamsView.as_view()),
     path("projects/<uuid:pk>/quality/", ProjectQualityView.as_view()),

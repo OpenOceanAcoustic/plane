@@ -253,6 +253,7 @@ class TaskTableView(LabView):
                 project__deleted_at__isnull=True,
             )
             .select_related("project", "state", "bounty")
+            .prefetch_related("assignees")
             .order_by("project__name", "sequence_id")
         )
         if archived == "0":
@@ -262,6 +263,7 @@ class TaskTableView(LabView):
             rows = rows.filter(project_id=project_id)
         rows = filter_dates(rows, request.query_params)
         tasks = list(rows)
+        visible_parents = {row.id: row.project_id for row in tasks}
         from .issue_deletion import deletable_issue_ids
 
         deletable_ids = deletable_issue_ids(request.user, self.workspace, tasks)
@@ -287,6 +289,15 @@ class TaskTableView(LabView):
                 "title": r.name,
                 "project_id": str(r.project_id),
                 "project": r.project.name,
+                "parent_id": str(r.parent_id)
+                if r.parent_id and visible_parents.get(r.parent_id) == r.project_id
+                else None,
+                "assignees": [
+                    {"id": str(member.id), "name": member.display_name or member.username}
+                    for member in r.assignees.all()
+                    if member.is_active
+                ],
+                "is_mine": any(member.id == request.user.id for member in r.assignees.all()),
                 "key": f"{r.project.identifier}-{r.sequence_id}",
                 "state": r.state.name if r.state else "",
                 "priority": r.priority,

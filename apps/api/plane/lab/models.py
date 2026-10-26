@@ -490,3 +490,35 @@ class AgentAnnotation(Record):
     class Meta:
         indexes = [models.Index(fields=["project", "target_id"], name="lab_agent_annotation_scope")]
         ordering = ("-created_at",)
+
+
+class PayrollSchedule(Record):
+    workspace = models.ForeignKey("db.Workspace", on_delete=models.CASCADE)
+    project = models.OneToOneField("db.Project", on_delete=models.CASCADE, related_name="lab_payroll_schedule")
+    enabled = models.BooleanField(default=False)
+    authorized_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True)
+    start_month = models.CharField(max_length=7)
+    last_run_at = models.DateTimeField(null=True)
+    last_month = models.CharField(max_length=7, blank=True)
+    last_status = models.CharField(max_length=16, blank=True)
+    last_error = models.TextField(blank=True)
+
+    class Meta:
+        indexes = [models.Index(fields=["enabled"], name="lab_payroll_schedule_enabled")]
+
+
+class PayrollRun(Record):
+    workspace = models.ForeignKey("db.Workspace", on_delete=models.CASCADE)
+    project = models.ForeignKey("db.Project", on_delete=models.SET_NULL, null=True)
+    project_id_snapshot = models.UUIDField()
+    month = models.CharField(max_length=7)
+    source = models.CharField(max_length=12)
+    actor = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True)
+    status = models.CharField(max_length=16)
+    created_count = models.PositiveIntegerField(default=0)
+    created_amount = models.DecimalField(max_digits=18, decimal_places=2, default=0)
+    record_ids = models.JSONField(default=list)
+    error = models.TextField(blank=True)
+
+    class Meta:
+        indexes = [models.Index(fields=["project", "created_at"], name="lab_payroll_run_project")]

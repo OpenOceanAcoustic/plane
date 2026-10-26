@@ -1,0 +1,137 @@
+/** Copyright (c) 2026 OpenOceanAcoustic and contributors. SPDX-License-Identifier: AGPL-3.0-only */
+.lab-hierarchy {
+  --item-color: var(--label-indigo-text);
+  --personal-color: var(--label-purple-text);
+}
+.lab-hierarchy-toolbar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+.lab-hierarchy-total {
+  margin-left: auto;
+  color: var(--text-color-secondary);
+  font-size: 13px;
+}
+.lab-hierarchy-scroll {
+  overflow: auto;
+  border: 1px solid var(--border-color-subtle);
+  border-radius: 10px;
+}
+.lab-hierarchy table {
+  width: 100%;
+  min-width: 780px;
+  border-collapse: collapse;
+  font-size: 13px;
+  text-align: left;
+}
+.lab-hierarchy th,
+.lab-hierarchy td {
+  border-bottom: 1px solid var(--border-color-subtle);
+  padding: 11px 14px;
+}
+.lab-hierarchy th {
+  font-weight: 500;
+  white-space: nowrap;
+  background: var(--background-color-layer-1);
+}
+.lab-hierarchy td:not(:first-child) {
+  white-space: nowrap;
+}
+.lab-hierarchy tbody tr:last-child td {
+  border-bottom: 0;
+}
+.lab-hierarchy tbody tr:hover {
+  background: var(--background-color-layer-1);
+}
+.lab-hierarchy-project {
+  background: color-mix(in srgb, var(--item-color) 5%, transparent);
+}
+.lab-hierarchy-project[data-kind="personal"] {
+  background: color-mix(in srgb, var(--personal-color) 5%, transparent);
+}
+.lab-hierarchy-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 22px;
+}
+.lab-hierarchy-title > a,
+.lab-hierarchy-personal-title {
+  text-align: left;
+  overflow-wrap: anywhere;
+  min-width: 100px;
+}
+.lab-hierarchy-title > a:hover,
+.lab-hierarchy-personal-title:hover {
+  color: var(--item-color);
+}
+.lab-hierarchy-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  flex-shrink: 0;
+  border-radius: 4px;
+}
+.lab-hierarchy-toggle:hover {
+  background: var(--background-color-layer-2);
+}
+.lab-hierarchy-spacer {
+  width: 22px;
+  flex-shrink: 0;
+}
+.lab-hierarchy-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 2px;
+  background: var(--item-color);
+  flex-shrink: 0;
+}
+tr[data-kind="personal"] .lab-hierarchy-dot {
+  background: var(--personal-color);
+}
+.lab-hierarchy-kind {
+  display: inline-flex;
+  align-items: center;
+  white-space: nowrap;
+  border-radius: 4px;
+  padding: 2px 6px;
+  font-size: 11px;
+  color: var(--item-color);
+  background: color-mix(in srgb, var(--item-color) 9%, transparent);
+}
+.lab-hierarchy-kind[data-kind="personal"] {
+  color: var(--personal-color);
+  background: color-mix(in srgb, var(--personal-color) 9%, transparent);
+}
+.lab-hierarchy-key,
+.lab-hierarchy-count {
+  font-size: 11px;
+  white-space: nowrap;
+  color: var(--text-color-secondary);
+}
+.lab-hierarchy tr[data-context="true"] .lab-hierarchy-title > a {
+  color: var(--text-color-tertiary);
+}
+.lab-hierarchy-empty {
+  padding: 32px;
+  text-align: center;
+  font-size: 13px;
+  color: var(--text-color-secondary);
+}
+@media (max-width: 640px) {
+  .lab-hierarchy-toolbar {
+    gap: 8px;
+  }
+  .lab-hierarchy-total {
+    margin-left: 0;
+  }
+  .lab-hierarchy th,
+  .lab-hierarchy td {
+    padding: 10px;
+  }
+}

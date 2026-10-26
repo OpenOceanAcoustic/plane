@@ -6,6 +6,7 @@ import { Banknote, CheckCircle2, Plus, Timer } from "lucide-react";
 import type { LabCashBounty, LabFinanceOverview } from "@plane/types";
 import type { LabStore } from "@plane/shared-state";
 import { Button, LabAmountInput, LabDialog, LabField, labAmountError, labInputClass } from "@plane/ui";
+import { cashTestOptions, cashTestTemplate, type CashTestKind } from "./cash-bounty-test-templates";
 // oxlint-disable-next-line import/no-unassigned-import -- cash bounty styles
 import "./cash-bounty.css";
 
@@ -41,6 +42,7 @@ export function LabCashBounties({ store, refreshKey = 0 }: { store: LabStore; re
   const [publishing, setPublishing] = useState(false);
   const [publishingBusy, setPublishingBusy] = useState(false);
   const [amount, setAmount] = useState("");
+  const [testKind, setTestKind] = useState<CashTestKind>("state");
   const [submitting, setSubmitting] = useState<LabCashBounty>();
   const [feedbackMode, setFeedbackMode] = useState("text");
   const [testResult, setTestResult] = useState("");
@@ -53,19 +55,11 @@ export function LabCashBounties({ store, refreshKey = 0 }: { store: LabStore; re
   function closePublication() {
     setPublishing(false);
     setAmount("");
+    setTestKind("state");
     setPublication({ title: "", target: "", steps: "", deliverable: "", criteria: "" });
   }
   function useTestingTemplate() {
-    setPublication({
-      title: "现金悬赏页面人工测试",
-      target: `页面：/${store.slug}/lab/cash（左侧「现金悬赏」）。使用自己的账号和当前浏览器，检查列表、筛选和任务说明。`,
-      steps:
-        "1. 从左侧「现金悬赏」进入，检查任务卡片是否显示标题、赏金、状态、任务说明和验收标准。\n2. 依次点击「可接单」「我的」「待审批」「全部」。预期：选中状态变化，列表随筛选变化；没有匹配任务时显示空列表提示。\n3. 返回「我的」，找到本次已领取的任务，点击「提交成果」。选择「测试反馈」，填写已测步骤、实际结果和测试结论后提交。\n仅测试上述入口；不创建额外悬赏、不取消他人任务、不登记付款。遇到无法访问的步骤，记录原因即可。",
-      deliverable:
-        "提交文字测试反馈：结论选「通过」「不通过」或「无法测试」，逐项写出点击了什么、实际看到了什么。有问题时写清复现步骤、预期与实际结果；无法执行的步骤注明原因。无需开发页面、编写代码或上传截图。",
-      criteria:
-        "按步骤实际操作并提交可核对的文字反馈；发现产品问题同样属于有效测试，不要求所有功能都通过。未覆盖项和原因须注明；仅填写「1」或「测完了」不符合要求。由验收人核对反馈是否完整、问题能否定位；修复后可再发复测任务。",
-    });
+    setPublication(cashTestTemplate(testKind, store.slug));
   }
   const [rejecting, setRejecting] = useState<LabCashBounty>();
   const [busyId, setBusyId] = useState("");
@@ -359,6 +353,19 @@ export function LabCashBounties({ store, refreshKey = 0 }: { store: LabStore; re
                 <option key={project.id} value={project.id}>
                   {project.name}
                   {project.lead ? " · 负责人" : " · 成员提议"}
+                </option>
+              ))}
+            </select>
+          </LabField>
+          <LabField label="测试类型">
+            <select
+              className={labInputClass}
+              value={testKind}
+              onChange={(event) => setTestKind(event.target.value as CashTestKind)}
+            >
+              {cashTestOptions.map((option) => (
+                <option key={option.id} value={option.id}>
+                  {option.label}
                 </option>
               ))}
             </select>

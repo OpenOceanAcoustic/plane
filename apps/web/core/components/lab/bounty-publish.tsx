@@ -151,7 +151,7 @@ export const LabBountyPublish = observer(function LabBountyPublish({
 
   return (
     <LabDialog
-      title="发布悬赏"
+      title="发布 VC 悬赏"
       submitLabel="发布"
       busy={store.busy}
       submitDisabled={

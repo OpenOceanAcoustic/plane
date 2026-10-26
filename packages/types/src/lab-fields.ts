@@ -15,6 +15,9 @@ export type LabTaskRow = {
   key: string;
   project_id: string;
   project: string;
+  parent_id?: string | null;
+  assignees?: { id: string; name: string }[];
+  is_mine?: boolean;
   state: string;
   priority: string;
   start_date: string | null;

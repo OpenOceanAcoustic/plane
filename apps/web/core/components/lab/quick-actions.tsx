@@ -27,7 +27,7 @@ const groups = (base: string): { title: string; links: QuickLink[] }[] => [
     title: "我的工作",
     links: [
       { href: `${base}/planner`, label: "个人规划", icon: <FolderKanban size={14} /> },
-      { href: `${base}/tasks`, label: "任务表格", icon: <TableProperties size={14} /> },
+      { href: `${base}/tasks`, label: "工作项", icon: <TableProperties size={14} /> },
       { href: `${base}/finance?finance_view=cost`, label: "记工时", icon: <Timer size={14} /> },
       { href: `${base}/finance?finance_view=payroll`, label: "报销与工资", icon: <Banknote size={14} /> },
     ],
@@ -38,7 +38,7 @@ const groups = (base: string): { title: string; links: QuickLink[] }[] => [
       { href: `${base}/finance?finance_view=income`, label: "入账", icon: <Wallet size={14} /> },
       { href: `${base}/finance?finance_view=project-budget`, label: "预算", icon: <PiggyBank size={14} /> },
       { href: `${base}/quality`, label: "质量资料", icon: <ClipboardCheck size={14} /> },
-      { href: `${base}/bounties`, label: "悬赏大厅", icon: <Target size={14} /> },
+      { href: `${base}/bounties`, label: "VC 悬赏", icon: <Target size={14} /> },
       { href: `${base}/cash`, label: "现金悬赏", icon: <Banknote size={14} /> },
     ],
   },

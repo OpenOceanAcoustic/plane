@@ -1,7 +1,7 @@
 /** Copyright (c) 2026 OpenOceanAcoustic and contributors. SPDX-License-Identifier: AGPL-3.0-only */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { observer } from "mobx-react";
-import { Link } from "react-router";
+import { Link, useSearchParams } from "react-router";
 import {
   flexRender,
   getCoreRowModel,
@@ -25,6 +25,8 @@ import type { LabTaskArchiveFilters } from "@plane/types";
 import { LabFieldsStore } from "@plane/shared-state";
 import { Button, labInputClass } from "@plane/ui";
 import { LabFieldEditor, LabFieldManager } from "./field-manager";
+import { LabTaskHierarchy } from "./task-hierarchy";
+import type { LabOpenProjectIssue } from "./item-details";
 import { LabIssueDeleteDialog } from "./issue-delete-dialog";
 import { LabTaskArchiveDialog, LabTaskRestoreDialog } from "./task-archive";
 import type { LabCustomField, LabTaskRow } from "./fields-types";
@@ -36,12 +38,23 @@ type Config = { fields: LabCustomField[]; members: { id: string; name: string }[
 export const LabTaskTable = observer(function LabTaskTable({
   store,
   refreshKey = 0,
+  openProjectIssue,
 }: {
   store: LabStore;
   refreshKey?: number;
+  openProjectIssue?: LabOpenProjectIssue;
 }) {
   const fieldsStore = useMemo(() => new LabFieldsStore(store), [store]);
-  const [projectId, setProjectId] = useState("");
+  const [searchParams, setSearchParams] = useSearchParams();
+  const projectId = searchParams.get("project_id") ?? "";
+  const setProjectId = (value: string) =>
+    setSearchParams((current) => {
+      const next = new URLSearchParams(current);
+      if (value) next.set("project_id", value);
+      else next.delete("project_id");
+      return next;
+    });
+  const [view, setView] = useState<"hierarchy" | "table">("hierarchy");
   const [query, setQuery] = useState("");
   const [sorting, setSorting] = useState<SortingState>([]);
   const [filters, setFilters] = useState<ColumnFiltersState>([]);
@@ -252,6 +265,15 @@ export const LabTaskTable = observer(function LabTaskTable({
       )}
       <div className="lab-task-toolbar flex flex-wrap items-center gap-3">
         <select
+          aria-label="工作项视图"
+          className={`${labInputClass} max-w-36`}
+          value={view}
+          onChange={(event) => setView(event.target.value as "hierarchy" | "table")}
+        >
+          <option value="hierarchy">层级</option>
+          <option value="table">表格</option>
+        </select>
+        <select
           aria-label="工作项范围"
           className={`${labInputClass} max-w-44`}
           value={archived ? "archived" : "current"}
@@ -312,96 +334,211 @@ export const LabTaskTable = observer(function LabTaskTable({
           value={query}
           onChange={(event) => setQuery(event.target.value)}
         />
-        <select
-          aria-label="任务分组"
-          className={`${labInputClass} max-w-48`}
-          value={grouping[0] ?? ""}
-          onChange={(event) => {
-            setGrouping(event.target.value ? [event.target.value] : []);
-            setExpanded(true);
-          }}
-        >
-          <option value="">不分组</option>
-          {table
-            .getAllLeafColumns()
-            .filter((column) => column.getCanGroup() && !["key", "title"].includes(column.id))
-            .map((column) => (
-              <option key={column.id} value={column.id}>
-                {String(column.columnDef.header)}
-              </option>
-            ))}
-        </select>
-        <details className="relative">
-          <summary className="cursor-pointer rounded-md border border-subtle px-3 py-2 text-13">显示列</summary>
-          <div className="shadow-overlay absolute right-0 z-20 mt-2 min-w-44 rounded-lg border border-subtle bg-surface-1 p-3">
-            {table.getAllLeafColumns().map((column) => (
-              <label key={column.id} className="flex gap-2 py-1 text-13">
-                <input type="checkbox" checked={column.getIsVisible()} onChange={column.getToggleVisibilityHandler()} />
-                {String(column.columnDef.header)}
-              </label>
-            ))}
-          </div>
-        </details>
-        <Button size="sm" variant="neutral-primary" disabled={archived} onClick={() => setManage(!manage)}>
-          管理字段
-        </Button>
-        <Button
-          size="sm"
-          variant="neutral-primary"
-          onClick={() => {
-            const visible = table.getVisibleLeafColumns().filter((column) => column.id !== "actions");
-            downloadText(
-              csvText([
-                visible.map((column) => column.columnDef.header),
-                ...table.getFilteredRowModel().rows.map((row) => visible.map((column) => row.getValue(column.id))),
-              ]),
-              "任务表格.csv"
-            );
-          }}
-        >
-          导出筛选结果
-        </Button>
+        {view === "table" && (
+          <>
+            <select
+              aria-label="任务分组"
+              className={`${labInputClass} max-w-48`}
+              value={grouping[0] ?? ""}
+              onChange={(event) => {
+                setGrouping(event.target.value ? [event.target.value] : []);
+                setExpanded(true);
+              }}
+            >
+              <option value="">不分组</option>
+              {table
+                .getAllLeafColumns()
+                .filter((column) => column.getCanGroup() && !["key", "title"].includes(column.id))
+                .map((column) => (
+                  <option key={column.id} value={column.id}>
+                    {String(column.columnDef.header)}
+                  </option>
+                ))}
+            </select>
+            <details className="relative">
+              <summary className="cursor-pointer rounded-md border border-subtle px-3 py-2 text-13">显示列</summary>
+              <div className="shadow-overlay absolute right-0 z-20 mt-2 min-w-44 rounded-lg border border-subtle bg-surface-1 p-3">
+                {table.getAllLeafColumns().map((column) => (
+                  <label key={column.id} className="flex gap-2 py-1 text-13">
+                    <input
+                      type="checkbox"
+                      checked={column.getIsVisible()}
+                      onChange={column.getToggleVisibilityHandler()}
+                    />
+                    {String(column.columnDef.header)}
+                  </label>
+                ))}
+              </div>
+            </details>
+            <Button size="sm" variant="neutral-primary" disabled={archived} onClick={() => setManage(!manage)}>
+              管理字段
+            </Button>
+            <Button
+              size="sm"
+              variant="neutral-primary"
+              onClick={() => {
+                const visible = table.getVisibleLeafColumns().filter((column) => column.id !== "actions");
+                downloadText(
+                  csvText([
+                    visible.map((column) => column.columnDef.header),
+                    ...table.getFilteredRowModel().rows.map((row) => visible.map((column) => row.getValue(column.id))),
+                  ]),
+                  "任务表格.csv"
+                );
+              }}
+            >
+              导出筛选结果
+            </Button>
+          </>
+        )}
       </div>
-      {manage && !archived && (
-        <LabFieldManager store={store} projectId={projectId} changed={() => void store.execute(load)} />
+      {view === "hierarchy" && (
+        <LabTaskHierarchy
+          tasks={fieldsStore.tasks}
+          personalItems={archived ? [] : (store.planner?.items ?? [])}
+          projectId={projectId}
+          query={query}
+          workspaceSlug={store.slug}
+          openProjectIssue={openProjectIssue}
+        />
       )}
-      {!grouping.length && (
-        <div className="lab-task-cards" data-mobile-cards="true" aria-label="任务卡片视图">
-          {table.getRowModel().rows.map((row) => (
-            <article className="lab-task-card" key={row.id}>
-              <div className="lab-task-card-head">
-                <a
-                  className="lab-task-card-title"
-                  href={`/${store.slug}/projects/${row.original.project_id}/${row.original.archived_at ? "archives/" : ""}issues/${row.original.id}`}
-                >
-                  {row.original.title}
-                </a>
-                <span className="lab-task-card-state">{row.original.state}</span>
-              </div>
-              <p className="lab-task-card-meta">
-                {row.original.project} · {row.original.key}
-                {row.original.target_date ? ` · 截止 ${row.original.target_date}` : ""}
-              </p>
-              <div className="lab-task-card-actions">
-                {!row.original.archived_at && (
-                  <a
-                    href={`/${store.slug}/lab/finance?project_id=${row.original.project_id}&finance_view=cost&log_issue=${row.original.id}&log_work=${encodeURIComponent(row.original.title)}`}
+      {view === "table" && (
+        <>
+          {manage && !archived && (
+            <LabFieldManager store={store} projectId={projectId} changed={() => void store.execute(load)} />
+          )}
+          {!grouping.length && (
+            <div className="lab-task-cards" data-mobile-cards="true" aria-label="任务卡片视图">
+              {table.getRowModel().rows.map((row) => (
+                <article className="lab-task-card" key={row.id}>
+                  <div className="lab-task-card-head">
+                    <a
+                      className="lab-task-card-title"
+                      href={`/${store.slug}/projects/${row.original.project_id}/${row.original.archived_at ? "archives/" : ""}issues/${row.original.id}`}
+                    >
+                      {row.original.title}
+                    </a>
+                    <span className="lab-task-card-state">{row.original.state}</span>
+                  </div>
+                  <p className="lab-task-card-meta">
+                    {row.original.project} · {row.original.key}
+                    {row.original.target_date ? ` · 截止 ${row.original.target_date}` : ""}
+                  </p>
+                  <div className="lab-task-card-actions">
+                    {!row.original.archived_at && (
+                      <a
+                        href={`/${store.slug}/lab/finance?project_id=${row.original.project_id}&finance_view=cost&log_issue=${row.original.id}&log_work=${encodeURIComponent(row.original.title)}`}
+                      >
+                        记工时
+                      </a>
+                    )}
+                    <a
+                      href={`/${store.slug}/projects/${row.original.project_id}/${row.original.archived_at ? "archives/" : ""}issues/${row.original.id}`}
+                    >
+                      打开任务
+                    </a>
+                  </div>
+                </article>
+              ))}
+              {!table.getRowModel().rows.length && (
+                <div className="lab-task-card-empty">
+                  <p>{fieldsStore.tasks.length ? "没有符合筛选条件的任务" : "没有可访问的任务"}</p>
+                  {fieldsStore.tasks.length ? (
+                    <Button
+                      size="sm"
+                      variant="neutral-primary"
+                      onClick={() => {
+                        setQuery("");
+                        setFilters([]);
+                        setProjectId("");
+                        setGrouping([]);
+                      }}
+                    >
+                      清除筛选
+                    </Button>
+                  ) : (
+                    <Link className="text-accent-primary" to={`/${store.slug}/lab/planning`}>
+                      去项目规划
+                    </Link>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+          <div
+            className="lab-task-table-surface overflow-auto rounded-lg border border-subtle"
+            data-mobile-cards={!grouping.length ? "true" : "false"}
+          >
+            <table className="w-full border-collapse text-left text-13">
+              <thead className="bg-layer-1">
+                {table.getHeaderGroups().map((group) => (
+                  <tr key={group.id}>
+                    {group.headers.map((header) => (
+                      <th key={header.id} className="min-w-28 border-b border-subtle p-3 font-medium">
+                        <button
+                          className="flex w-full items-center gap-1 text-left"
+                          onClick={header.column.getToggleSortingHandler()}
+                        >
+                          {flexRender(header.column.columnDef.header, header.getContext())}
+                          {header.column.getIsSorted() === "asc"
+                            ? " ↑"
+                            : header.column.getIsSorted() === "desc"
+                              ? " ↓"
+                              : ""}
+                        </button>
+                        <input
+                          aria-label={`筛选 ${String(header.column.columnDef.header)}`}
+                          className="font-normal mt-2 w-full rounded border border-subtle bg-surface-1 px-2 py-1 text-11 outline-none"
+                          value={String(header.column.getFilterValue() ?? "")}
+                          onChange={(event) => header.column.setFilterValue(event.target.value)}
+                          placeholder="筛选…"
+                        />
+                      </th>
+                    ))}
+                  </tr>
+                ))}
+              </thead>
+              <tbody>
+                {table.getRowModel().rows.map((row) => (
+                  <tr
+                    key={row.id}
+                    data-grouped={row.getIsGrouped() || undefined}
+                    className="border-b border-subtle hover:bg-layer-1"
                   >
-                    记工时
-                  </a>
-                )}
-                <a
-                  href={`/${store.slug}/projects/${row.original.project_id}/${row.original.archived_at ? "archives/" : ""}issues/${row.original.id}`}
-                >
-                  打开任务
-                </a>
+                    {row.getVisibleCells().map((cell) => (
+                      <td key={cell.id} className="p-3 align-top">
+                        {cell.getIsGrouped() ? (
+                          <button className="font-medium" onClick={row.getToggleExpandedHandler()}>
+                            {row.getIsExpanded() ? "▾" : "▸"} {String(cell.getValue() ?? "未填写")}（
+                            {row.subRows.length}）
+                          </button>
+                        ) : cell.getIsAggregated() ? (
+                          ""
+                        ) : cell.getIsPlaceholder() ? (
+                          ""
+                        ) : (
+                          flexRender(
+                            cell.column.columnDef.cell ?? ((context) => String(context.getValue() ?? "")),
+                            cell.getContext()
+                          )
+                        )}
+                      </td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            {!fieldsStore.tasks.length && (
+              <div className="p-8 text-center text-13 text-secondary">
+                <p>没有可访问的任务</p>
+                <Link className="mt-2 inline-flex text-accent-primary" to={`/${store.slug}/lab/planning`}>
+                  去项目规划
+                </Link>
               </div>
-            </article>
-          ))}
-          {!table.getRowModel().rows.length && (
-            <div className="lab-task-card-empty">
-              <p>{fieldsStore.tasks.length ? "没有符合筛选条件的任务" : "没有可访问的任务"}</p>
-              {fieldsStore.tasks.length ? (
+            )}
+            {fieldsStore.tasks.length > 0 && !table.getRowModel().rows.length && (
+              <div className="p-8 text-center text-13 text-secondary">
+                <p>没有符合筛选条件的任务</p>
                 <Button
                   size="sm"
                   variant="neutral-primary"
@@ -414,131 +551,44 @@ export const LabTaskTable = observer(function LabTaskTable({
                 >
                   清除筛选
                 </Button>
-              ) : (
-                <Link className="text-accent-primary" to={`/${store.slug}/lab/planning`}>
-                  去项目规划
-                </Link>
-              )}
-            </div>
-          )}
-        </div>
-      )}
-      <div
-        className="lab-task-table-surface overflow-auto rounded-lg border border-subtle"
-        data-mobile-cards={!grouping.length ? "true" : "false"}
-      >
-        <table className="w-full border-collapse text-left text-13">
-          <thead className="bg-layer-1">
-            {table.getHeaderGroups().map((group) => (
-              <tr key={group.id}>
-                {group.headers.map((header) => (
-                  <th key={header.id} className="min-w-28 border-b border-subtle p-3 font-medium">
-                    <button
-                      className="flex w-full items-center gap-1 text-left"
-                      onClick={header.column.getToggleSortingHandler()}
-                    >
-                      {flexRender(header.column.columnDef.header, header.getContext())}
-                      {header.column.getIsSorted() === "asc"
-                        ? " ↑"
-                        : header.column.getIsSorted() === "desc"
-                          ? " ↓"
-                          : ""}
-                    </button>
-                    <input
-                      aria-label={`筛选 ${String(header.column.columnDef.header)}`}
-                      className="font-normal mt-2 w-full rounded border border-subtle bg-surface-1 px-2 py-1 text-11 outline-none"
-                      value={String(header.column.getFilterValue() ?? "")}
-                      onChange={(event) => header.column.setFilterValue(event.target.value)}
-                      placeholder="筛选…"
-                    />
-                  </th>
-                ))}
-              </tr>
-            ))}
-          </thead>
-          <tbody>
-            {table.getRowModel().rows.map((row) => (
-              <tr
-                key={row.id}
-                data-grouped={row.getIsGrouped() || undefined}
-                className="border-b border-subtle hover:bg-layer-1"
-              >
-                {row.getVisibleCells().map((cell) => (
-                  <td key={cell.id} className="p-3 align-top">
-                    {cell.getIsGrouped() ? (
-                      <button className="font-medium" onClick={row.getToggleExpandedHandler()}>
-                        {row.getIsExpanded() ? "▾" : "▸"} {String(cell.getValue() ?? "未填写")}（{row.subRows.length}）
-                      </button>
-                    ) : cell.getIsAggregated() ? (
-                      ""
-                    ) : cell.getIsPlaceholder() ? (
-                      ""
-                    ) : (
-                      flexRender(
-                        cell.column.columnDef.cell ?? ((context) => String(context.getValue() ?? "")),
-                        cell.getContext()
-                      )
-                    )}
-                  </td>
-                ))}
-              </tr>
-            ))}
-          </tbody>
-        </table>
-        {!fieldsStore.tasks.length && (
-          <div className="p-8 text-center text-13 text-secondary">
-            <p>没有可访问的任务</p>
-            <Link className="mt-2 inline-flex text-accent-primary" to={`/${store.slug}/lab/planning`}>
-              去项目规划
-            </Link>
+              </div>
+            )}
           </div>
-        )}
-        {fieldsStore.tasks.length > 0 && !table.getRowModel().rows.length && (
-          <div className="p-8 text-center text-13 text-secondary">
-            <p>没有符合筛选条件的任务</p>
+          <footer className="flex items-center gap-3 text-13 text-secondary">
+            <span className="mr-auto">
+              {table.getFilteredRowModel().rows.length} 项任务 · 第 {table.getState().pagination.pageIndex + 1} /{" "}
+              {Math.max(1, table.getPageCount())} 页
+            </span>
             <Button
               size="sm"
               variant="neutral-primary"
-              onClick={() => {
-                setQuery("");
-                setFilters([]);
-                setProjectId("");
-                setGrouping([]);
-              }}
+              disabled={!table.getCanPreviousPage()}
+              onClick={() => table.previousPage()}
             >
-              清除筛选
+              上一页
             </Button>
-          </div>
-        )}
-      </div>
-      <footer className="flex items-center gap-3 text-13 text-secondary">
-        <span className="mr-auto">
-          {table.getFilteredRowModel().rows.length} 项任务 · 第 {table.getState().pagination.pageIndex + 1} /{" "}
-          {Math.max(1, table.getPageCount())} 页
-        </span>
-        <Button
-          size="sm"
-          variant="neutral-primary"
-          disabled={!table.getCanPreviousPage()}
-          onClick={() => table.previousPage()}
-        >
-          上一页
-        </Button>
-        <Button size="sm" variant="neutral-primary" disabled={!table.getCanNextPage()} onClick={() => table.nextPage()}>
-          下一页
-        </Button>
-        <select
-          aria-label="每页任务数"
-          value={table.getState().pagination.pageSize}
-          onChange={(event) => table.setPageSize(Number(event.target.value))}
-        >
-          {[25, 50, 100].map((size) => (
-            <option key={size} value={size}>
-              {size} / 页
-            </option>
-          ))}
-        </select>
-      </footer>
+            <Button
+              size="sm"
+              variant="neutral-primary"
+              disabled={!table.getCanNextPage()}
+              onClick={() => table.nextPage()}
+            >
+              下一页
+            </Button>
+            <select
+              aria-label="每页任务数"
+              value={table.getState().pagination.pageSize}
+              onChange={(event) => table.setPageSize(Number(event.target.value))}
+            >
+              {[25, 50, 100].map((size) => (
+                <option key={size} value={size}>
+                  {size} / 页
+                </option>
+              ))}
+            </select>
+          </footer>
+        </>
+      )}
     </div>
   );
 });

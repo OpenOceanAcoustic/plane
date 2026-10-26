@@ -24,6 +24,8 @@ import { LabFinanceActionDialog } from "../../../apps/web/core/components/lab/fi
 import { Planner as MobilePlanner } from "../../../apps/mobile/src/features/lab/planner";
 import { LabPlanningVisibilityFields } from "../../../packages/ui/src/lab-planning-visibility";
 import { MobileSelect } from "../../../apps/mobile/src/components/select";
+import { FinanceMonthlyHarness } from "./finance-monthly-harness";
+import { LabMarket } from "../../../apps/web/core/components/lab/market";
 
 function VisibilityFields({ mobile = false }: { mobile?: boolean }) {
   const [saved, setSaved] = useState("");
@@ -144,7 +146,7 @@ const ReceiptForm = observer(function ReceiptForm() {
   );
 });
 const path = window.location.pathname;
-function Workbench({ section = "planner" }: { section?: "planner" | "team" | "cash" }) {
+function Workbench({ section = "planner" }: { section?: "planner" | "team" | "cash" | "tasks" }) {
   return (
     <div style={{ height: "calc(100dvh - 48px)" }}>
       <MemoryRouter initialEntries={[`/lab/lab/${section}${window.location.search}`]}>
@@ -203,10 +205,25 @@ function AgentChat() {
     </MemoryRouter>
   );
 }
+function VCMarket() {
+  const store = useMemo(() => new LabStore("", "lab"), []);
+  useEffect(() => {
+    void store.execute(store.loadPlanner);
+  }, [store]);
+  return (
+    <MemoryRouter>
+      <LabMarket store={store} />
+    </MemoryRouter>
+  );
+}
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <Toast theme="light" />
-    {path === "/receipt-form" ? (
+    {path === "/vc-market" ? (
+      <VCMarket />
+    ) : path === "/finance-monthly" ? (
+      <FinanceMonthlyHarness />
+    ) : path === "/receipt-form" ? (
       <ReceiptForm />
     ) : path === "/agent-chat" ? (
       <AgentChat />
@@ -224,6 +241,8 @@ createRoot(document.getElementById("root")!).render(
       <Planning />
     ) : path === "/workbench" ? (
       <Workbench />
+    ) : path === "/task-hierarchy" ? (
+      <Workbench section="tasks" />
     ) : path === "/cash-bounties" ? (
       <Workbench section="cash" />
     ) : path === "/team" ? (

@@ -164,7 +164,9 @@ export const LabPanel = observer(function LabPanel({
           )}
           {store.planner && section === "bounties" && <LabMarket store={store} />}
           {store.planner && section === "cash" && <LabCashBounties store={store} refreshKey={refreshKey} />}
-          {store.planner && section === "tasks" && <LabTaskTable store={store} refreshKey={refreshKey} />}
+          {store.planner && section === "tasks" && (
+            <LabTaskTable store={store} refreshKey={refreshKey} openProjectIssue={openProjectIssue} />
+          )}
           {store.planner && section === "analytics" && <LabAnalyticsPanel store={store} refreshKey={refreshKey} />}
           {store.planner && section === "quality" && <LabProjectQuality store={store} refreshKey={refreshKey} />}
           {store.planner && section === "finance" && <LabFinance store={store} refreshKey={refreshKey} />}

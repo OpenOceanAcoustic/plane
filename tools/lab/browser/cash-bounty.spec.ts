@@ -151,6 +151,42 @@ test("publishing supplies specific scope steps deliverables and acceptance witho
   for (const key of ["target", "steps", "deliverable", "criteria"]) expect(writes[0].body[key]).toBeTruthy();
 });
 
+test("test options fill specific instructions only on request and preserve the chosen bounty amount", async ({
+  page,
+}) => {
+  const writes = await setup(page, { lead: true, selected: "" });
+  await page.getByRole("button", { name: "发布现金悬赏", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "发布现金悬赏", exact: true });
+  const options = dialog.getByLabel("测试类型");
+  await expect(options.locator("option")).toHaveCount(6);
+  await dialog.getByLabel("任务名称", { exact: true }).fill("正在编辑的任务");
+  await options.selectOption("form");
+  await expect(dialog.getByLabel("任务名称", { exact: true })).toHaveValue("正在编辑的任务");
+  await dialog.getByRole("button", { name: "填入人工测试模板" }).click();
+  await expect(dialog.getByLabel("操作步骤")).toHaveValue(/关闭表单，不点击发布/);
+  await expect(dialog.getByLabel("现金赏金", { exact: true })).toHaveValue("");
+  await dialog.getByLabel("现金赏金", { exact: true }).fill("12");
+  // These actions intentionally exercise successive selections in the same form.
+  /* oxlint-disable no-await-in-loop */
+  for (const [kind, expected] of [
+    ["navigation", /同一标题、项目和金额/],
+    ["layout", /文字重叠/],
+    ["permission", /不切换他人账号/],
+    ["workflow", /尚未发生的环节先注明未覆盖/],
+  ] as const) {
+    await options.selectOption(kind);
+    await dialog.getByRole("button", { name: "填入人工测试模板" }).click();
+    await expect(dialog.getByLabel("操作步骤")).toHaveValue(expected);
+    await expect(dialog.getByLabel("现金赏金", { exact: true })).toHaveValue("12");
+  }
+  /* oxlint-enable no-await-in-loop */
+  await dialog.getByRole("button", { name: "发布", exact: true }).click();
+  await expect(dialog).toBeHidden();
+  expect(writes).toHaveLength(1);
+  expect(writes[0].body).toMatchObject({ title: "现金悬赏文字反馈与状态流转测试", amount: "12" });
+  expect(writes[0].body.steps).toContain("尚未发生的环节先注明未覆盖");
+});
+
 test("acceptance does not post a payment and payment registration needs its own proof", async ({ page }) => {
   const writes = await setup(page, { status: "submitted", lead: true });
   const card = page.getByRole("article", { name: "UI点击测试", exact: true });

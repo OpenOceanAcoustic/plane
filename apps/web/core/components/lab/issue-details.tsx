@@ -69,7 +69,7 @@ export const LabIssueDetails = observer(function LabIssueDetails({
         const [, tasks] = await Promise.all([store.loadPlanner(), store.request<LabTask[]>(`tasks/?${search}`)]);
         if (currentRequest !== requestId.current || !publishAllowed.current) return;
         const task = tasks.find((row) => row.id === issueId && row.project_id === projectId);
-        if (!task) throw new Error("此工作项当前不可发布悬赏，请刷新后重试");
+        if (!task) throw new Error("此工作项当前不可发布 VC 悬赏，请刷新后重试");
         setPublishing({ task, requestId: currentRequest });
       } catch (failure) {
         if (currentRequest === requestId.current && publishAllowed.current) throw failure;
@@ -86,7 +86,7 @@ export const LabIssueDetails = observer(function LabIssueDetails({
           {canPublish && (
             <Button size="sm" variant="primary" disabled={store.busy} onClick={() => void openPublish()}>
               <Star size={14} className="mr-1" aria-hidden="true" />
-              发布悬赏
+              发布 VC 悬赏
             </Button>
           )}
           {deletionAllowed && !isValidating && (
@@ -113,7 +113,7 @@ export const LabIssueDetails = observer(function LabIssueDetails({
             to={`/${workspaceSlug}/lab/bounties?bounty_id=${encodeURIComponent(metadata.bounty_id)}`}
             className="ml-auto text-13 text-accent-primary"
           >
-            打开悬赏大厅
+            打开VC 悬赏
           </Link>
         </section>
       )}
