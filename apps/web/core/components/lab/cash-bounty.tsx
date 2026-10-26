@@ -42,6 +42,8 @@ export function LabCashBounties({ store, refreshKey = 0 }: { store: LabStore; re
   const [publishingBusy, setPublishingBusy] = useState(false);
   const [amount, setAmount] = useState("");
   const [submitting, setSubmitting] = useState<LabCashBounty>();
+  const [feedbackMode, setFeedbackMode] = useState("text");
+  const [testResult, setTestResult] = useState("");
   const [accepting, setAccepting] = useState<LabCashBounty>();
   const [paying, setPaying] = useState<LabCashBounty>();
   const [publication, setPublication] = useState({ title: "", target: "", steps: "", deliverable: "", criteria: "" });
@@ -56,13 +58,13 @@ export function LabCashBounties({ store, refreshKey = 0 }: { store: LabStore; re
   function useTestingTemplate() {
     setPublication({
       title: "现金悬赏页面人工测试",
-      target: `页面：/${store.slug}/lab/cash。使用获授权的测试账号；覆盖桌面和手机窄屏。`,
+      target: `页面：/${store.slug}/lab/cash（左侧「现金悬赏」）。使用自己的账号和当前浏览器，检查列表、筛选和任务说明。`,
       steps:
-        "1. 打开页面，切换可接单、我的、待审批和全部筛选。\n2. 打开任务，核对标题、赏金、任务说明和验收标准。\n3. 检查空列表、加载失败、长文本和窄屏布局，记录按钮与提示是否可用。\n操作范围：仅浏览页面；未经另行授权，不领取任务、不提交成果、不登记付款。",
+        "1. 从左侧「现金悬赏」进入，检查任务卡片是否显示标题、赏金、状态、任务说明和验收标准。\n2. 依次点击「可接单」「我的」「待审批」「全部」。预期：选中状态变化，列表随筛选变化；没有匹配任务时显示空列表提示。\n3. 返回「我的」，找到本次已领取的任务，点击「提交成果」。选择「测试反馈」，填写已测步骤、实际结果和测试结论后提交。\n仅测试上述入口；不创建额外悬赏、不取消他人任务、不登记付款。遇到无法访问的步骤，记录原因即可。",
       deliverable:
-        "提交页面地址、浏览器版本、账号角色、已测步骤，以及预期和实际结果；每个问题附复现步骤和截图。未发现问题也须提交覆盖清单，不提交密码或验证码。",
+        "提交文字测试反馈：结论选「通过」「不通过」或「无法测试」，逐项写出点击了什么、实际看到了什么。有问题时写清复现步骤、预期与实际结果；无法执行的步骤注明原因。无需开发页面、编写代码或上传截图。",
       criteria:
-        "桌面约1440px和手机约390px各完成一轮；覆盖上述筛选及任务详情；每个问题可按步骤复现，结果有截图或明确记录。未覆盖项须注明。",
+        "按步骤实际操作并提交可核对的文字反馈；发现产品问题同样属于有效测试，不要求所有功能都通过。未覆盖项和原因须注明；仅填写「1」或「测完了」不符合要求。由验收人核对反馈是否完整、问题能否定位；修复后可再发复测任务。",
     });
   }
   const [rejecting, setRejecting] = useState<LabCashBounty>();
@@ -241,7 +243,7 @@ export function LabCashBounties({ store, refreshKey = 0 }: { store: LabStore; re
               )}
               {row.evidence && (
                 <p className="lab-cash-evidence">
-                  <CheckCircle2 size={13} /> 成果：{row.evidence}
+                  <CheckCircle2 size={13} /> <span>成果：{row.evidence}</span>
                 </p>
               )}
               <div className="lab-cash-actions">
@@ -267,7 +269,16 @@ export function LabCashBounties({ store, refreshKey = 0 }: { store: LabStore; re
                   </Button>
                 )}
                 {row.can_submit && (
-                  <Button size="sm" loading={busyId === row.id} onClick={() => setSubmitting(row)}>
+                  <Button
+                    size="sm"
+                    loading={busyId === row.id}
+                    onClick={() => {
+                      setFeedbackMode("text");
+                      setTestResult("");
+                      setError("");
+                      setSubmitting(row);
+                    }}
+                  >
                     提交成果
                   </Button>
                 )}
@@ -408,7 +419,7 @@ export function LabCashBounties({ store, refreshKey = 0 }: { store: LabStore; re
               rows={3}
               value={publication.deliverable}
               onChange={(event) => updatePublication("deliverable", event.target.value)}
-              placeholder="提交复现步骤、预期与实际结果、截图或报告；无问题时提交覆盖清单"
+              placeholder="文字反馈：已测步骤、测试结论、预期与实际结果；无问题时写明覆盖了哪些操作"
             />
           </LabField>
           <LabField label="验收标准">
@@ -452,13 +463,67 @@ export function LabCashBounties({ store, refreshKey = 0 }: { store: LabStore; re
           error={error}
           onClose={() => setSubmitting(undefined)}
           onSubmit={async (form) => {
-            if (await act(submitting, "submit", { evidence: String(form.get("evidence") ?? "") }))
-              setSubmitting(undefined);
+            const body: Record<string, string> =
+              feedbackMode === "test"
+                ? {
+                    feedback_mode: "test",
+                    test_result: testResult,
+                    test_steps: String(form.get("test_steps") ?? ""),
+                    feedback: String(form.get("feedback") ?? ""),
+                  }
+                : { feedback_mode: "text", evidence: String(form.get("evidence") ?? "") };
+            if (await act(submitting, "submit", body)) setSubmitting(undefined);
           }}
         >
-          <LabField label="成果、链接或交付说明">
-            <textarea name="evidence" className={labInputClass} rows={5} required />
+          <LabField label="反馈方式">
+            <select
+              className={labInputClass}
+              value={feedbackMode}
+              onChange={(event) => setFeedbackMode(event.target.value)}
+            >
+              <option value="text">交付说明</option>
+              <option value="test">测试反馈</option>
+            </select>
           </LabField>
+          {feedbackMode === "test" ? (
+            <>
+              <LabField label="测试结论">
+                <select
+                  className={labInputClass}
+                  value={testResult}
+                  onChange={(event) => setTestResult(event.target.value)}
+                  required
+                >
+                  <option value="">请选择</option>
+                  <option value="pass">通过</option>
+                  <option value="fail">不通过</option>
+                  <option value="blocked">无法测试</option>
+                </select>
+              </LabField>
+              <LabField label="已测步骤与实际结果">
+                <textarea
+                  name="test_steps"
+                  className={labInputClass}
+                  rows={5}
+                  required
+                  placeholder="逐项写明：从哪里进入、点击什么、实际看到什么；未覆盖项注明原因"
+                />
+              </LabField>
+              <LabField label={testResult === "pass" ? "问题或建议（可选）" : "问题或无法测试的原因"}>
+                <textarea
+                  name="feedback"
+                  className={labInputClass}
+                  rows={5}
+                  required={testResult !== "pass"}
+                  placeholder="复现步骤 → 预期结果 → 实际结果；或说明哪一步无法执行及原因"
+                />
+              </LabField>
+            </>
+          ) : (
+            <LabField label="成果、链接或交付说明">
+              <textarea name="evidence" className={labInputClass} rows={5} required />
+            </LabField>
+          )}
         </LabDialog>
       )}
 

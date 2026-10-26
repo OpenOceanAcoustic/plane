@@ -131,6 +131,8 @@
   gap: 5px;
   color: var(--text-color-primary);
   font-size: 12px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 
 .lab-cash-actions {

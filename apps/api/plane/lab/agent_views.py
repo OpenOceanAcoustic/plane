@@ -35,7 +35,7 @@ from .labor_hours import work_hours
 from .models import AgentAction, AgentAnnotation, AgentLeadRequest, AgentMessage, AgentProposal, AgentReminder, AgentThread, Allocation, Bounty, CashBounty, Stage
 from .project_management import finance_overview, finance_mutation, latest_records, money_text, recognized_cost, record_data
 from .finance_services import account, perform
-from .cash_bounties import cash_amount, can_pay, bounty_description, BOUNTY_REQUIREMENTS
+from .cash_bounties import cash_amount, can_pay, bounty_description, bounty_submission, BOUNTY_REQUIREMENTS
 from .agent_bounties import cash_bounty_facts
 from .vc import stage_budget, stage_reserved
 from . import quotes, bounties
@@ -3961,10 +3961,7 @@ def execute_bounty_action(action, user, workspace):
         elif kind == "bounty_submit":
             if row.status != "claimed" or row.claimed_by_id != user.id:
                 raise PermissionDenied("只有领取人可以提交成果")
-            evidence = str(payload.get("evidence", "")).strip()
-            if not evidence:
-                raise ValidationError("请填写成果或证据")
-            row.evidence = evidence
+            row.evidence = bounty_submission(payload)
             row.submitted_at = timezone.now()
             row.status = "submitted"
             row.save(update_fields=["evidence", "submitted_at", "status"])

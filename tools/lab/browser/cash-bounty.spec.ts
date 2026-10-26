@@ -4,7 +4,14 @@ import type { Page } from "@playwright/test";
 
 async function setup(
   page: Page,
-  { status = "open", selected = "target", missing = false, lead = false, failPayment = false } = {}
+  {
+    status = "open",
+    selected = "target",
+    missing = false,
+    lead = false,
+    failPayment = false,
+    failSubmission = false,
+  } = {}
 ) {
   let currentStatus = status;
   const writes: { path: string; body: Record<string, unknown> }[] = [];
@@ -28,6 +35,12 @@ async function setup(
     if (path.endsWith("/cash-bounties/target/claim/")) {
       writes.push({ path, body: route.request().postDataJSON() });
       currentStatus = "claimed";
+      return route.fulfill({ json: {} });
+    }
+    if (path.endsWith("/cash-bounties/target/submit/")) {
+      writes.push({ path, body: route.request().postDataJSON() });
+      if (failSubmission) return route.fulfill({ status: 400, json: { detail: "提交暂时失败" } });
+      currentStatus = "submitted";
       return route.fulfill({ json: {} });
     }
     if (path.endsWith("/cash-bounties/target/accept/")) {
@@ -60,8 +73,8 @@ async function setup(
                 publisher: { id: "lead", name: "负责人" },
                 reviewer: { id: "lead", name: "负责人" },
                 claimed_by: currentStatus === "claimed" ? { id: "member", name: "成员" } : null,
-                deliverable: "提交复现步骤和截图",
-                criteria: "覆盖成功、失败和移动端状态",
+                deliverable: "提交已测步骤和文字反馈",
+                criteria: "按步骤操作，发现问题也算有效反馈",
                 can_claim: currentStatus === "open",
                 can_submit: currentStatus === "claimed",
                 can_accept: lead && currentStatus === "submitted",
@@ -90,8 +103,8 @@ test("a cash bounty deep link shows the exact task and keeps it visible after cl
   const writes = await setup(page);
   const card = page.getByRole("article", { name: "UI点击测试", exact: true });
   await expect(card).toContainText("¥5.00");
-  await expect(card).toContainText("提交复现步骤和截图");
-  await expect(card).toContainText("覆盖成功、失败和移动端状态");
+  await expect(card).toContainText("提交已测步骤和文字反馈");
+  await expect(card).toContainText("按步骤操作，发现问题也算有效反馈");
   await expect(page.getByRole("article", { name: "其他开放任务" })).toHaveCount(0);
   expect(writes).toEqual([]);
   await card.getByRole("button", { name: "我要接" }).click();
@@ -126,8 +139,9 @@ test("publishing supplies specific scope steps deliverables and acceptance witho
   await expect(dialog.getByRole("button", { name: "发布", exact: true })).toBeDisabled();
   await dialog.getByRole("button", { name: "填入人工测试模板" }).click();
   await expect(dialog.getByLabel("任务入口与范围")).toHaveValue(/\/lab\/lab\/cash/);
-  await expect(dialog.getByLabel("操作步骤")).toHaveValue(/切换/);
-  await expect(dialog.getByLabel("验收标准", { exact: true })).not.toHaveValue("");
+  await expect(dialog.getByLabel("操作步骤")).toHaveValue(/可接单.*我的.*待审批.*全部/);
+  await expect(dialog.getByLabel("验收标准", { exact: true })).toHaveValue(/发现产品问题同样属于有效测试/);
+  await expect(dialog.getByLabel("交付要求", { exact: true })).toHaveValue(/无需开发页面、编写代码或上传截图/);
   await expect(dialog.getByRole("button", { name: "发布", exact: true })).toBeDisabled();
   await dialog.getByLabel("现金赏金", { exact: true }).fill("5");
   await dialog.getByRole("button", { name: "发布", exact: true }).click();
@@ -170,4 +184,59 @@ test("failed payment registration keeps the entered proof and does not show paid
   await expect(dialog.getByRole("alert")).toContainText("余额不足");
   await dialog.getByRole("button", { name: "关闭弹窗", exact: true }).click();
   await expect(card).not.toContainText("已登记付款");
+});
+
+for (const result of ["pass", "fail", "blocked"]) {
+  test(`manual ${result} feedback can be submitted as text without a screenshot`, async ({ page }) => {
+    const writes = await setup(page, { status: "claimed" });
+    const card = page.getByRole("article", { name: "UI点击测试", exact: true });
+    await card.getByRole("button", { name: "提交成果" }).click();
+    const dialog = page.getByRole("dialog", { name: "提交成果", exact: true });
+    await dialog.getByLabel("反馈方式").selectOption("test");
+    await dialog.getByLabel("测试结论").selectOption(result);
+    await dialog.getByRole("button", { name: "提交验收" }).click();
+    expect(writes).toHaveLength(0);
+    await dialog.getByLabel("已测步骤与实际结果").fill("点击我的、全部，记录列表结果");
+    if (result !== "pass") {
+      await dialog.getByRole("button", { name: "提交验收" }).click();
+      expect(writes).toHaveLength(0);
+      await dialog.getByLabel("问题或无法测试的原因").fill("点击全部后空白，预期显示任务");
+    }
+    await expect(dialog.locator('input[type="file"]')).toHaveCount(0);
+    await dialog.getByRole("button", { name: "提交验收" }).click();
+    await expect(dialog).toBeHidden();
+    await expect(card).toContainText("待验收");
+    expect(writes).toHaveLength(1);
+    expect(writes[0].body).toMatchObject({
+      feedback_mode: "test",
+      test_result: result,
+      test_steps: "点击我的、全部，记录列表结果",
+    });
+    expect(writes[0].path).toMatch(/submit\/$/);
+  });
+}
+
+test("failed report submission preserves the result and written feedback for retry", async ({ page }) => {
+  await setup(page, { status: "claimed", failSubmission: true });
+  await page.getByRole("button", { name: "提交成果" }).click();
+  const dialog = page.getByRole("dialog", { name: "提交成果", exact: true });
+  await dialog.getByLabel("反馈方式").selectOption("test");
+  await dialog.getByLabel("测试结论").selectOption("fail");
+  await dialog.getByLabel("已测步骤与实际结果").fill("点击全部后列表空白");
+  await dialog.getByLabel("问题或无法测试的原因").fill("预期显示任务，实际空白");
+  await dialog.getByRole("button", { name: "提交验收" }).click();
+  await expect(dialog.getByRole("alert")).toContainText("提交暂时失败");
+  await expect(dialog.getByLabel("测试结论")).toHaveValue("fail");
+  await expect(dialog.getByLabel("已测步骤与实际结果")).toHaveValue("点击全部后列表空白");
+  await expect(dialog.getByLabel("问题或无法测试的原因")).toHaveValue("预期显示任务，实际空白");
+});
+
+test("ordinary delivery notes still submit through the existing text mode", async ({ page }) => {
+  const writes = await setup(page, { status: "claimed" });
+  await page.getByRole("button", { name: "提交成果" }).click();
+  const dialog = page.getByRole("dialog", { name: "提交成果", exact: true });
+  await dialog.getByLabel("成果、链接或交付说明").fill("普通文字交付说明");
+  await dialog.getByRole("button", { name: "提交验收" }).click();
+  await expect(dialog).toBeHidden();
+  expect(writes[0].body).toMatchObject({ feedback_mode: "text", evidence: "普通文字交付说明" });
 });

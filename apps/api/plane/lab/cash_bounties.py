@@ -39,6 +39,28 @@ def bounty_description(data):
     return "\n\n".join(f"{label}：\n{values[key]}" for key, label in BOUNTY_REQUIREMENTS if key != "criteria")
 
 
+def bounty_submission(data):
+    mode = data.get("feedback_mode", "text")
+    if mode == "text":
+        evidence = str(data.get("evidence", "") or "").strip()
+        if not evidence:
+            raise ValidationError("请填写成果或证据")
+        return evidence
+    if mode != "test":
+        raise ValidationError("请选择有效的反馈方式")
+    labels = {"pass": "通过", "fail": "不通过", "blocked": "无法测试"}
+    result = data.get("test_result")
+    if not isinstance(result, str) or result not in labels:
+        raise ValidationError("请选择测试结论")
+    steps = str(data.get("test_steps", "") or "").strip()
+    feedback = str(data.get("feedback", "") or "").strip()
+    if not steps:
+        raise ValidationError("请填写已测步骤与实际结果")
+    if result != "pass" and not feedback:
+        raise ValidationError("请填写问题复现步骤、预期与实际结果，或无法测试的原因")
+    return f"人工测试反馈\n测试结论：{labels[result]}\n已测步骤与实际结果：\n{steps}\n问题或建议：\n{feedback or '未发现问题'}"
+
+
 def cash_amount(value):
     try:
         result = Decimal(str(value))
@@ -210,10 +232,7 @@ class CashBountyActionView(LabView):
             elif action == "submit":
                 if row.status != "claimed" or row.claimed_by_id != request.user.id:
                     raise PermissionDenied("只有领取人可以提交成果")
-                evidence = str(request.data.get("evidence", "")).strip()
-                if not evidence:
-                    raise ValidationError("请填写成果或证据")
-                row.evidence = evidence
+                row.evidence = bounty_submission(request.data)
                 row.submitted_at = now
                 row.status = "submitted"
                 row.save(update_fields=["evidence", "submitted_at", "status"])

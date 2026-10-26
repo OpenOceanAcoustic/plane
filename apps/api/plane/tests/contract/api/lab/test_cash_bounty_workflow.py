@@ -23,7 +23,7 @@ def task(lab, **extra):
         "amount": "5.00",
         "target": "/lab/lab/cash，桌面和手机浏览器",
         "steps": "切换筛选，查看详情，检查长文本布局",
-        "deliverable": "浏览器版本、复现步骤、截图和覆盖清单",
+        "deliverable": "已测步骤、文字反馈和覆盖清单",
         "criteria": "桌面和手机各一轮，每个问题可重现",
         **extra,
     }
@@ -60,7 +60,7 @@ def test_full_fixed_cash_workflow_keeps_acceptance_separate_from_payment(laborat
     assert action(lab, pk, "claim", lab["member"], amount="1").status_code == 200
     row.refresh_from_db()
     assert row.amount == Decimal("5")
-    assert action(lab, pk, "submit", lab["member"], evidence="合成测试报告及截图").status_code == 200
+    assert action(lab, pk, "submit", lab["member"], evidence="合成文字测试报告").status_code == 200
     assert action(lab, pk, "accept", lab["member"]).status_code == 403
     assert action(lab, pk, "pay", payment_evidence="synthetic-transfer").status_code == 400
     assert action(lab, pk, "accept", note="测试报告符合约定").status_code == 200
