@@ -1,0 +1,160 @@
+/** Copyright (c) 2026 OpenOceanAcoustic and contributors. SPDX-License-Identifier: AGPL-3.0-only */
+.lab-task-timeline {
+  min-width: 0;
+  color: var(--text-color-primary);
+}
+.lab-task-timeline-toolbar {
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  height: 40px;
+  padding: 0 8px;
+  border-bottom: 1px solid var(--border-color-subtle);
+  background: var(--background-color-surface-1);
+  white-space: nowrap;
+}
+.lab-task-timeline-toolbar button,
+.lab-task-timeline-toolbar select {
+  box-sizing: border-box;
+  display: inline-flex;
+  flex-shrink: 0;
+  justify-content: center;
+  align-items: center;
+  height: 26px;
+  padding: 0 6px;
+  border: 1px solid var(--border-color-subtle);
+  border-radius: 4px;
+  font-size: 12px;
+  background: var(--background-color-surface-1);
+}
+.lab-task-timeline-toolbar button:hover {
+  background: var(--background-color-layer-1);
+}
+.lab-task-timeline-toolbar button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.lab-task-timeline-toolbar button:focus-visible,
+.lab-task-timeline-toolbar select:focus-visible {
+  outline: 2px solid var(--border-color-accent-strong);
+  outline-offset: 1px;
+}
+.lab-task-timeline-range {
+  min-width: 0;
+  margin-left: auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 11px;
+  color: var(--text-color-secondary);
+}
+.lab-task-timeline-scroll {
+  overflow-x: auto;
+}
+.lab-task-timeline-canvas {
+  min-width: 100%;
+}
+.lab-task-timeline-head {
+  box-sizing: border-box;
+  height: 48px;
+  background: var(--background-color-layer-1);
+}
+.lab-task-timeline-months,
+.lab-task-timeline-ticks {
+  display: flex;
+  height: 24px;
+}
+.lab-task-timeline-months span,
+.lab-task-timeline-ticks span {
+  box-sizing: border-box;
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  border-right: 1px solid var(--border-color-subtle);
+  border-bottom: 1px solid var(--border-color-subtle);
+  white-space: nowrap;
+  font-size: 11px;
+  color: var(--text-color-secondary);
+}
+.lab-task-timeline-months span {
+  justify-content: flex-start;
+  padding-left: 10px;
+  font-weight: 500;
+}
+.lab-task-timeline-ticks span[data-today="true"] {
+  color: var(--label-indigo-text);
+  font-weight: 700;
+  background: var(--label-indigo-bg);
+}
+.lab-task-timeline-rows {
+  position: relative;
+  background-image: linear-gradient(to right, var(--border-color-subtle) 1px, transparent 1px);
+}
+.lab-task-timeline-row {
+  position: relative;
+  box-sizing: border-box;
+  height: 38px;
+  border-bottom: 1px solid var(--border-color-subtle);
+}
+.lab-task-timeline-row[data-kind="group"] {
+  background: color-mix(in srgb, var(--background-color-layer-1) 85%, transparent);
+}
+.lab-task-timeline-bar {
+  position: absolute;
+  z-index: 1;
+  top: 10px;
+  box-sizing: border-box;
+  height: 17px;
+  min-width: 1px;
+  overflow: hidden;
+  border-radius: 3px;
+  color: var(--label-indigo-text);
+  background: color-mix(in srgb, var(--label-indigo-text) 28%, var(--background-color-surface-1));
+  border: 1px solid color-mix(in srgb, var(--label-indigo-text) 45%, transparent);
+}
+.lab-task-timeline-bar[data-kind="personal"] {
+  color: var(--label-purple-text);
+  background: color-mix(in srgb, var(--label-purple-text) 28%, var(--background-color-surface-1));
+  border-color: color-mix(in srgb, var(--label-purple-text) 45%, transparent);
+}
+.lab-task-timeline-bar[data-clipped-start="true"] {
+  border-left-style: dashed;
+  border-top-left-radius: 0;
+  border-bottom-left-radius: 0;
+}
+.lab-task-timeline-bar[data-clipped-end="true"] {
+  border-right-style: dashed;
+  border-top-right-radius: 0;
+  border-bottom-right-radius: 0;
+}
+.lab-task-timeline-bar > span {
+  display: block;
+  padding: 0 5px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  line-height: 15px;
+  font-size: 10px;
+}
+.lab-task-timeline-unscheduled {
+  display: block;
+  max-width: 100%;
+  padding-left: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  line-height: 37px;
+  font-size: 11px;
+  color: var(--text-color-tertiary);
+}
+.lab-task-timeline-today {
+  position: absolute;
+  z-index: 2;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  border-left: 1px dashed var(--label-orange-text);
+  pointer-events: none;
+}

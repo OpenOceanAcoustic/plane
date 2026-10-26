@@ -399,6 +399,7 @@ export const LabTaskTable = observer(function LabTaskTable({
           projectId={projectId}
           query={query}
           workspaceSlug={store.slug}
+          workspaceTimezone={store.planner?.timezone}
           openProjectIssue={openProjectIssue}
         />
       )}

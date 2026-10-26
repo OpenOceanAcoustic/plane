@@ -2,105 +2,214 @@
 .lab-hierarchy {
   --item-color: var(--label-indigo-text);
   --personal-color: var(--label-purple-text);
+  min-width: 0;
+}
+.lab-task-table .lab-task-toolbar {
+  gap: 8px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+.lab-task-table .lab-task-toolbar select {
+  width: auto;
+  max-width: 210px;
 }
 .lab-hierarchy-toolbar {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 10px;
-  margin-bottom: 14px;
+  gap: 8px;
+  margin-bottom: 10px;
 }
 .lab-hierarchy-total {
   margin-left: auto;
   color: var(--text-color-secondary);
-  font-size: 13px;
+  font-size: 12px;
+}
+.lab-hierarchy-board-scroll {
+  overflow: auto;
+  max-height: max(360px, calc(100dvh - 310px));
+  border: 1px solid var(--border-color-subtle);
+  border-radius: 6px;
+}
+.lab-hierarchy-board {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  align-items: start;
+  min-width: 0;
+}
+.lab-hierarchy-board[data-timeline="true"] {
+  grid-template-columns: minmax(360px, 50%) minmax(360px, 50%);
+  min-width: 720px;
+}
+.lab-hierarchy-list-pane {
+  min-width: 0;
+}
+.lab-hierarchy-board[data-timeline="true"] .lab-hierarchy-list-pane {
+  border-right: 1px solid var(--border-color-subtle);
+}
+.lab-hierarchy-pane-toolbar {
+  display: flex;
+  align-items: center;
+  height: 40px;
+  padding: 0 12px;
+  box-sizing: border-box;
+  border-bottom: 1px solid var(--border-color-subtle);
+  font-size: 12px;
+  font-weight: 500;
 }
 .lab-hierarchy-scroll {
-  overflow: auto;
-  border: 1px solid var(--border-color-subtle);
-  border-radius: 10px;
+  overflow-x: auto;
+  min-width: 0;
 }
 .lab-hierarchy table {
   width: 100%;
-  min-width: 780px;
+  min-width: 864px;
+  table-layout: fixed;
   border-collapse: collapse;
-  font-size: 13px;
+  font-size: 12px;
   text-align: left;
+}
+.lab-hierarchy-col-key {
+  width: 100px;
+}
+.lab-hierarchy-col-title {
+  width: auto;
+}
+.lab-hierarchy-col-state {
+  width: 80px;
+}
+.lab-hierarchy-col-date {
+  width: 104px;
+}
+.lab-hierarchy-col-owner {
+  width: 126px;
+}
+.lab-hierarchy-col-priority {
+  width: 70px;
 }
 .lab-hierarchy th,
 .lab-hierarchy td {
+  box-sizing: border-box;
+  border-right: 1px solid var(--border-color-subtle);
   border-bottom: 1px solid var(--border-color-subtle);
-  padding: 11px 14px;
+  padding: 0 10px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: middle;
+}
+.lab-hierarchy th:last-child,
+.lab-hierarchy td:last-child {
+  border-right: 0;
 }
 .lab-hierarchy th {
+  height: 48px;
+  font-size: 11px;
   font-weight: 500;
-  white-space: nowrap;
+  color: var(--text-color-secondary);
   background: var(--background-color-layer-1);
 }
-.lab-hierarchy td:not(:first-child) {
-  white-space: nowrap;
+.lab-hierarchy tbody tr {
+  height: 38px;
+  background: var(--background-color-surface-1);
 }
-.lab-hierarchy tbody tr:last-child td {
-  border-bottom: 0;
+.lab-hierarchy tbody td {
+  height: 38px;
 }
 .lab-hierarchy tbody tr:hover {
   background: var(--background-color-layer-1);
 }
-.lab-hierarchy-project {
-  background: color-mix(in srgb, var(--item-color) 5%, transparent);
+.lab-hierarchy .lab-hierarchy-project {
+  background: color-mix(in srgb, var(--item-color) 4%, var(--background-color-surface-1));
 }
-.lab-hierarchy-project[data-kind="personal"] {
-  background: color-mix(in srgb, var(--personal-color) 5%, transparent);
+.lab-hierarchy .lab-hierarchy-project[data-kind="personal"] {
+  background: color-mix(in srgb, var(--personal-color) 4%, var(--background-color-surface-1));
 }
 .lab-hierarchy-title {
   display: flex;
   align-items: center;
-  gap: 8px;
-  min-height: 22px;
+  gap: 6px;
+  height: 24px;
+  min-width: 0;
 }
 .lab-hierarchy-title > a,
 .lab-hierarchy-personal-title {
   text-align: left;
-  overflow-wrap: anywhere;
-  min-width: 100px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
 }
 .lab-hierarchy-title > a:hover,
-.lab-hierarchy-personal-title:hover {
+.lab-hierarchy-personal-title:hover,
+.lab-hierarchy-number > a:hover {
   color: var(--item-color);
+}
+.lab-hierarchy-number {
+  position: sticky;
+  left: 0;
+  z-index: 1;
+  background: inherit;
+  color: var(--text-color-tertiary);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+.lab-hierarchy-number > a {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.lab-hierarchy th:first-child {
+  position: sticky;
+  left: 0;
+  z-index: 2;
 }
 .lab-hierarchy-toggle {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 22px;
-  height: 22px;
+  width: 20px;
+  height: 24px;
   flex-shrink: 0;
-  border-radius: 4px;
+  border-radius: 3px;
+  color: var(--text-color-secondary);
 }
 .lab-hierarchy-toggle:hover {
   background: var(--background-color-layer-2);
 }
 .lab-hierarchy-spacer {
-  width: 22px;
+  width: 20px;
   flex-shrink: 0;
 }
-.lab-hierarchy-dot {
-  width: 7px;
-  height: 7px;
-  border-radius: 2px;
-  background: var(--item-color);
+.lab-hierarchy-level-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 3px;
+  color: var(--item-color);
+  background: color-mix(in srgb, currentColor 12%, transparent);
   flex-shrink: 0;
 }
-tr[data-kind="personal"] .lab-hierarchy-dot {
-  background: var(--personal-color);
+.lab-hierarchy-level-icon[data-level="1"] {
+  color: var(--label-purple-text);
+}
+.lab-hierarchy-level-icon[data-level="2"] {
+  color: var(--label-blue-text);
+}
+tr[data-kind="personal"] .lab-hierarchy-level-icon {
+  color: var(--personal-color);
 }
 .lab-hierarchy-kind {
   display: inline-flex;
   align-items: center;
   white-space: nowrap;
-  border-radius: 4px;
-  padding: 2px 6px;
-  font-size: 11px;
+  flex-shrink: 0;
+  border-radius: 3px;
+  padding: 1px 4px;
+  font-size: 10px;
   color: var(--item-color);
   background: color-mix(in srgb, var(--item-color) 9%, transparent);
 }
@@ -108,11 +217,36 @@ tr[data-kind="personal"] .lab-hierarchy-dot {
   color: var(--personal-color);
   background: color-mix(in srgb, var(--personal-color) 9%, transparent);
 }
-.lab-hierarchy-key,
 .lab-hierarchy-count {
   font-size: 11px;
   white-space: nowrap;
   color: var(--text-color-secondary);
+}
+.lab-hierarchy-assignee {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+}
+.lab-hierarchy-assignee > span:last-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.lab-hierarchy-avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  color: var(--item-color);
+  background: color-mix(in srgb, var(--item-color) 12%, transparent);
+  font-size: 10px;
+}
+tr[data-kind="personal"] .lab-hierarchy-avatar {
+  color: var(--personal-color);
+  background: color-mix(in srgb, var(--personal-color) 12%, transparent);
 }
 .lab-hierarchy tr[data-context="true"] .lab-hierarchy-title > a {
   color: var(--text-color-tertiary);
@@ -124,14 +258,7 @@ tr[data-kind="personal"] .lab-hierarchy-dot {
   color: var(--text-color-secondary);
 }
 @media (max-width: 640px) {
-  .lab-hierarchy-toolbar {
-    gap: 8px;
-  }
   .lab-hierarchy-total {
     margin-left: 0;
-  }
-  .lab-hierarchy th,
-  .lab-hierarchy td {
-    padding: 10px;
   }
 }

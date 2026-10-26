@@ -116,7 +116,7 @@ export const LabPanel = observer(function LabPanel({
         </Button>
       </header>
       <div className="flex flex-col gap-5 p-6">
-        <LabCoreActions workspaceSlug={workspaceSlug} />
+        {section !== "tasks" && <LabCoreActions workspaceSlug={workspaceSlug} />}
         {store.error && section !== "contributions" && (
           <p
             role="alert"
